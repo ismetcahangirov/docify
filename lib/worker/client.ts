@@ -29,17 +29,51 @@ let api: Comlink.Remote<ConversionApi> | null = null
  */
 export function ensureWorker(): Comlink.Remote<ConversionApi> {
   if (api === null) {
-    // This exact literal form is what makes the worker a separate chunk.
-    // Turbopack and webpack both pattern-match `new Worker(new URL(<literal>,
-    // import.meta.url))` at build time; a variable in place of the literal
-    // silently falls back to a runtime URL that resolves to nothing in
-    // production. `type: 'module'` is what lets the entry use `import`
-    // statements and, more importantly, `await import()` for the engines.
-    worker = new Worker(new URL('./conversion.worker.ts', import.meta.url), { type: 'module' })
+    worker = spawn()
     api = Comlink.wrap<ConversionApi>(worker)
   }
 
   return api
+}
+
+function spawn(): Worker {
+  // Server Components and prerendering evaluate this module in Node, where
+  // there is no `Worker`. Left alone that surfaces as "Worker is not a
+  // constructor", which reads like a bundler fault; name the real cause.
+  if (typeof Worker === 'undefined') {
+    throw new Error(
+      'The conversion worker can only be started in the browser. ' +
+        'ensureWorker() was called during server rendering — move the call into ' +
+        'an event handler or an effect in a client component.',
+    )
+  }
+
+  // This exact literal form is what makes the worker a separate chunk.
+  // Turbopack and webpack both pattern-match `new Worker(new URL(<literal>,
+  // import.meta.url))` at build time; a variable in place of the literal
+  // silently falls back to a runtime URL that resolves to nothing in
+  // production. `type: 'module'` is what lets the entry use `import` statements
+  // and, more importantly, `await import()` for the engines.
+  const spawned = new Worker(new URL('./conversion.worker.ts', import.meta.url), { type: 'module' })
+
+  // A worker that never starts — a stale chunk URL after a deploy, a CSP that
+  // blocks it, a throw while the entry evaluates — leaves Comlink's request
+  // promises unsettled forever, with nothing logged. These two events are the
+  // only notification the platform gives, so treat them as fatal: drop the
+  // worker and let the next call spawn a healthy one, rather than hand out a
+  // proxy whose every method hangs.
+  //
+  // The `worker === spawned` guard matters because the event can arrive after
+  // this worker has already been replaced; without it a late failure would kill
+  // its successor.
+  const discard = (event: Event) => {
+    console.error('Docify: the conversion worker failed and was shut down.', event)
+    if (worker === spawned) terminateWorker()
+  }
+  spawned.addEventListener('error', discard)
+  spawned.addEventListener('messageerror', discard)
+
+  return spawned
 }
 
 /**

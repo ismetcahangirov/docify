@@ -39,14 +39,24 @@ export interface ConvertRequest extends EngineInput {
  *   into a round trip — so the 250 ms floor from `lib/engines/types.ts` is a
  *   throttling requirement on the worker side, not a UI concern.
  * - **Cancellation.** An `AbortSignal` is not cloneable either, and it travels
- *   the wrong way: the main thread has to reach a *running* job. Expect a job
- *   handle — `convert()` returning an id, plus a sibling `cancel(id)` that
- *   aborts the `AbortController` the worker owns for that job. Terminating the
- *   worker is the blunt fallback and loses the warm engine, so it should stay
- *   the last resort rather than the mechanism.
+ *   the wrong way: the main thread has to reach a job that is already running.
+ *   That needs a job identity plus a sibling `cancel(jobId)` which aborts the
+ *   `AbortController` the worker owns for that job. Keep `convert()` resolving
+ *   with the `Blob`: a caller-minted `jobId?: string` added to `ConvertRequest`
+ *   below gets the identity across without changing the return type, whereas
+ *   *returning* an id would break every caller. Terminating the worker is the
+ *   blunt fallback and throws away the warm engine, so it should stay the last
+ *   resort rather than the mechanism.
  *
- * Both additions are backwards compatible with this signature; nothing here
- * needs to be unpicked first.
+ * Taken that way both additions are backwards compatible — an optional
+ * parameter and an optional field — and nothing here has to be unpicked first.
+ *
+ * One gap this shell knowingly leaves open, because closing it needs the job
+ * registry that #28 introduces: `terminateWorker()` abandons in-flight calls
+ * rather than rejecting them, so their promises never settle and the caller's
+ * `Blob`s stay reachable. Nothing long-running exists yet — `convert()` throws
+ * immediately — but the first real engine makes it a leak, and the registry
+ * that backs `cancel(jobId)` is exactly what is needed to reject them.
  */
 export interface ConversionApi {
   /** Liveness check. Cheap, synchronous, and the worker's only job until an engine lands. */

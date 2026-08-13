@@ -23,13 +23,22 @@ const spawns: SpawnRecord[] = []
 const live: FakeWorker[] = []
 
 /**
- * Stands in for a real module worker. `port2` hosts the conversion API; `port1`
- * is the main-thread end, and every `Endpoint` method Comlink uses is forwarded
- * to it. A `MessagePort` only begins delivering to `addEventListener` after
- * `start()`, which a real `Worker` does implicitly — hence the call below.
+ * Stands in for a real module worker.
+ *
+ * `port2` hosts the conversion API and `port1` is the main-thread end, so
+ * `'message'` traffic is forwarded straight to it. A `MessagePort` only starts
+ * delivering to `addEventListener` after `start()`, which a real `Worker` does
+ * implicitly — hence the call in the constructor.
+ *
+ * `'error'` and `'messageerror'` are *not* port events: a real `Worker` fires
+ * them at the worker object itself when the entry chunk fails to load or throws
+ * while evaluating. They are kept in a separate registry so `fail()` can
+ * reproduce that, which is the one worker failure mode Comlink cannot surface —
+ * it leaves every pending call unsettled forever.
  */
 class FakeWorker implements Comlink.Endpoint {
   private readonly channel = new MessageChannel()
+  private readonly failureListeners: EventListener[] = []
   terminated = false
 
   constructor(url: string | URL, options?: WorkerOptions) {
@@ -44,17 +53,24 @@ class FakeWorker implements Comlink.Endpoint {
   }
 
   addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
-    this.channel.port1.addEventListener(type, listener)
+    if (type === 'message') this.channel.port1.addEventListener(type, listener)
+    else this.failureListeners.push(listener as EventListener)
   }
 
   removeEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
-    this.channel.port1.removeEventListener(type, listener)
+    if (type === 'message') this.channel.port1.removeEventListener(type, listener)
   }
 
   terminate(): void {
     this.terminated = true
     this.channel.port1.close()
     this.channel.port2.close()
+  }
+
+  /** Reproduces "the worker chunk 404s" or "the entry threw on evaluation". */
+  fail(): void {
+    const event = new Event('error')
+    for (const listener of this.failureListeners) listener(event)
   }
 }
 
@@ -115,6 +131,54 @@ describe('ensureWorker', () => {
     ensureWorker()
 
     expect(spawns[0].url).toMatch(/conversion\.worker\.[jt]s(\?.*)?$/)
+  })
+
+  it('says why it cannot start when there is no Worker constructor', async () => {
+    vi.stubGlobal('Worker', undefined)
+    const { ensureWorker } = await loadClient()
+
+    expect(() => ensureWorker()).toThrow(/browser/i)
+  })
+})
+
+describe('a worker that fails to start', () => {
+  it('is shut down rather than left to swallow every later call', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { ensureWorker } = await loadClient()
+
+    ensureWorker()
+    live[0].fail()
+
+    expect(live[0].terminated).toBe(true)
+    expect(errors).toHaveBeenCalled()
+    errors.mockRestore()
+  })
+
+  it('is replaced on the next call instead of being handed out again', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { ensureWorker } = await loadClient()
+
+    ensureWorker()
+    live[0].fail()
+    const replacement = ensureWorker()
+
+    expect(spawns).toHaveLength(2)
+    await expect(replacement.ping()).resolves.toBe('pong')
+    errors.mockRestore()
+  })
+
+  it('cannot take down the worker that replaced it', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { ensureWorker } = await loadClient()
+
+    ensureWorker()
+    const failed = live[0]
+    failed.fail()
+    ensureWorker()
+    failed.fail()
+
+    expect(live[1].terminated).toBe(false)
+    errors.mockRestore()
   })
 })
 
