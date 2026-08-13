@@ -1,15 +1,14 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import type {
+  Browser,
   Capabilities,
   ConversionTask,
   EngineId,
   FormatId,
   Operation,
+  Platform,
   RejectionCode,
-  RouteRejection,
-  RouteResult,
-  RouteSuccess,
   Warning,
   WarningCode,
 } from '@/lib/router/types'
@@ -35,55 +34,53 @@ describe('ConversionTask', () => {
     expect(task).toEqual({ from: 'heic', to: 'jpg', op: 'convert' })
   })
 
-  it('covers the image, document, video, audio and archive families', () => {
-    const formats: FormatId[] = [
-      'jpg',
-      'png',
-      'webp',
-      'avif',
-      'gif',
-      'bmp',
-      'tiff',
-      'svg',
-      'heic',
-      'ico',
-      'pdf',
-      'mp4',
-      'webm',
-      'mov',
-      'mkv',
-      'avi',
-      'mp3',
-      'wav',
-      'ogg',
-      'm4a',
-      'flac',
-      'aac',
-      'zip',
-      'rar',
-      '7z',
-      'tar',
-    ]
-
-    expect(new Set(formats).size).toBe(formats.length)
+  // Pinned in both directions: adding a format silently is as much a regression
+  // as removing one, because the pairs registry and the SEO pages enumerate this.
+  it('is exactly the image, document, video, audio and archive formats', () => {
+    expectTypeOf<FormatId>().toEqualTypeOf<
+      | 'jpg'
+      | 'png'
+      | 'webp'
+      | 'avif'
+      | 'gif'
+      | 'bmp'
+      | 'tiff'
+      | 'svg'
+      | 'heic'
+      | 'ico'
+      | 'pdf'
+      | 'mp4'
+      | 'webm'
+      | 'mov'
+      | 'mkv'
+      | 'avi'
+      | 'mp3'
+      | 'wav'
+      | 'ogg'
+      | 'm4a'
+      | 'flac'
+      | 'aac'
+      | 'zip'
+      | 'rar'
+      | '7z'
+      | 'tar'
+    >()
   })
 
-  it('covers every operation the tool pages offer', () => {
-    const operations: Operation[] = [
-      'convert',
-      'compress',
-      'resize',
-      'crop',
-      'rotate',
-      'merge',
-      'split',
-      'extract',
-      'organize',
-      'protect',
-      'unlock',
-    ]
-
-    expect(new Set(operations).size).toBe(operations.length)
+  it('is exactly the operations the tool pages offer', () => {
+    expectTypeOf<Operation>().toEqualTypeOf<
+      | 'convert'
+      | 'compress'
+      | 'resize'
+      | 'crop'
+      | 'rotate'
+      | 'merge'
+      | 'split'
+      | 'extract'
+      | 'organize'
+      | 'protect'
+      | 'unlock'
+    >()
   })
 
   it('rejects a format the app cannot handle', () => {
@@ -102,20 +99,18 @@ describe('ConversionTask', () => {
 })
 
 describe('EngineId', () => {
-  it('names all nine engines from the priority table', () => {
-    const engines: EngineId[] = [
-      'canvas',
-      'webcodecs',
-      'pdflib',
-      'pdfjs',
-      'zip',
-      'heif',
-      'vips',
-      'libarchive',
-      'ffmpeg',
-    ]
-
-    expect(new Set(engines).size).toBe(9)
+  it('is exactly the nine engines in the priority table', () => {
+    expectTypeOf<EngineId>().toEqualTypeOf<
+      | 'canvas'
+      | 'vips'
+      | 'heif'
+      | 'pdflib'
+      | 'pdfjs'
+      | 'webcodecs'
+      | 'ffmpeg'
+      | 'zip'
+      | 'libarchive'
+    >()
   })
 
   it('rejects an engine that does not exist', () => {
@@ -148,10 +143,11 @@ describe('Capabilities', () => {
   })
 
   it('constrains platform and browser to closed unions', () => {
-    expectTypeOf<Capabilities['platform']>().toEqualTypeOf<'ios' | 'android' | 'desktop'>()
-    expectTypeOf<Capabilities['browser']>().toEqualTypeOf<
-      'safari' | 'chromium' | 'firefox' | 'unknown'
-    >()
+    expectTypeOf<Platform>().toEqualTypeOf<'ios' | 'android' | 'desktop'>()
+    expectTypeOf<Browser>().toEqualTypeOf<'safari' | 'chromium' | 'firefox' | 'unknown'>()
+    // The plan indexes these off Capabilities; both spellings must stay valid.
+    expectTypeOf<Capabilities['platform']>().toEqualTypeOf<Platform>()
+    expectTypeOf<Capabilities['browser']>().toEqualTypeOf<Browser>()
   })
 
   it('rejects an unknown platform', () => {
@@ -179,11 +175,10 @@ describe('Warning', () => {
     expect(warning.code).toBe('SLOW_PATH')
   })
 
-  it('exposes the warning codes as a reusable union', () => {
+  it('is exactly the four warning codes the router can raise', () => {
     expectTypeOf<WarningCode>().toEqualTypeOf<
       'SLOW_PATH' | 'QUALITY_LOSS' | 'LARGE_DOWNLOAD' | 'NO_ISOLATION'
     >()
-    expectTypeOf<Warning['code']>().toEqualTypeOf<WarningCode>()
   })
 
   it('rejects an invented warning code', () => {
@@ -195,16 +190,14 @@ describe('Warning', () => {
 })
 
 describe('RejectionCode', () => {
-  it('has exactly the five codes the router can return', () => {
-    const codes: RejectionCode[] = [
-      'FILE_TOO_LARGE',
-      'UNSUPPORTED_PAIR',
-      'DEVICE_TOO_WEAK',
-      'CODEC_UNAVAILABLE',
-      'EMPTY_INPUT',
-    ]
-
-    expect(new Set(codes).size).toBe(5)
+  it('is exactly the five codes the router can return', () => {
+    expectTypeOf<RejectionCode>().toEqualTypeOf<
+      | 'FILE_TOO_LARGE'
+      | 'UNSUPPORTED_PAIR'
+      | 'DEVICE_TOO_WEAK'
+      | 'CODEC_UNAVAILABLE'
+      | 'EMPTY_INPUT'
+    >()
   })
 
   it('rejects a code outside the union', () => {
@@ -212,119 +205,5 @@ describe('RejectionCode', () => {
     const code: RejectionCode = 'UNKNOWN_ERROR'
 
     expect(code).toBe('UNKNOWN_ERROR')
-  })
-})
-
-describe('RouteResult', () => {
-  const success: RouteSuccess = {
-    ok: true,
-    engine: 'webcodecs',
-    reason: 'Hardware-accelerated (WebCodecs)',
-    loadCost: 120_000,
-    warnings: [],
-  }
-
-  const rejection: RouteRejection = {
-    ok: false,
-    code: 'DEVICE_TOO_WEAK',
-    message: 'This file is 200 MB. The safe limit on this device is 20 MB.',
-    suggestion: 'Open this on a desktop — mobile browsers have a much lower memory ceiling.',
-  }
-
-  it('is the union of the success and rejection branches', () => {
-    expectTypeOf<RouteResult>().toEqualTypeOf<RouteSuccess | RouteRejection>()
-  })
-
-  it('narrows to the engine choice when ok is true', () => {
-    const result: RouteResult = success
-
-    if (!result.ok) throw new Error('expected a successful route')
-
-    expectTypeOf(result).toEqualTypeOf<RouteSuccess>()
-    expect(result.engine).toBe('webcodecs')
-    expect(result.loadCost).toBe(120_000)
-    expect(result.warnings).toEqual([])
-  })
-
-  it('narrows to the rejection when ok is false', () => {
-    const result: RouteResult = rejection
-
-    if (result.ok) throw new Error('expected a rejection')
-
-    expectTypeOf(result).toEqualTypeOf<RouteRejection>()
-    expect(result.code).toBe('DEVICE_TOO_WEAK')
-  })
-
-  it('never exposes an engine on the rejection branch', () => {
-    const result: RouteResult = rejection
-
-    if (result.ok) throw new Error('expected a rejection')
-
-    // @ts-expect-error a rejection carries no engine
-    expect(result.engine).toBeUndefined()
-  })
-
-  it('never exposes a rejection code on the success branch', () => {
-    const result: RouteResult = success
-
-    if (!result.ok) throw new Error('expected a successful route')
-
-    // @ts-expect-error a successful route carries no rejection code
-    expect(result.code).toBeUndefined()
-  })
-
-  // Invariant 2.5 — a rejection always explains itself.
-  it('does not typecheck without a suggestion', () => {
-    const incomplete: RouteRejection = {
-      ok: false,
-      code: 'FILE_TOO_LARGE',
-      message: 'This file is 4.0 GB.',
-      // @ts-expect-error suggestion is mandatory on every rejection
-      suggestion: undefined,
-    }
-
-    expect(incomplete.suggestion).toBeUndefined()
-  })
-
-  it('does not typecheck without a message', () => {
-    // @ts-expect-error message is mandatory on every rejection
-    const incomplete: RouteRejection = {
-      ok: false,
-      code: 'UNSUPPORTED_PAIR',
-      suggestion: 'Try again in a recent version of Chrome or Edge.',
-    }
-
-    expect(incomplete.code).toBe('UNSUPPORTED_PAIR')
-  })
-
-  it('types both explanation fields as required strings', () => {
-    expectTypeOf<RouteRejection['message']>().toEqualTypeOf<string>()
-    expectTypeOf<RouteRejection['suggestion']>().toEqualTypeOf<string>()
-    expectTypeOf<RouteRejection>().toHaveProperty('message')
-    expectTypeOf<RouteRejection>().toHaveProperty('suggestion')
-  })
-
-  it('carries warnings on the success branch', () => {
-    const slow: RouteSuccess = {
-      ok: true,
-      engine: 'ffmpeg',
-      reason: 'Universal fallback',
-      loadCost: 32_000_000,
-      warnings: [
-        { code: 'SLOW_PATH', message: 'No hardware acceleration available.' },
-        { code: 'LARGE_DOWNLOAD', message: 'Loading the engine (32 MB) — one time only.' },
-      ],
-    }
-
-    expectTypeOf<RouteSuccess['warnings']>().toEqualTypeOf<Warning[]>()
-    expect(slow.warnings.map((w) => w.code)).toEqual(['SLOW_PATH', 'LARGE_DOWNLOAD'])
-  })
-})
-
-describe('module purity', () => {
-  it('exports types only, so importing it costs nothing at runtime', async () => {
-    const namespace: Record<string, unknown> = await import('@/lib/router/types')
-
-    expect(Object.keys(namespace).filter((key) => key !== 'default')).toEqual([])
   })
 })

@@ -3,7 +3,6 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 import type {
   EngineDescriptor,
   EngineInput,
-  EngineOptions,
   EngineRunner,
   ProgressCallback,
 } from '@/lib/engines/types'
@@ -80,7 +79,6 @@ describe('EngineRunner', () => {
     const input: EngineInput = {
       task: { from: 'png', to: 'webp', op: 'convert' },
       files: [new Blob(['x'])],
-      options: { quality: 82 },
     }
     const out = await runner.run(input, new AbortController().signal, (p) => seen.push(p))
 
@@ -115,17 +113,20 @@ describe('EngineRunner', () => {
   })
 
   it('reports indeterminate progress as -1', () => {
-    const onProgress: ProgressCallback = (p) => expect(p).toBe(-1)
+    const seen: number[] = []
+    const onProgress: ProgressCallback = (p) => seen.push(p)
 
     onProgress(-1)
-    expectTypeOf<ProgressCallback>().toEqualTypeOf<(progress: number) => void>()
+
+    expect(seen).toEqual([-1])
   })
 
-  it('makes options optional and serialisable', () => {
-    const bare: EngineInput = { task: { from: 'jpg', to: 'png', op: 'convert' }, files: [] }
-    const opts: EngineOptions = { quality: 90, lossless: false, fit: 'cover' }
+  it('takes several source files, so merge and split share one shape', () => {
+    const merge: EngineInput = {
+      task: { from: 'pdf', to: 'pdf', op: 'merge' },
+      files: [new Blob(['a']), new Blob(['b'])],
+    }
 
-    expect(bare.options).toBeUndefined()
-    expect(opts.fit).toBe('cover')
+    expect(merge.files).toHaveLength(2)
   })
 })

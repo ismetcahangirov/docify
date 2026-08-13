@@ -25,14 +25,18 @@ export interface EngineDescriptor {
   supports(task: ConversionTask, caps: Capabilities): boolean
 }
 
-/** Operation settings: quality, target width, page range, and so on. */
-export type EngineOptions = Readonly<Record<string, string | number | boolean>>
-
+/**
+ * What the worker hands to a runner.
+ *
+ * Deliberately minimal. Per-operation settings — quality, target width, page
+ * ranges — are not modelled yet: a single catch-all options record is either too
+ * loose to be worth typing or too narrow for `split` and `organize`. Each engine
+ * adds the optional, concretely typed slot it needs when it lands.
+ */
 export interface EngineInput {
   task: ConversionTask
   /** Source files in user order. Single-file operations receive exactly one. */
   files: readonly Blob[]
-  options?: EngineOptions
 }
 
 /**
