@@ -54,16 +54,20 @@ When adding an engine, slot its priority between existing values (e.g. 45). Neve
 
 `lib/router/budget.ts` has two parts.
 
-**Platform budget** — the safe total memory for a tab:
+**Platform budget** — `budgetBytes(caps)`, the safe total memory for a tab:
 - iOS: `90 MB` (Safari kills tabs early — do not raise this)
 - Android: `140 MB`
-- Desktop: `min(deviceMemory * 0.2, 1200 MB)`
+- Desktop: `clamp(deviceMemory * 0.2, 140 MB, 1200 MB)`
+
+The desktop floor matters: `navigator.deviceMemory` is absent outside Chromium and clamped to `0.25` at the low end, so the raw formula can derive `51 MB` — less than a phone gets. A desktop browser is not subject to the mobile tab-kill policies, so it never drops below the Android ceiling.
 
 **Expansion factor** — how many multiples of the input size the engine holds in RAM. For a new engine, determine this by **measurement**, not by guessing:
 
 ```
-maxInput = platformBudget / EXPANSION[engine]
+maxInput = budgetBytes(caps) / EXPANSION[engine]     // maxInputBytes(engine, caps)
 ```
+
+Use `fitsInBudget(engine, inputBytes, caps)` for the filter step; it is inclusive of the limit.
 
 `ffmpeg` = 4.5 (input + output + working memory all live in MEMFS), `webcodecs` = 2.5 (streaming, never holds the whole file).
 
