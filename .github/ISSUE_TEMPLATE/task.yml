@@ -1,0 +1,71 @@
+name: Task
+description: A single unit of implementation work
+title: "<verb> <what>"
+labels: ["type:feat"]
+assignees: ["ismetcahangirov"]
+body:
+  - type: input
+    id: parent
+    attributes:
+      label: Parent epic
+      description: The epic issue this belongs to.
+      placeholder: "#12"
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What must be observably true for this to be done? Be specific enough that someone else can verify it.
+      placeholder: "iOS returns a 90MB budget and desktop is capped at 1200MB, both covered by unit tests."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - area:router
+        - area:engine
+        - area:ui
+        - area:design
+        - area:seo
+        - area:perf
+        - area:a11y
+        - area:backend
+        - area:ci
+        - area:agent
+    validations:
+      required: true
+
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size
+      options:
+        - "size:xs — under 1 hour"
+        - "size:s — 1-3 hours"
+        - "size:m — half a day"
+        - "size:l — a day or more"
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Implementation notes
+      description: Files to touch, constraints, gotchas, links to the plan.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: workflow
+    attributes:
+      label: Workflow reminder
+      options:
+        - label: I will pull `main` and branch before starting
+          required: true
+        - label: I will write the failing test first
+          required: true
