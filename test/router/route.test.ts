@@ -2,9 +2,10 @@
 //
 // Deliberately not jsdom. `route()` runs during SSR, inside a Web Worker and in
 // the browser, and it is only allowed to look at the three arguments it is
-// handed. With no DOM in scope, a stray `navigator` or `window` read inside the
-// module under test throws here instead of quietly passing under jsdom and
-// failing in production.
+// handed. With no DOM in scope, a `window` or `document` read inside the module
+// under test throws here instead of quietly passing under jsdom and failing in
+// production. Node 22 still defines a global `navigator`, so the "reads nothing
+// from the environment" case below removes that one explicitly.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -294,13 +295,12 @@ describe('route — the twelve cases the plan requires', () => {
 describe('route — rejections', () => {
   it('rejects with UNSUPPORTED_PAIR while the engine registry is still empty', async () => {
     // Issue #26 shipped `ENGINES` empty on purpose and left this assertion to
-    // the router. Rather than trust the mock, the shipped list is loaded and
-    // handed to the router verbatim, so this starts failing the day an engine
-    // lands without the router being taught about it.
+    // the router. The list that actually ships is loaded and handed over
+    // verbatim rather than assumed, so the case stays honest as engines land.
+    // Whether the list is still empty is the registry suite's assertion.
     const real =
       await vi.importActual<typeof import('@/lib/engines/registry')>('@/lib/engines/registry')
 
-    expect(real.ENGINES).toEqual([])
     register(...real.ENGINES)
 
     expect(refused(route(jpgToPng, 2 * MB, desktop)).code).toBe('UNSUPPORTED_PAIR')
@@ -332,6 +332,64 @@ describe('route — rejections', () => {
     expect(chosen(route(mp4ToMp3, 10 * MB, { ...desktop, webCodecsAudio: false })).engine).toBe(
       'ffmpeg',
     )
+  })
+
+  it('quotes a ceiling the device can actually honour, ignoring codec-blocked engines', () => {
+    // webcodecs is roomier (2.5× the input against ffmpeg's 4.5×) but cannot
+    // encode the audio here. Quoting its 480 MB ceiling would send the user
+    // away to shrink the file and then refuse the 400 MB result as well.
+    register(webcodecs(), ffmpeg())
+    const noAudioCodecs = { ...desktop, webCodecsAudio: false }
+
+    const huge = refused(route(mp4ToMp3, 4 * GB, noAudioCodecs))
+    const shrunk = refused(route(mp4ToMp3, 400 * MB, noAudioCodecs))
+
+    // 1200 MB desktop budget / 4.5 = 267 MB, the only ceiling ffmpeg can honour.
+    expect(huge.message).toContain('267 MB')
+    expect(huge.message).not.toContain('480 MB')
+    expect(shrunk.code).toBe('FILE_TOO_LARGE')
+    expect(shrunk.message).toContain('267 MB')
+  })
+
+  it('does not ask an image job for audio codecs', () => {
+    // Neither end of gif→webp is timed media, so the WebCodecs gate has no
+    // opinion — demanding AudioEncoder here would refuse a job that can run.
+    register(fake('webcodecs', { label: 'WebCodecs' }))
+
+    const result = chosen(
+      route({ from: 'gif', to: 'webp', op: 'convert' }, MB, {
+        ...desktop,
+        webCodecsVideo: false,
+        webCodecsAudio: false,
+      }),
+    )
+
+    expect(result.engine).toBe('webcodecs')
+  })
+
+  it('needs both halves of the worker canvas API, and names the missing half', () => {
+    // A worker has no DOM canvas: `createImageBitmap` decodes and
+    // `OffscreenCanvas` encodes, so one without the other cannot convert.
+    register(fake('canvas'))
+
+    const noEncode = refused(route(jpgToPng, MB, { ...desktop, offscreenCanvas: false }))
+    const noDecode = refused(route(jpgToPng, MB, { ...desktop, createImageBitmap: false }))
+
+    expect(noEncode.code).toBe('CODEC_UNAVAILABLE')
+    expect(noEncode.message).toContain('OffscreenCanvas')
+    expect(noDecode.message).toContain('createImageBitmap')
+  })
+
+  it('names every missing API, and never points at one that is present', () => {
+    register(fake('canvas', { priority: 10 }), fake('webcodecs', { priority: 15 }))
+
+    const result = refused(
+      route(mp4ToWebm, MB, { ...desktop, offscreenCanvas: false, webCodecsVideo: false }),
+    )
+
+    expect(result.message).toContain('OffscreenCanvas')
+    expect(result.message).toContain('VideoEncoder')
+    expect(result.suggestion).toContain('OffscreenCanvas')
   })
 
   it('rejects an android device as DEVICE_TOO_WEAK rather than FILE_TOO_LARGE', () => {
@@ -396,6 +454,12 @@ describe('route — warnings', () => {
     expect(warningCodes(route({ from: 'jpg', to: 'webp', op: 'convert' }, MB, desktop))).toContain(
       'QUALITY_LOSS',
     )
+    // HEIC is lossy too, so the flagship heic→jpg conversion has to warn.
+    expect(warningCodes(route(heicToJpg, MB, desktop))).toContain('QUALITY_LOSS')
+    // FLAC and WAV are the lossless audio formats and must stay silent.
+    expect(
+      warningCodes(route({ from: 'flac', to: 'wav', op: 'convert' }, MB, desktop)),
+    ).not.toContain('QUALITY_LOSS')
     expect(
       warningCodes(route({ from: 'jpg', to: 'png', op: 'convert' }, MB, desktop)),
     ).not.toContain('QUALITY_LOSS')
@@ -426,6 +490,22 @@ describe('route — warnings', () => {
 })
 
 describe('route — purity', () => {
+  it('reads nothing from the environment', () => {
+    // Node 22 defines a global `navigator`, so the file-level `node`
+    // environment alone would not catch a `navigator.deviceMemory` read. Both
+    // globals are removed for the duration of the call instead.
+    register(canvas())
+
+    try {
+      vi.stubGlobal('navigator', undefined)
+      vi.stubGlobal('window', undefined)
+
+      expect(chosen(route(jpgToPng, 2 * MB, desktop)).engine).toBe('canvas')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('does not mutate the arguments it is given', () => {
     register(canvas(), ffmpeg())
     const task = { ...jpgToPng }
