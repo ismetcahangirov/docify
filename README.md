@@ -120,9 +120,7 @@ once:
 pnpm exec playwright install chromium
 ```
 
-> **Temporary:** `pnpm test` and `pnpm test:watch` currently run `scripts/ci-stub.mjs`, a
-> placeholder that prints a notice and exits 0 so the CI pipeline stays wired up until
-> Vitest lands. `pnpm size` arrives with the bundle budget task.
+> **Temporary:** `pnpm size` arrives with the bundle budget task.
 
 ### Environment variables
 
