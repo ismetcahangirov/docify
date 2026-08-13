@@ -1,0 +1,68 @@
+name: Bug report
+description: Something is broken
+title: "<what breaks> when <condition>"
+labels: ["type:fix"]
+assignees: ["ismetcahangirov"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: The actual behaviour, including any error message verbatim.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open /convert/heic-to-jpg
+        2. Drop a 12MB HEIC file
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: input
+    id: file
+    attributes:
+      label: File details
+      description: Format and size of the input file, if relevant. Never attach files containing personal data.
+      placeholder: "HEIC, 12.4 MB, 4032x3024"
+    validations:
+      required: false
+
+  - type: input
+    id: environment
+    attributes:
+      label: Browser, OS and device
+      placeholder: "Chrome 138, Windows 11, desktop 16GB"
+    validations:
+      required: true
+
+  - type: input
+    id: engine
+    attributes:
+      label: Which engine did the router select?
+      description: Shown in the RouteBadge next to the job.
+      placeholder: "webcodecs"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - "priority:p0 — conversion is broken or data is lost"
+        - "priority:p1 — a feature is unusable but there is a workaround"
+        - "priority:p2 — cosmetic or minor"
+    validations:
+      required: true

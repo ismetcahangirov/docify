@@ -1,0 +1,44 @@
+name: Epic
+description: A large body of work tracked through sub-issues
+title: "EPIC: <name>"
+labels: ["type:epic"]
+assignees: ["ismetcahangirov"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What does this epic deliver, and why does it matter to the product?
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: The tasks that make up this epic. Each becomes a sub-issue.
+      placeholder: |
+        - Implement the capability probe
+        - Implement the memory budget model
+        - Implement the engine selection logic
+    validations:
+      required: true
+
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Explicitly out of scope
+      description: What this epic deliberately does not cover, so the boundary is clear.
+    validations:
+      required: false
+
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of done
+      value: |
+        - [ ] Every sub-issue is closed via a merged pull request
+        - [ ] CI is green on `main`
+        - [ ] Documentation updated where the epic changed behaviour
+    validations:
+      required: true
