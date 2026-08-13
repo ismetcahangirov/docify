@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest watch",
-    "e2e": "node scripts/ci-stub.mjs e2e"
+    "e2e": "playwright test"
   },
   "dependencies": {
     "next": "15.5.23",
@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^7.0.1",
