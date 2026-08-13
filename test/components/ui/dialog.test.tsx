@@ -67,6 +67,17 @@ describe('Dialog', () => {
     expect(className).not.toMatch(/\bring-/)
   })
 
+  // Regression guard for the `text-` ambiguity that `cn` resolves: the panel
+  // sets both a type scale step and a colour, and neither may swallow the other.
+  it('keeps the body type step alongside the body colour', () => {
+    renderDialog()
+    fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+    const className = screen.getByRole('dialog').className
+
+    expect(className).toContain('text-body')
+    expect(className).toContain('text-fg-dark')
+  })
+
   it('darkens the backdrop without blurring it', () => {
     const { baseElement } = renderDialog()
     fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))

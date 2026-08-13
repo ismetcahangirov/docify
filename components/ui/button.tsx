@@ -17,6 +17,20 @@ import { cn } from '@/lib/utils'
  * so the indicator inverts correctly on both the light and the dark sections
  * without a second set of tokens.
  */
+/**
+ * The button sizes, exported so the touch-target test iterates the real set
+ * rather than a copy of it that could drift.
+ *
+ * There is deliberately no size below 44px. shadcn ships `xs`/`sm` heights of
+ * 24-28px, but the responsive contract puts the floor at 44x44px — offering a
+ * smaller size would be a trap for whoever reaches for it next.
+ */
+const BUTTON_SIZES = {
+  default: 'h-11 px-6',
+  lg: 'h-12 px-8',
+  icon: 'size-11',
+} as const
+
 const buttonVariants = cva(
   [
     'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap',
@@ -36,13 +50,7 @@ const buttonVariants = cva(
         // Text only. Hover underlines rather than filling a surface.
         ghost: 'bg-transparent hover:underline hover:underline-offset-4',
       },
-      size: {
-        // 44px — the minimum touch target from the responsive contract.
-        default: 'h-11 px-6',
-        sm: 'h-9 px-4',
-        lg: 'h-12 px-8',
-        icon: 'size-11',
-      },
+      size: BUTTON_SIZES,
     },
     defaultVariants: {
       variant: 'primary',
@@ -74,4 +82,4 @@ function Button({
   )
 }
 
-export { Button, buttonVariants }
+export { Button, BUTTON_SIZES, buttonVariants }

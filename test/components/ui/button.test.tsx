@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { Button, buttonVariants } from '@/components/ui/button'
+import { Button, BUTTON_SIZES, buttonVariants } from '@/components/ui/button'
 
 describe('Button', () => {
   it('renders a native button carrying its accessible name', () => {
@@ -50,6 +50,21 @@ describe('Button', () => {
     expect(screen.getByRole('button', { name: 'Close' }).className).toContain('size-11')
   })
 
+  /*
+   * The responsive contract puts the floor at 44x44px, and Tailwind's scale is
+   * 4px per step — so `h-11` / `size-11` is exactly the floor and nothing may
+   * sit below it. A size that offers a smaller button is a trap: whoever reaches
+   * for it has no way to know it breaks the contract.
+   */
+  it('offers no size below the 44px floor', () => {
+    for (const [size, classes] of Object.entries(BUTTON_SIZES)) {
+      const step = classes.match(/\b(?:h|size)-(\d+)\b/)?.[1]
+
+      expect(step, `size="${size}" declares no height`).toBeDefined()
+      expect(Number(step) * 4, `size="${size}" is below the 44px floor`).toBeGreaterThanOrEqual(44)
+    }
+  })
+
   it('shows a 2px offset outline on keyboard focus rather than a ring', () => {
     render(<Button>Convert</Button>)
     const className = screen.getByRole('button').className
@@ -61,7 +76,7 @@ describe('Button', () => {
 
   it('carries no shadow at any variant or size', () => {
     for (const variant of ['primary', 'secondary', 'ghost'] as const) {
-      for (const size of ['default', 'sm', 'lg', 'icon'] as const) {
+      for (const size of Object.keys(BUTTON_SIZES) as Array<keyof typeof BUTTON_SIZES>) {
         expect(buttonVariants({ variant, size })).not.toMatch(/\bshadow(-|\b)/)
       }
     }
