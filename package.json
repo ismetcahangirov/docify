@@ -23,6 +23,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "comlink": "^4.4.2",
     "next": "15.5.23",
     "react": "19.2.8",
     "react-dom": "19.2.8"
