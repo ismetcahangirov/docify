@@ -112,10 +112,17 @@ pnpm typecheck    # type check
 pnpm size         # bundle budget check
 ```
 
-> **Temporary:** `pnpm test` and `pnpm e2e` currently run `scripts/ci-stub.mjs`, a
-> placeholder that prints a notice and exits 0 so the CI pipeline stays wired up while
-> the harnesses are built. Vitest replaces the unit stub, Playwright replaces the e2e
-> stub, and `pnpm size` arrives with the bundle budget task.
+`pnpm e2e` runs Playwright against a production build — it builds and starts the app
+itself, so no server needs to be running first. On a fresh clone, download the browser
+once:
+
+```bash
+pnpm exec playwright install chromium
+```
+
+> **Temporary:** `pnpm test` and `pnpm test:watch` currently run `scripts/ci-stub.mjs`, a
+> placeholder that prints a notice and exits 0 so the CI pipeline stays wired up until
+> Vitest lands. `pnpm size` arrives with the bundle budget task.
 
 ### Environment variables
 

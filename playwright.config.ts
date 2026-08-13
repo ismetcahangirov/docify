@@ -7,6 +7,9 @@ const BASE_URL = `http://127.0.0.1:${PORT}`
 // and what the client-side conversion pipeline will be measured on. Chromium is
 // the only project: CI installs that single browser, and the engines Docify
 // depends on (WebCodecs, SharedArrayBuffer) are Chromium-first.
+//
+// Locally an already-listening server is reused, so a `pnpm dev` session on the
+// same port is tested instead of a production build. CI never reuses.
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -19,6 +22,7 @@ export default defineConfig({
   use: {
     baseURL: BASE_URL,
     trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
@@ -26,6 +30,8 @@ export default defineConfig({
     url: BASE_URL,
     env: { PORT: String(PORT) },
     reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
+    // Covers `next build` on a cold runner, not just server boot. The static
+    // generation pass grows with every SEO pair page, so this is deliberately roomy.
+    timeout: 300_000,
   },
 })
