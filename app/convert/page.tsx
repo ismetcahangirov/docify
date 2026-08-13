@@ -2,12 +2,15 @@ import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
   title: 'Convert',
-  robots: { index: false, follow: false },
+  robots: { index: false },
 }
 
 /**
  * Placeholder. Exists so that the cross-origin isolation headers configured for
  * `/convert/:path*` can be exercised before the real converter pages land.
+ *
+ * The real pages live at `/convert/[pair]`, so nothing in EPIC 8 replaces this
+ * file — delete it there explicitly.
  */
 export default function ConvertPlaceholderPage() {
   return <main>Converter routes are not implemented yet.</main>

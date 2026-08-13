@@ -10,6 +10,10 @@ import type { NextConfig } from 'next'
  * subresource that does not explicitly opt in, so it is scoped to the converter
  * routes only. Marketing pages must stay un-isolated so third-party resources
  * keep loading.
+ *
+ * These headers are evaluated when the document is created, so a `next/link`
+ * soft navigation carries the previous page's isolation across the boundary.
+ * Links between marketing and converter routes must be plain `<a href>`.
  */
 const CROSS_ORIGIN_ISOLATION_HEADERS = [
   { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
