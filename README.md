@@ -122,10 +122,13 @@ once:
 pnpm exec playwright install chromium
 ```
 
+`pnpm size` measures each route's gzipped first-load JavaScript against the budget in
+`bundle-budget.config.mjs` and exits non-zero when a route is over. It reads the
+manifest from the last production build, so run `pnpm build` first. In CI it runs as
+the final step of the `build` job.
+
 A Husky `pre-commit` hook runs `lint-staged`, which lints and formats only the
 files you staged. It is installed automatically by `pnpm install`.
-
-> **Temporary:** `pnpm size` arrives with the bundle budget task.
 
 ### Environment variables
 
