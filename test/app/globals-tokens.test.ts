@@ -68,13 +68,15 @@ const RADIUS_TOKENS: ReadonlyArray<readonly [string, string]> = [
 ]
 
 /**
- * Issue #14 self-hosts the families and exposes them on `<html>` as these
- * variables; the token stack references them and degrades to system fonts.
+ * The self-hosted families are exposed on `<html>` as `--font-archivo`,
+ * `--font-inter` and `--font-jetbrains-mono`. The generic has to sit *inside*
+ * `var()`: a reference to an undefined property invalidates the declaration at
+ * computed-value time, discarding anything listed after it.
  */
-const FONT_TOKENS: ReadonlyArray<readonly [string, string, string]> = [
-  ['--font-display', '--font-archivo', 'sans-serif'],
-  ['--font-sans', '--font-inter', 'sans-serif'],
-  ['--font-mono', '--font-jetbrains-mono', 'monospace'],
+const FONT_TOKENS: ReadonlyArray<readonly [string, string]> = [
+  ['--font-display', 'var(--font-archivo, ui-sans-serif), system-ui, sans-serif'],
+  ['--font-sans', 'var(--font-inter, ui-sans-serif), system-ui, sans-serif'],
+  ['--font-mono', 'var(--font-jetbrains-mono, ui-monospace), monospace'],
 ]
 
 /** The typography scale from the plan: size, line height, tracking, weight. */
@@ -108,12 +110,25 @@ describe('app/globals.css design tokens', () => {
   })
 
   describe('typography tokens', () => {
-    it.each(FONT_TOKENS)('points %s at var(%s) with a %s fallback', (name, family, generic) => {
-      const value = tokens.get(name)
+    it.each(FONT_TOKENS)('declares %s as the full stack %s', (name, stack) => {
+      expect(tokens.get(name)).toBe(stack)
+    })
 
-      expect(value).toBeDefined()
-      expect(value).toMatch(new RegExp(`^var\\(${family}\\)\\s*,`))
-      expect(value?.endsWith(generic)).toBe(true)
+    it('declares no font family token outside the three documented stacks', () => {
+      const declared = [...tokens.keys()].filter((name) => name.startsWith('--font-'))
+      const documented = FONT_TOKENS.map(([name]) => name)
+
+      expect(declared.sort()).toEqual([...documented].sort())
+    })
+
+    it('declares no type scale step outside the documented scale', () => {
+      const declared = [...tokens.keys()].filter(
+        // Base steps only: `--text-h2` but not `--text-h2--line-height`.
+        (name) => name.startsWith('--text-') && !name.slice('--text-'.length).includes('--'),
+      )
+      const documented = TEXT_SCALE.map(([step]) => `--text-${step}`)
+
+      expect(declared.sort()).toEqual([...documented].sort())
     })
 
     it.each(TEXT_SCALE)(
@@ -140,8 +155,10 @@ describe('app/globals.css design tokens', () => {
     })
   })
 
-  // CLAUDE.md section 3: raw hex codes are forbidden — tokens only.
-  it('confines every raw hex colour to the @theme block', () => {
+  // Narrow on purpose: this only guards globals.css. CLAUDE.md section 3 bans
+  // raw hex across the whole codebase, and that is an ESLint rule's job
+  // (EPIC 2 task 2.7), not this file's.
+  it('declares raw hex colours only inside the @theme block', () => {
     const outsideTheme = declarations.replace(themeBlock ?? '', '')
 
     expect(outsideTheme).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)

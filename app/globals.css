@@ -39,13 +39,18 @@
    * --- Typography ---
    *
    * The three families are self-hosted and exposed on <html> as
-   * --font-archivo / --font-inter / --font-jetbrains-mono. Until that is in
-   * place the system fallbacks below carry the page, so nothing renders
-   * unstyled.
+   * --font-archivo / --font-inter / --font-jetbrains-mono.
+   *
+   * The generic sits *inside* var() on purpose. A var() reference to an
+   * undefined property invalidates the whole declaration at computed-value
+   * time, which would discard any fallback listed after it — so the stack has
+   * to survive from within the reference itself. That keeps the page readable
+   * before the families land, and keeps it readable if one of them ever fails
+   * to load.
    */
-  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-display: var(--font-archivo, ui-sans-serif), system-ui, sans-serif;
+  --font-sans: var(--font-inter, ui-sans-serif), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono, ui-monospace), monospace;
 
   /*
    * Type scale. Each step bundles size, leading, tracking and weight so that
