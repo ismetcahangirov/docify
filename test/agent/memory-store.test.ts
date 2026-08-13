@@ -1,5 +1,5 @@
-// The memory store is a Node script that touches the filesystem and node:sqlite,
-// so it is tested in the node environment rather than the project-wide jsdom one.
+// The memory store is a Node script that reads the filesystem directly, so it is
+// tested in the node environment rather than the project-wide jsdom one.
 // @vitest-environment node
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -8,25 +8,29 @@ import { join } from 'node:path'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { listEntries, renderMemoryIndex } from '../../.claude/hooks/lib/store.mjs'
+import { listEntries, parseEntry, renderMemoryIndex } from '../../.claude/hooks/lib/store.mjs'
 
 /**
  * The memory store is read on Windows, where entries reach the working tree with
  * CRLF endings — from an editor, from a hook writing at runtime, or from a clone
  * made before `.gitattributes` pinned `eol=lf`. Fixtures are written at runtime
  * rather than committed, because a committed CRLF file would be normalised back
- * to LF on checkout and this regression would stop being covered.
+ * to LF on checkout and this regression would stop being covered. The LF fixture
+ * is joined explicitly rather than written as a template literal, so it cannot
+ * inherit this file's own line endings and quietly stop being the LF case.
  */
-const ENTRY = `---
-name: monochrome-design-constraint
-description: The palette is monochrome by owner mandate
-type: constraint
-date: 2026-08-13
----
-
-Flat fill plus a 1px border, never a gradient.
-Second body line.
-`
+const ENTRY = [
+  '---',
+  'name: monochrome-design-constraint',
+  'description: The palette is monochrome by owner mandate',
+  'type: constraint',
+  'date: 2026-08-13',
+  '---',
+  '',
+  'Flat fill plus a 1px border, never a gradient.',
+  'Second body line.',
+  '',
+].join('\n')
 
 const CRLF_ENTRY = ENTRY.replace(/\n/g, '\r\n')
 
@@ -87,6 +91,43 @@ describe('listEntries frontmatter parsing', () => {
     expect(entry('crlf.md').body).toBe(
       'Flat fill plus a 1px border, never a gradient.\nSecond body line.',
     )
+  })
+
+  it('breaks date ties on filename, not on filesystem order', () => {
+    // All three fixtures share a date, so without a tie-break the order would be
+    // whatever readdirSync returns — sorted on NTFS, hashed on ext4.
+    expect(listEntries(dir).map((e) => e.file)).toEqual(['crlf.md', 'lf.md', 'mixed.md'])
+  })
+
+  it('reads the committed entries when called with no argument', () => {
+    const entries = listEntries()
+    expect(entries.length).toBeGreaterThan(0)
+    // Every committed entry carries frontmatter, so none may land on the fallbacks.
+    for (const e of entries) {
+      expect(e.description, `${e.file} lost its description`).not.toBe('')
+      expect(e.type, `${e.file} fell back to the default type`).not.toBe('note')
+    }
+  })
+})
+
+describe('parseEntry', () => {
+  it('survives a UTF-8 byte-order mark, which a PowerShell redirect leaves behind', () => {
+    expect(parseEntry(`\uFEFF${ENTRY}`, 'bom.md').type).toBe('constraint')
+  })
+
+  it('tolerates trailing whitespace on the fence lines', () => {
+    expect(parseEntry(ENTRY.replace(/^---$/gm, '--- '), 'loose.md').type).toBe('constraint')
+  })
+
+  it('falls back to the filename and type note only when there is no frontmatter', () => {
+    expect(parseEntry('Just a body.\n', 'orphan.md')).toEqual({
+      file: 'orphan.md',
+      name: 'orphan',
+      description: '',
+      type: 'note',
+      date: '',
+      body: 'Just a body.',
+    })
   })
 })
 

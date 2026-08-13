@@ -110,20 +110,24 @@ export function describeToolCall(toolName, toolInput = {}) {
   }
 }
 
+/** Machine-independent string order. localeCompare would depend on the runtime's ICU data. */
+const byString = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
+
 /**
  * Splits one entry file into its frontmatter fields and its body.
  *
- * Line endings are normalised to LF before anything is matched. Entries are
- * written by hooks at runtime and edited by hand on Windows, so a file may hold
- * CRLF whatever .gitattributes says about the checkout. Parsing CRLF text with
- * LF-only patterns fails silently — the frontmatter block does not match at all,
- * so every entry loses its description, falls back to type `note`, and carries
- * its own header into the body. Normalising once here is what keeps a trailing
- * `\r` from reaching any individual field.
+ * The file is normalised before anything is matched: a leading byte-order mark
+ * removed, then CR and CRLF folded to LF. Entries are written by hooks at
+ * runtime and edited by hand on Windows, so a file may hold CRLF whatever
+ * .gitattributes says about the checkout, and a PowerShell redirect leaves a
+ * BOM. Either one defeats an anchored `^---` and the failure is silent: the
+ * frontmatter block does not match at all, so the entry loses its description,
+ * falls back to type `note`, and carries its own header into the indexed body.
+ * Normalising once, here, is also what keeps a trailing `\r` off every field.
  */
 export function parseEntry(raw, file) {
-  const text = raw.replace(/\r\n?/g, '\n')
-  const fm = text.match(/^---\n([\s\S]*?)\n---\n?/)
+  const text = raw.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n')
+  const fm = text.match(/^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n?/)
   const meta = {}
   if (fm) {
     for (const line of fm[1].split('\n')) {
@@ -137,16 +141,21 @@ export function parseEntry(raw, file) {
     description: meta.description || '',
     type: meta.type || 'note',
     date: meta.date || '',
-    body: text.replace(/^---\n[\s\S]*?\n---\n?/, '').trim(),
+    body: (fm ? text.slice(fm[0].length) : text).trim(),
   }
 }
 
+/**
+ * Reads every entry, newest first. Ties break on filename so that two machines
+ * reading the same entries produce the same list — readdirSync order is
+ * filesystem-defined, and today every entry carries the same date.
+ */
 export function listEntries(dir = ENTRIES_DIR) {
-  ensureDirs()
+  if (dir === ENTRIES_DIR) ensureDirs()
   return readdirSync(dir)
     .filter((f) => f.endsWith('.md'))
     .map((f) => parseEntry(readFileSync(join(dir, f), 'utf8'), f))
-    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    .sort((a, b) => byString(b.date || '', a.date || '') || byString(a.file, b.file))
 }
 
 export function writeEntry({ name, description, type, date, body }) {
@@ -183,7 +192,7 @@ export function renderMemoryIndex(entries) {
   }
 
   const sections = [...byType.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
+    .sort(([a], [b]) => byString(a, b))
     .map(([type, items]) => {
       const rows = items.map((e) => `- [${e.name}](entries/${e.file}) — ${e.description}`).join('\n')
       return `## ${type}\n\n${rows}`
