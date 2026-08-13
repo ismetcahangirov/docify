@@ -1,18 +1,20 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  checkBudget,
   evaluateBudget,
   firstLoadEntries,
   formatBytes,
-  routeFromPageKey,
-} from '../scripts/bundle-budget.mjs'
+  unmappedPageKeys,
+} from '../scripts/bundle-budget/measure.mjs'
 
 /**
- * A trimmed copy of a real `.next/app-build-manifest.json`: one root layout,
- * a home page, a nested route and the not-found page. The shared runtime
- * chunks repeat across every entry, exactly as Next.js emits them.
+ * Shaped like a real `.next/app-build-manifest.json`, with the property the
+ * measurement depends on: a page entry does *not* repeat its ancestor layout's
+ * chunks, so they have to be unioned in. Includes a route group and a parallel
+ * route slot, neither of which exists in the app yet.
  */
-const MANIFEST = {
+const APP_BUILD_MANIFEST = {
   pages: {
     '/layout': [
       'static/chunks/webpack.js',
@@ -25,51 +27,68 @@ const MANIFEST = {
       'static/chunks/framework.js',
       'static/chunks/app/page.js',
     ],
+    '/(marketing)/layout': ['static/chunks/app/marketing/layout.js'],
+    '/(marketing)/about/page': ['static/chunks/webpack.js', 'static/chunks/app/about/page.js'],
     '/convert/layout': ['static/chunks/webpack.js', 'static/chunks/app/convert/layout.js'],
     '/convert/page': [
       'static/chunks/webpack.js',
       'static/chunks/framework.js',
       'static/chunks/app/convert/page.js',
     ],
-    '/_not-found/page': ['static/chunks/webpack.js', 'static/chunks/app/_not-found/page.js'],
+    '/@modal/photo/page': ['static/chunks/app/modal/photo/page.js'],
   },
 }
 
-describe('routeFromPageKey', () => {
-  it('maps the root page key to /', () => {
-    expect(routeFromPageKey('/page')).toBe('/')
-  })
+/** `next build` writes this as the authoritative entry-key -> route map. */
+const APP_PATH_ROUTES = {
+  '/page': '/',
+  '/(marketing)/about/page': '/about',
+  '/convert/page': '/convert',
+}
 
-  it('strips the trailing /page segment from nested routes', () => {
-    expect(routeFromPageKey('/convert/page')).toBe('/convert')
-    expect(routeFromPageKey('/tools/pdf/page')).toBe('/tools/pdf')
-  })
-})
+const entriesByRoute = new Map(
+  firstLoadEntries(APP_BUILD_MANIFEST, APP_PATH_ROUTES).map((entry) => [entry.route, entry.files]),
+)
 
 describe('firstLoadEntries', () => {
-  const entries = firstLoadEntries(MANIFEST)
-  const byRoute = new Map(entries.map((entry) => [entry.route, entry.files]))
-
-  it('returns one entry per page, keyed by route', () => {
-    expect([...byRoute.keys()].sort()).toEqual(['/', '/_not-found', '/convert'])
+  it('reports the route users visit, not the build entry key', () => {
+    expect([...entriesByRoute.keys()].sort()).toEqual(['/', '/about', '/convert'])
   })
 
   it('includes the chunks of every ancestor layout', () => {
-    expect(byRoute.get('/convert')).toContain('static/chunks/app/layout.js')
-    expect(byRoute.get('/convert')).toContain('static/chunks/app/convert/layout.js')
+    expect(entriesByRoute.get('/convert')).toContain('static/chunks/app/layout.js')
+    expect(entriesByRoute.get('/convert')).toContain('static/chunks/app/convert/layout.js')
+  })
+
+  it('resolves a route group layout, which shares no path prefix with the route', () => {
+    expect(entriesByRoute.get('/about')).toContain('static/chunks/app/marketing/layout.js')
   })
 
   it('does not leak a nested layout into a sibling route', () => {
-    expect(byRoute.get('/')).not.toContain('static/chunks/app/convert/layout.js')
+    expect(entriesByRoute.get('/')).not.toContain('static/chunks/app/convert/layout.js')
   })
 
   it('counts a shared chunk once even though every entry lists it', () => {
-    const webpackChunks = byRoute.get('/')?.filter((file) => file === 'static/chunks/webpack.js')
-    expect(webpackChunks).toHaveLength(1)
+    const webpack = entriesByRoute.get('/')?.filter((file) => file === 'static/chunks/webpack.js')
+    expect(webpack).toHaveLength(1)
   })
 
   it('measures JavaScript only, since the budget is a JS budget', () => {
-    expect(byRoute.get('/')).not.toContain('static/css/app.css')
+    expect(entriesByRoute.get('/')).not.toContain('static/css/app.css')
+  })
+
+  it('does not invent a route for a parallel route slot', () => {
+    expect([...entriesByRoute.keys()]).not.toContain('/@modal/photo')
+  })
+})
+
+describe('unmappedPageKeys', () => {
+  it('names the page entries no route claims, so they are not silently dropped', () => {
+    expect(unmappedPageKeys(APP_BUILD_MANIFEST, APP_PATH_ROUTES)).toEqual(['/@modal/photo/page'])
+  })
+
+  it('is empty when every page entry maps to a route', () => {
+    expect(unmappedPageKeys({ pages: { '/page': [] } }, { '/page': '/' })).toEqual([])
   })
 })
 
@@ -95,14 +114,52 @@ describe('evaluateBudget', () => {
     ])
   })
 
-  it('treats a route sitting exactly on the budget as passing', () => {
-    const result = evaluateBudget([{ route: '/', files: ['a.js'] }], sizeOf, 100_000)
-    expect(result.ok).toBe(true)
+  it('treats the budget as an inclusive maximum', () => {
+    expect(evaluateBudget([{ route: '/', files: ['a.js'] }], sizeOf, 100_000).ok).toBe(true)
+    expect(evaluateBudget([{ route: '/', files: ['a.js'] }], sizeOf, 99_999).ok).toBe(false)
   })
 
   it('sorts the heaviest route first so the report leads with the worst case', () => {
     const result = evaluateBudget(entries, sizeOf, 200_000)
     expect(result.routes.map((route) => route.route)).toEqual(['/convert', '/'])
+  })
+})
+
+describe('checkBudget', () => {
+  const sizeOf = () => 10_000
+
+  it('reports no problem when the build fits', () => {
+    const result = checkBudget({
+      appBuildManifest: APP_BUILD_MANIFEST,
+      appPathRoutes: APP_PATH_ROUTES,
+      sizeOf,
+      maxBytes: 120_000,
+    })
+    expect(result.ok).toBe(true)
+    expect(result.problem).toBeNull()
+  })
+
+  it('names the offending routes in the failure message', () => {
+    const result = checkBudget({
+      appBuildManifest: APP_BUILD_MANIFEST,
+      appPathRoutes: APP_PATH_ROUTES,
+      sizeOf,
+      maxBytes: 30_000,
+    })
+    expect(result.ok).toBe(false)
+    expect(result.problem).toContain('/convert')
+    expect(result.problem).toContain('dynamic import()')
+  })
+
+  it('fails rather than passes when there is nothing to measure', () => {
+    const result = checkBudget({
+      appBuildManifest: { pages: {} },
+      appPathRoutes: {},
+      sizeOf,
+      maxBytes: 120_000,
+    })
+    expect(result.ok).toBe(false)
+    expect(result.problem).toContain('no routes')
   })
 })
 
