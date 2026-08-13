@@ -27,6 +27,9 @@ import type { ProgressCallback } from '@/lib/engines/types'
  */
 export const PROGRESS_INTERVAL_MS = 250
 
+/** `lib/engines/types.ts`'s "working, but I cannot say how far along". */
+const INDETERMINATE = -1
+
 export interface ProgressRelay {
   /** Records a tick from the engine. Cheap, and safe to call in a tight loop. */
   report(progress: number): void
@@ -53,11 +56,19 @@ export function createProgressRelay(
   emit: ProgressCallback,
   intervalMs: number = PROGRESS_INTERVAL_MS,
 ): ProgressRelay {
-  /** The newest value the engine has reported, emitted or not. */
-  let current: number | null = null
+  /**
+   * The newest value there is to send.
+   *
+   * It starts at the indeterminate marker rather than at nothing, because the
+   * relay is built before the engine is — the window it has to cover first is
+   * the one where a WASM binary is downloading and the only honest answer is
+   * "working, cannot say how far".
+   */
+  let current = INDETERMINATE
   /** Whether `current` still has to reach the other side. */
   let unsent = false
-  let heartbeat: ReturnType<typeof setInterval> | null = null
+  /** Whether the engine has reported at all yet. */
+  let measured = false
   let stopped = false
 
   const send = (value: number): void => {
@@ -65,19 +76,25 @@ export function createProgressRelay(
     emit(value)
   }
 
+  // Started here and not on the first tick: an engine that spends ten seconds
+  // loading before it can measure anything would otherwise leave the stream
+  // silent for exactly as long as the user is most likely to think it hung.
+  let heartbeat: ReturnType<typeof setInterval> | null = setInterval(
+    () => send(current),
+    intervalMs,
+  )
+
   return {
     report(progress) {
       if (stopped) return
       current = progress
 
-      // The first tick opens the window and goes out immediately: waiting a
-      // quarter of a second to admit that work has started is the one delay the
-      // user actually notices.
-      if (heartbeat === null) {
+      // The first real tick goes out at once: having just told the UI it cannot
+      // measure anything, waiting another quarter second to correct that is the
+      // one delay a user actually notices.
+      if (!measured) {
+        measured = true
         send(progress)
-        heartbeat = setInterval(() => {
-          if (current !== null) send(current)
-        }, intervalMs)
         return
       }
 
@@ -93,7 +110,7 @@ export function createProgressRelay(
         heartbeat = null
       }
 
-      if (unsent && current !== null) send(current)
+      if (unsent) send(current)
     },
   }
 }

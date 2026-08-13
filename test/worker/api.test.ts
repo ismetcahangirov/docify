@@ -392,6 +392,64 @@ describe('progress', () => {
     expect(released).toHaveBeenCalledTimes(1)
   })
 
+  it('releases the callback proxy of a job refused for a duplicate id', async () => {
+    const released = vi.fn()
+    const api = createConversionApi(loaderFor(new PumpedRunner()))
+
+    void api.convert(
+      requestFor('duplicate'),
+      progressCallback(() => {}),
+    )
+    await settle()
+    const refused = api.convert(
+      requestFor('duplicate'),
+      progressCallback(() => {}, released),
+    )
+
+    await expect(refused).rejects.toThrow(/duplicate/)
+    expect(released).toHaveBeenCalledTimes(1)
+  })
+
+  it('goes quiet the moment a job is cancelled, rather than when its engine unwinds', async () => {
+    const seen: number[] = []
+    const runner = new PumpedRunner()
+    const api = createConversionApi(loaderFor(runner))
+    const result = api.convert(
+      requestFor('a'),
+      progressCallback((p) => void seen.push(p)),
+    )
+    await settle()
+
+    const before = seen.length
+    api.cancel('a')
+    vi.advanceTimersByTime(PROGRESS_INTERVAL_MS * 3)
+
+    // A bar still ticking along after the user pressed cancel says the click
+    // did nothing.
+    expect(seen).toHaveLength(before)
+    expect(vi.getTimerCount()).toBe(0)
+
+    await runner.pump(1)
+    await expect(result).rejects.toThrow()
+  })
+
+  it('survives a callback that throws, because a tick must never fail a job', async () => {
+    const api = createConversionApi(
+      loaderFor({
+        run: async (_input, _signal, onProgress) => {
+          onProgress(0.5)
+          return new Blob(['out'])
+        },
+      }),
+    )
+
+    const angry = progressCallback(() => {
+      throw new Error('the UI blew up rendering a progress bar')
+    })
+
+    await expect(api.convert(requestFor('a'), angry)).resolves.toBeInstanceOf(Blob)
+  })
+
   it('releases the callback proxy after a cancelled job as well', async () => {
     const released = vi.fn()
     const runner = new PumpedRunner()

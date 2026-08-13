@@ -53,17 +53,23 @@ export function createJobId(): string {
  * engine that cannot measure itself is working, at least every 250 ms; it is
  * advisory once `result` has settled.
  *
- * Starts the worker on first use, so calling it during server rendering throws
- * the same explanatory error `ensureWorker()` does.
+ * Never throws: every way a job can fail — including being called during
+ * server rendering, where there is no `Worker` to start — arrives as a
+ * rejection of `result`.
  */
 export function startConversion(
   request: ConvertRequest,
   onProgress?: ProgressCallback,
 ): RunningJob {
   const jobId = request.jobId ?? createJobId()
-  const api = ensureWorker()
 
   const result = new Promise<Blob>((resolve, reject) => {
+    // Inside the executor — which runs synchronously, so the worker still
+    // starts before this function returns — because a caller should have one
+    // place to handle failure. `ensureWorker()` throwing during server
+    // rendering would otherwise be the single case that arrives as a throw
+    // while every other way a job can fail arrives on `result`.
+    const api = ensureWorker()
     trackPendingJob(jobId, reject)
 
     // The record is dropped *before* the caller's promise settles, not in a

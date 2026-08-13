@@ -29,12 +29,14 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 const WORKER_ENTRY = 'lib/worker/conversion.worker.ts'
 const CLIENT = 'lib/worker/client.ts'
+const JOBS = 'lib/worker/jobs.ts'
 
 /** Anything whose presence in the worker chunk would mean an engine leaked in. */
 const HEAVY_PACKAGE = /wasm|ffmpeg|vips|heif|heic|pdf|mp4box|fflate|libarchive|canvas|jszip/i
 
 const workerGraph = staticGraphOf(WORKER_ENTRY, repoRoot)
 const clientGraph = staticGraphOf(CLIENT, repoRoot)
+const jobsGraph = staticGraphOf(JOBS, repoRoot)
 
 describe('the walker, on the shapes that could hide a leak', () => {
   const LEAK = './engines/ffmpeg'
@@ -138,6 +140,16 @@ describe('the main-thread client', () => {
   it('reaches no engine and no WASM package either', () => {
     expect(clientGraph.files.filter((file) => file.startsWith('lib/engines/'))).toEqual([])
     expect(clientGraph.packages.filter((name) => HEAVY_PACKAGE.test(name))).toEqual([])
+  })
+
+  it('reaches no engine from the module the UI imports either', () => {
+    // `jobs.ts` is what a component will `import` to start a conversion, which
+    // makes it the likeliest place for someone to reach for an engine directly
+    // and pull a WASM binary into the page's own chunk.
+    expect(jobsGraph.packages).toContain('comlink')
+    expect(jobsGraph.files.filter((file) => file.startsWith('lib/engines/'))).toEqual([])
+    expect(jobsGraph.packages.filter((name) => HEAVY_PACKAGE.test(name))).toEqual([])
+    expect(jobsGraph.files).not.toContain(WORKER_ENTRY)
   })
 
   it('names the worker in the literal form Turbopack and webpack can statically resolve', () => {

@@ -137,6 +137,35 @@ describe('startConversion', () => {
     expect(seen).toEqual([0.5])
   })
 
+  it('is unmoved by a progress handler that throws on the main thread', async () => {
+    const runner = new ControlledRunner()
+    const { startConversion } = await loadWorker({ canvas: runner })
+
+    const { result } = startConversion(requestFor(), () => {
+      throw new Error('the UI blew up rendering a progress bar')
+    })
+    await flush()
+    runner.complete()
+
+    // The rejection travels back over the callback's own port. Unhandled it is
+    // swallowed noise at best, and an `error` event that costs the whole worker
+    // at worst.
+    await expect(result).resolves.toBeDefined()
+  })
+
+  it('reports a call made during server rendering on the promise, not as a throw', async () => {
+    const { startConversion } = await loadWorker({})
+    vi.stubGlobal('Worker', undefined)
+
+    let result: Promise<Blob> | undefined
+    const start = () => {
+      result = startConversion(requestFor()).result
+    }
+
+    expect(start).not.toThrow()
+    await expect(result).rejects.toThrow(/browser/i)
+  })
+
   it('mints a job id, so every job can be cancelled', async () => {
     const runner = new ControlledRunner()
     const { startConversion } = await loadWorker({ canvas: runner })

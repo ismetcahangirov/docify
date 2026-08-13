@@ -21,6 +21,28 @@ afterEach(() => {
 })
 
 describe('the progress relay', () => {
+  it('reports indeterminate before the engine has said anything', () => {
+    const sent: number[] = []
+    createProgressRelay((p) => void sent.push(p))
+
+    vi.advanceTimersByTime(PROGRESS_INTERVAL_MS * 3)
+
+    // The window between "job started" and "engine produced its first tick" is
+    // the longest one there is — a 32 MB WASM download lives in it — so it is
+    // the last place the stream may go quiet.
+    expect(sent).toEqual([-1, -1, -1])
+  })
+
+  it('switches from indeterminate to the real value as soon as one arrives', () => {
+    const sent: number[] = []
+    const relay = createProgressRelay((p) => void sent.push(p))
+
+    vi.advanceTimersByTime(PROGRESS_INTERVAL_MS)
+    relay.report(0.2)
+
+    expect(sent).toEqual([-1, 0.2])
+  })
+
   it('sends the first tick straight through, so the UI moves the moment work starts', () => {
     const sent: number[] = []
     const relay = createProgressRelay((p) => void sent.push(p))

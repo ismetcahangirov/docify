@@ -54,6 +54,13 @@ export function releasePendingJob(jobId: string): void {
  * Called when the worker goes away — deliberately or by crashing. Rejecting a
  * promise that has already settled is a no-op, so a job that finished in the
  * same tick keeps its result.
+ *
+ * What this cannot recover is the `MessagePort` pair behind each job's progress
+ * callback: the worker releases those when a job settles, and a worker that has
+ * been terminated will never settle anything. Comlink keeps the main thread's
+ * end inside its transfer handler and offers no handle to close it, so the
+ * ports of the jobs alive at termination are lost. Bounded by how many were
+ * running, and the alternative — not killing a wedged worker — is worse.
  */
 export function rejectPendingJobs(reason: unknown): void {
   const reasons = [...pending.values()]

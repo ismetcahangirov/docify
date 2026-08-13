@@ -61,7 +61,13 @@ export class FakeWorker implements Comlink.Endpoint {
   }
 
   removeEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
-    if (type === 'message') this.channel.port1.removeEventListener(type, listener)
+    if (type === 'message') {
+      this.channel.port1.removeEventListener(type, listener)
+      return
+    }
+
+    const at = this.failureListeners.indexOf(listener as EventListener)
+    if (at !== -1) this.failureListeners.splice(at, 1)
   }
 
   terminate(): void {

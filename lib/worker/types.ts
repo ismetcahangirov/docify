@@ -50,6 +50,10 @@ export interface ConvertRequest extends EngineInput {
  * The worker releases the proxy when the job settles — each transfer costs a
  * port pair, and a session's worth of unreleased ports is a leak — so a given
  * proxy belongs to exactly one job.
+ *
+ * This describes the *sending* side. What arrives in the worker is a
+ * `Remote<ProgressCallback>`: calling it posts a message and returns a promise
+ * rather than nothing, so the worker treats every tick as fallible.
  */
 export type RemoteProgressCallback = ProgressCallback & ProxyMarked
 

@@ -10,7 +10,7 @@
 
 import { releaseProxy } from 'comlink'
 
-import type { EngineRunner } from '@/lib/engines/types'
+import type { EngineRunner, ProgressCallback } from '@/lib/engines/types'
 import type { EngineId } from '@/lib/router/types'
 
 import { ConversionCancelledError } from './errors'
@@ -51,18 +51,23 @@ export function createConversionApi(loadRunner: RunnerLoader = loadEngineRunner)
     async convert(request, onProgress) {
       const { jobId } = request
       const controller = new AbortController()
+      const relay = onProgress === undefined ? null : createProgressRelay(deliver(onProgress))
 
-      // Registered before the first `await`, which is what makes the obvious
-      // race safe: a `cancel()` posted immediately after `convert()` is
-      // delivered second, and by then this line has already run.
-      //
-      // Outside the try/finally on purpose — a refused duplicate must not run
-      // the teardown belonging to the job that already owns the id.
-      if (jobId !== undefined) jobs.register(jobId, controller)
-
-      const relay = onProgress === undefined ? null : createProgressRelay(onProgress)
+      // Nothing more is reported once the user has cancelled: a bar that keeps
+      // ticking while the engine unwinds says the click did nothing.
+      controller.signal.addEventListener('abort', () => relay?.stop(), { once: true })
 
       try {
+        // Registered before the first `await`, which is what makes the obvious
+        // race safe: a `cancel()` posted immediately after `convert()` is
+        // delivered second, and by then this line has already run.
+        //
+        // Inside the try so that a refused duplicate still runs the teardown
+        // below — it has a progress proxy of its own to release. Evicting the
+        // incumbent is not a risk: `release` matches on the controller, and a
+        // refused job's is not the one in the registry.
+        if (jobId !== undefined) jobs.register(jobId, controller)
+
         const runner = await loadRunner(request.engine)
 
         // Engines take seconds to download. Cancelling during that window is
@@ -117,6 +122,29 @@ async function loadEngineRunner(engine: EngineId): Promise<EngineRunner> {
 
 function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted) throw new ConversionCancelledError()
+}
+
+/**
+ * Wraps the caller's callback so that delivering a tick can never fail a job.
+ *
+ * The type says `ProgressCallback`, but inside the worker the value is a
+ * Comlink proxy: calling it posts a message and returns a promise that rejects
+ * if the main thread's handler throws. Unhandled, that rejection is at best
+ * swallowed noise in the worker and at worst — the platform is inconsistent
+ * here — an `error` event on the parent's `Worker` object, which `client.ts`
+ * treats as fatal. A `setState` on an unmounted component would then take down
+ * the conversion.
+ *
+ * `new Promise(...)` rather than `Promise.resolve(...)` because it catches the
+ * synchronous throw too, which is what a locally supplied callback does.
+ *
+ * Progress is advisory: the job's own result is the thing that matters, so a
+ * tick that cannot be delivered is dropped rather than escalated.
+ */
+function deliver(onProgress: RemoteProgressCallback): ProgressCallback {
+  return (progress) => {
+    void new Promise<void>((resolve) => resolve(onProgress(progress))).catch(() => {})
+  }
 }
 
 /**
