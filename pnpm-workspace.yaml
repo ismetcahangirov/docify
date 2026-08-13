@@ -1,0 +1,7 @@
+# pnpm refuses to install while a dependency's build script is neither approved
+# nor denied, so the decision is explicit and checked in.
+#   sharp          — Next.js image optimisation (native binding)
+#   unrs-resolver  — module resolver used by eslint-config-next (native binding)
+allowBuilds:
+  sharp: true
+  unrs-resolver: true
