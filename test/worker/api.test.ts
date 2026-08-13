@@ -120,10 +120,19 @@ describe('convert', () => {
     await expect(api.convert(requestFor('a'))).resolves.toBeInstanceOf(Blob)
   })
 
-  it('still has no engine behind it when no loader is supplied', async () => {
+  it('resolves the real runner for an engine that has landed, without a loader', async () => {
     const api = createConversionApi()
 
-    await expect(api.convert(requestFor('a'))).rejects.toThrow(/canvas/)
+    // The canvas runner loads (it is plain JS, no WASM) and then fails on the
+    // browser APIs jsdom does not have. Reaching that failure is the point: it
+    // proves the default loader found the engine rather than rejecting the id.
+    await expect(api.convert(requestFor('a'))).rejects.not.toThrow(/no runner is registered/i)
+  })
+
+  it('still has no engine behind an id whose runner has not landed', async () => {
+    const api = createConversionApi()
+
+    await expect(api.convert(requestFor('a', 'ffmpeg'))).rejects.toThrow(/ffmpeg/)
   })
 
   it('refuses a job id that another running job already holds', async () => {

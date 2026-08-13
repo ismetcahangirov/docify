@@ -15,10 +15,9 @@
  * Runners are reached exclusively through `dynamic import()` inside the
  * conversion worker, and only after the router has picked the engine.
  *
- * `ENGINES` is empty until the first engine lands, which is the correct
- * behaviour rather than a placeholder: with no candidates, the router rejects
- * every non-empty task with `UNSUPPORTED_PAIR`. (An empty file is caught one
- * step earlier, as `EMPTY_INPUT`.)
+ * A task no registered engine claims is rejected as `UNSUPPORTED_PAIR`, which is
+ * also what the list answered for everything while it was still empty. (An empty
+ * file is caught one step earlier, as `EMPTY_INPUT`.)
  *
  * ## Registering a new engine
  *
@@ -37,6 +36,7 @@
  * 9. Run `pnpm size` and confirm the initial bundle did not grow.
  */
 
+import { descriptor as canvas } from '@/lib/engines/canvas'
 import type { EngineDescriptor } from '@/lib/engines/types'
 import type { Capabilities, ConversionTask, EngineId } from '@/lib/router/types'
 
@@ -44,7 +44,7 @@ import type { Capabilities, ConversionTask, EngineId } from '@/lib/router/types'
  * Every known engine, in registration order. Frozen so that an in-place sort by
  * one consumer cannot be felt by the router, the worker or the UI.
  */
-export const ENGINES: readonly EngineDescriptor[] = Object.freeze([])
+export const ENGINES: readonly EngineDescriptor[] = Object.freeze([canvas])
 
 /**
  * Orders two engines by how much we want to run them: `priority` ascending

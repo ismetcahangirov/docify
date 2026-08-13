@@ -32,8 +32,16 @@ const order = (engines: readonly EngineDescriptor[]): string[] =>
   [...engines].sort(byPreference).map((engine) => engine.id)
 
 describe('ENGINES', () => {
-  it('is still empty, because no engine has landed yet', () => {
-    expect(ENGINES).toEqual([])
+  it('gives every registered engine a whole set of routing numbers', () => {
+    // Deliberately not a list of ids: engines land one issue at a time, and a
+    // hard-coded roster would make each new one break this suite. What has to
+    // hold is that whatever is registered is routable.
+    for (const engine of ENGINES) {
+      expect(engine.label.length).toBeGreaterThan(0)
+      expect(engine.priority).toBeGreaterThan(0)
+      expect(engine.loadCost).toBeGreaterThanOrEqual(0)
+      expect(typeof engine.supports).toBe('function')
+    }
   })
 
   it('is frozen, so one consumer cannot reorder the list another is reading', () => {
@@ -83,9 +91,14 @@ describe('byPreference', () => {
 })
 
 describe('enginesFor', () => {
-  it('finds no candidate for any task while the registry is empty', () => {
-    expect(enginesFor(jpgToPng, desktop)).toEqual([])
-    expect(enginesFor({ from: 'mp4', to: 'webm', op: 'convert' }, desktop)).toEqual([])
+  it('finds no candidate for a task no registered engine claims', () => {
+    expect(enginesFor({ from: 'rar', to: 'mp4', op: 'convert' }, desktop)).toEqual([])
+  })
+
+  it('returns them in preference order, best candidate first', () => {
+    const candidates = enginesFor(jpgToPng, desktop)
+
+    expect([...candidates].sort(byPreference)).toEqual(candidates)
   })
 
   it('returns a fresh array, so a caller sorting the result cannot touch ENGINES', () => {
@@ -96,7 +109,10 @@ describe('enginesFor', () => {
 describe('getEngine', () => {
   it('returns undefined for an id no engine has claimed yet', () => {
     expect(getEngine('ffmpeg')).toBeUndefined()
-    expect(getEngine('canvas')).toBeUndefined()
+  })
+
+  it('finds a registered engine by its id', () => {
+    for (const engine of ENGINES) expect(getEngine(engine.id)).toBe(engine)
   })
 
   it('constrains the id to the EngineId union', () => {
