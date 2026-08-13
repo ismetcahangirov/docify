@@ -1,8 +1,8 @@
 name: Epic
 description: A large body of work tracked through sub-issues
-title: "EPIC: <name>"
-labels: ["type:epic"]
-assignees: ["ismetcahangirov"]
+title: 'EPIC: <name>'
+labels: ['type:epic']
+assignees: ['ismetcahangirov']
 body:
   - type: textarea
     id: goal

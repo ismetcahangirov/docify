@@ -1,0 +1,19 @@
+# Prettier already honours .gitignore, so every generated directory listed
+# there — .next/, out/, build/, dist/, coverage/, node_modules/ — is excluded
+# without being repeated here. Only the extra rules live in this file.
+
+# Checked in, but machine-generated.
+pnpm-lock.yaml
+
+# Agent infrastructure, not application code. The scripts in `.claude/hooks/`
+# and the notes under `.claude/memory/` are written — and rewritten — by the
+# hooks themselves under their own conventions. Formatting them produces churn
+# unrelated to the app. Mirrored in the `ignores` list of eslint.config.mjs.
+# See issue #7.
+.claude/
+
+# Markdown is deliberately out of the enforced format surface for now.
+# Prettier realigns every Markdown table, which would rewrite CLAUDE.md,
+# README.md and the plan document wholesale and collide with the branches
+# currently open against EPIC 1. The one-off sweep is tracked in issue #111.
+*.md

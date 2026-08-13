@@ -188,6 +188,8 @@ pnpm test             # unit tests (Vitest)
 pnpm test:watch       # watch mode
 pnpm e2e              # Playwright
 pnpm lint             # ESLint
+pnpm format           # Prettier, writes
+pnpm format:check     # Prettier, verifies only — part of the CI lint job
 pnpm typecheck        # tsc --noEmit
 pnpm size             # bundle budget check
 ```
