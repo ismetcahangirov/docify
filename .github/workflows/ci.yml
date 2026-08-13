@@ -112,15 +112,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Playwright itself is added in the e2e setup task; until then there is no
-      # browser to install and `pnpm e2e` is a stub.
-      - name: Install Playwright browsers
-        run: |
-          if [ -x node_modules/.bin/playwright ]; then
-            pnpm exec playwright install --with-deps chromium
-          else
-            echo "::notice::Playwright is not installed yet — skipping browser download."
-          fi
+      - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm e2e
       - uses: actions/upload-artifact@v4
         if: failure()
