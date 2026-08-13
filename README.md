@@ -112,6 +112,11 @@ pnpm typecheck    # type check
 pnpm size         # bundle budget check
 ```
 
+> **Temporary:** `pnpm test` and `pnpm e2e` currently run `scripts/ci-stub.mjs`, a
+> placeholder that prints a notice and exits 0 so the CI pipeline stays wired up while
+> the harnesses are built. Vitest replaces the unit stub, Playwright replaces the e2e
+> stub, and `pnpm size` arrives with the bundle budget task.
+
 ### Environment variables
 
 All optional — the app is fully functional without them.

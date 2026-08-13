@@ -1,0 +1,7 @@
+@import 'tailwindcss';
+
+/*
+ * Intentionally minimal. The Docify design tokens (@theme palette, display
+ * font, radii, typography scale) are introduced with the design system in
+ * EPIC 2 — see CLAUDE.md section 3.
+ */
