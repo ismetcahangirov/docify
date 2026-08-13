@@ -1,78 +1,19 @@
 /**
  * The worker shell, exercised end to end without a browser.
  *
- * jsdom has no `Worker`, so these tests install `FakeWorker` in its place. The
- * fake is not a mock of the API: it wires a real `MessageChannel` to the real
+ * jsdom has no `Worker`, so these tests install the `FakeWorker` from
+ * `./fake-worker` in its place: a real `MessageChannel` wired to a real
  * `createConversionApi()` through real Comlink, so a `ping()` here travels the
  * same serialise → post → dispatch → reply path it takes in a browser. Only the
  * thread boundary is simulated.
  */
 
-import * as Comlink from 'comlink'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createConversionApi } from '@/lib/worker/api'
+import { type FakeWorkerHandle, installFakeWorker } from './fake-worker'
 
-/** Records what `client.ts` asked for, so the construction contract is testable. */
-interface SpawnRecord {
-  url: string
-  options: WorkerOptions | undefined
-}
-
-const spawns: SpawnRecord[] = []
-const live: FakeWorker[] = []
-
-/**
- * Stands in for a real module worker.
- *
- * `port2` hosts the conversion API and `port1` is the main-thread end, so
- * `'message'` traffic is forwarded straight to it. A `MessagePort` only starts
- * delivering to `addEventListener` after `start()`, which a real `Worker` does
- * implicitly — hence the call in the constructor.
- *
- * `'error'` and `'messageerror'` are *not* port events: a real `Worker` fires
- * them at the worker object itself when the entry chunk fails to load or throws
- * while evaluating. They are kept in a separate registry so `fail()` can
- * reproduce that, which is the one worker failure mode Comlink cannot surface —
- * it leaves every pending call unsettled forever.
- */
-class FakeWorker implements Comlink.Endpoint {
-  private readonly channel = new MessageChannel()
-  private readonly failureListeners: EventListener[] = []
-  terminated = false
-
-  constructor(url: string | URL, options?: WorkerOptions) {
-    spawns.push({ url: String(url), options })
-    live.push(this)
-    Comlink.expose(createConversionApi(), this.channel.port2)
-    this.channel.port1.start()
-  }
-
-  postMessage(message: unknown, transfer: Transferable[] = []): void {
-    this.channel.port1.postMessage(message, transfer)
-  }
-
-  addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
-    if (type === 'message') this.channel.port1.addEventListener(type, listener)
-    else this.failureListeners.push(listener as EventListener)
-  }
-
-  removeEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
-    if (type === 'message') this.channel.port1.removeEventListener(type, listener)
-  }
-
-  terminate(): void {
-    this.terminated = true
-    this.channel.port1.close()
-    this.channel.port2.close()
-  }
-
-  /** Reproduces "the worker chunk 404s" or "the entry threw on evaluation". */
-  fail(): void {
-    const event = new Event('error')
-    for (const listener of this.failureListeners) listener(event)
-  }
-}
+let spawns: FakeWorkerHandle['spawns']
+let live: FakeWorkerHandle['live']
 
 /**
  * `client.ts` keeps the worker in module scope, so every test needs a pristine
@@ -84,9 +25,7 @@ async function loadClient() {
 }
 
 beforeEach(() => {
-  spawns.length = 0
-  live.length = 0
-  vi.stubGlobal('Worker', FakeWorker)
+  ;({ spawns, live } = installFakeWorker())
 })
 
 afterEach(() => {

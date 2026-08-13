@@ -8,7 +8,9 @@
  * type, the two would collapse into one.
  */
 
-import type { EngineInput } from '@/lib/engines/types'
+import type { ProxyMarked } from 'comlink'
+
+import type { EngineInput, ProgressCallback } from '@/lib/engines/types'
 import type { EngineId } from '@/lib/router/types'
 
 /**
@@ -20,47 +22,78 @@ import type { EngineId } from '@/lib/router/types'
  */
 export interface ConvertRequest extends EngineInput {
   engine: EngineId
+  /**
+   * The name the main thread will use to cancel this job.
+   *
+   * Caller-minted, because it has to be known *before* `convert()` settles — an
+   * id learnt from the return value would arrive after the only moment it could
+   * have been useful. Optional, and the consequence of leaving it out is
+   * precise: the job runs exactly as it would otherwise, but nothing can reach
+   * it afterwards, so `cancel()` can never stop it. `startConversion()` in
+   * `./jobs` therefore always supplies one.
+   *
+   * Must be unique among the jobs currently in flight; the worker refuses a
+   * duplicate rather than letting a second job make the first uncancellable.
+   */
+  jobId?: string
 }
+
+/**
+ * A progress callback as it must be handed across the boundary.
+ *
+ * Functions are not structured-cloneable, so a bare one thrown at
+ * `postMessage` fails with a `DataCloneError` on the first tick. Comlink's
+ * answer is `Comlink.proxy(fn)`, which marks the function and transfers a
+ * `MessagePort` in its place; requiring the mark in the type turns "forgot to
+ * wrap it" from a runtime failure at an awkward moment into a compile error.
+ *
+ * The worker releases the proxy when the job settles — each transfer costs a
+ * port pair, and a session's worth of unreleased ports is a leak — so a given
+ * proxy belongs to exactly one job.
+ */
+export type RemoteProgressCallback = ProgressCallback & ProxyMarked
 
 /**
  * What `Comlink.expose()` publishes from the worker and `Comlink.wrap()` returns
  * on the main thread. Comlink makes every method async on the remote side, so a
  * synchronous `ping()` here is `() => Promise<'pong'>` to the caller.
  *
- * ### Seam for issue #28 (progress + cancellation)
+ * ### How cancellation crosses
  *
- * `convert()` deliberately takes the request and nothing else for now. Neither
- * half of the progress/cancel protocol can be expressed with a plain argument,
- * so #28 owns both decisions:
+ * An `AbortSignal` is not cloneable, and it travels the wrong way besides: the
+ * main thread has to reach a job that is *already running*. So the signal never
+ * crosses at all. The worker mints the `AbortController`, keeps it under the
+ * caller's `jobId`, and `cancel(jobId)` — an ordinary second call — is what
+ * aborts it. `convert()` keeps resolving with the `Blob`.
  *
- * - **Progress.** A `ProgressCallback` is a function, and functions are not
- *   structured-cloneable. It has to cross as `Comlink.proxy(onProgress)` and be
- *   typed as `ProxyOrClone<ProgressCallback>`, which turns every engine tick
- *   into a round trip — so the 250 ms floor from `lib/engines/types.ts` is a
- *   throttling requirement on the worker side, not a UI concern.
- * - **Cancellation.** An `AbortSignal` is not cloneable either, and it travels
- *   the wrong way: the main thread has to reach a job that is already running.
- *   That needs a job identity plus a sibling `cancel(jobId)` which aborts the
- *   `AbortController` the worker owns for that job. Keep `convert()` resolving
- *   with the `Blob`: a caller-minted `jobId?: string` added to `ConvertRequest`
- *   below gets the identity across without changing the return type, whereas
- *   *returning* an id would break every caller. Terminating the worker is the
- *   blunt fallback and throws away the warm engine, so it should stay the last
- *   resort rather than the mechanism.
- *
- * Taken that way both additions are backwards compatible — an optional
- * parameter and an optional field — and nothing here has to be unpicked first.
- *
- * One gap this shell knowingly leaves open, because closing it needs the job
- * registry that #28 introduces: `terminateWorker()` abandons in-flight calls
- * rather than rejecting them, so their promises never settle and the caller's
- * `Blob`s stay reachable. Nothing long-running exists yet — `convert()` throws
- * immediately — but the first real engine makes it a leak, and the registry
- * that backs `cancel(jobId)` is exactly what is needed to reject them.
+ * That cooperative path is the one every engine must honour, and the only one
+ * that keeps the worker and its warm engine alive. It works because the abort
+ * can be *received*: the worker's message loop has to be free to run the
+ * `cancel` call. An engine that disappears into a single synchronous WASM
+ * call — single-threaded ffmpeg.wasm on a long GOP, wasm-vips on a large TIFF —
+ * never yields, so the message waits in the queue and the abort lands only
+ * after the work it was meant to stop has already finished. For those the only
+ * real stop is `terminateWorker()`, which kills the thread outright and throws
+ * away the loaded engine with it. Cooperative first, sledgehammer second.
  */
 export interface ConversionApi {
   /** Liveness check. Cheap, synchronous, and the worker's only job until an engine lands. */
   ping(): 'pong'
-  /** Runs one job to completion and resolves with the converted file. */
-  convert(request: ConvertRequest): Promise<Blob>
+  /**
+   * Runs one job to completion and resolves with the converted file.
+   *
+   * Rejects with an `AbortError` if the job is cancelled — including when the
+   * cancel lands while the engine is still downloading, and including when a
+   * runner ignores its signal and produces a result anyway. A cancelled job
+   * never delivers output.
+   */
+  convert(request: ConvertRequest, onProgress?: RemoteProgressCallback): Promise<Blob>
+  /**
+   * Aborts the running job named `jobId`, and reports whether there was one.
+   *
+   * An unknown id answers `false` instead of throwing: the job that finished a
+   * moment before the user reached the cancel button is the common case, not an
+   * error.
+   */
+  cancel(jobId: string): boolean
 }
