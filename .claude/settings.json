@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --no-warnings \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.mjs\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit|Bash|PowerShell|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --no-warnings \"$CLAUDE_PROJECT_DIR/.claude/hooks/post-tool-use.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --no-warnings \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-end.mjs\"",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}
