@@ -9,8 +9,12 @@ import { cn } from '@/lib/utils'
  * The icon is passed in by the caller rather than chosen here. A strip that
  * mapped `label` to a glyph would own the copy of every page that used it, and
  * the pattern exists precisely to be reused with different copy.
+ *
+ * Named `CapabilityItem` rather than `Capability` because `lib/router/types.ts`
+ * already exports `Capabilities` for the browser feature probe, and a page that
+ * imported both would read as though they were related. They are not.
  */
-export type Capability = {
+export type CapabilityItem = {
   /** Line icon, rendered at 20px and hidden from assistive technology. */
   icon: LucideIcon
   /** First line — the claim itself. Set in the card-title step. */
@@ -20,30 +24,39 @@ export type Capability = {
 }
 
 /**
- * The surfaces the strip is documented to sit on, exported so the contrast test
- * iterates the real set rather than a copy of it that could drift.
+ * The muted token for the second line, per surface — exported so the contrast
+ * test iterates the real set rather than a copy of it that could drift.
  *
- * A tone has to be declared because the strip's second line is muted, and the
- * muted tokens are surface-specific — `fg-dark-mut` is unreadable on `paper`
- * and `fg-light-mut` is unreadable on `ink`. The first line and the icon do
- * inherit, but there is nothing for the qualifier to inherit *from*.
+ * This is the only thing the tone decides, and the reason a tone has to be
+ * declared at all: the qualifier is muted, and the muted tokens are
+ * surface-specific. `fg-dark-mut` on `paper` is 2.6:1 and `fg-light-mut` on
+ * `ink` is worse. Everything else — the claim, the icon — sets no colour and
+ * inherits from the block, which is what lets the strip invert for free.
+ *
+ * `light` means the `paper` block (5.05:1). The strip is not designed to sit
+ * directly on the `shell` background, where the same token is 4.42:1 and misses
+ * AA.
  */
 export const CAPABILITY_TONES = {
-  dark: { root: 'text-fg-dark', detail: 'text-fg-dark-mut' },
-  light: { root: 'text-fg-light', detail: 'text-fg-light-mut' },
+  dark: 'text-fg-dark-mut',
+  light: 'text-fg-light-mut',
 } as const
 
 export type CapabilityTone = keyof typeof CAPABILITY_TONES
 
-export type CapabilityStripProps = Omit<React.ComponentProps<'ul'>, 'children'> & {
-  items: readonly Capability[]
-  /** The block the strip sits on. Defaults to the dark hero block. */
-  tone?: CapabilityTone
+export type CapabilityStripProps = Omit<React.ComponentProps<'ul'>, 'children' | 'role'> & {
+  items: readonly CapabilityItem[]
+  /**
+   * The block the strip sits on. Required rather than defaulted: a default is
+   * right for one of the two surfaces and invisible on the other, and nothing
+   * at the call site would show which one you got.
+   */
+  tone: CapabilityTone
 }
 
 /*
  * The CapabilityStrip — signature pattern 2 of the design system, the row of
- * core claims under the dark hero block (docify-design §2).
+ * core claims under the hero block (docify-design §2).
  *
  * Column counts: two on mobile, three from `md` (48rem/768px, iPad portrait),
  * five from `lg` (64rem/1024px). `md` rather than `sm` for the three-column
@@ -51,38 +64,42 @@ export type CapabilityStripProps = Omit<React.ComponentProps<'ul'>, 'children'> 
  * five because that is the first width at which a five-track row still leaves
  * each cell around 180px inside the SectionBlock's 24px inset.
  *
- * The responsive contract (320px to 2560px, no horizontal scroll) is what
- * `min-w-0` and `wrap-anywhere` are for, and neither is decoration. A grid item
- * defaults to `min-width: auto`, so its min-content width — the longest
- * unbroken word — becomes a floor the track cannot go below; `min-w-0` removes
- * the floor, and `wrap-anywhere` lowers the measurement itself so the word
- * breaks instead of overflowing the track it no longer widens. `break-words`
- * would not do: `overflow-wrap: break-word` breaks the line but leaves
- * min-content at the longest word.
+ * The responsive contract (320px to 2560px, no horizontal scroll) rests on
+ * three things, none of them decoration. `grid-cols-*` compiles to
+ * `repeat(n, minmax(0, 1fr))`, so a track is never sized by its content. A grid
+ * item still defaults to `min-width: auto`, which would put a floor under the
+ * track at the longest unbroken word — `min-w-0` removes it. And `wrap-anywhere`
+ * (`overflow-wrap: anywhere`) lowers the min-content measurement itself, so the
+ * word breaks instead of overflowing the track it can no longer widen.
+ *
+ * `break-words` rides along as the fallback for `overflow-wrap: anywhere`
+ * (Safari < 15.4, where the declaration is dropped). It is not a substitute —
+ * `break-word` breaks the line without lowering min-content — but against a
+ * track already fixed at a fraction it is enough to keep the word in the cell.
  */
-function CapabilityStrip({ items, tone = 'dark', className, ...props }: CapabilityStripProps) {
-  const palette = CAPABILITY_TONES[tone]
-
+function CapabilityStrip({ items, tone, className, ...props }: CapabilityStripProps) {
   return (
     <ul
-      // Tailwind's preflight removes the list marker, and Safari + VoiceOver
-      // then drop the list role with it. Stating the role keeps the strip
-      // announced as "list, 5 items".
+      {...props}
+      // After the spread, not before: Tailwind's preflight removes the list
+      // marker and Safari + VoiceOver then drop the list role with it, so the
+      // explicit role is what keeps the strip announced as "list, 5 items".
+      // A caller must not be able to spread that guarantee away.
       role="list"
       data-slot="capability-strip"
       className={cn(
         'grid grid-cols-2 gap-x-6 gap-y-8 md:grid-cols-3 lg:grid-cols-5',
         'font-sans',
-        palette.root,
         className,
       )}
-      {...props}
     >
-      {items.map(({ icon: Icon, label, detail }) => (
-        <li key={label} className="flex min-w-0 flex-col gap-4">
+      {items.map(({ icon: Icon, label, detail }, index) => (
+        // Keyed by position: the strip is static copy that never reorders, and
+        // two capabilities are allowed to share a label.
+        <li key={index} className="flex min-w-0 flex-col gap-4">
           <Icon aria-hidden="true" focusable="false" className="size-5 shrink-0" />
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <p className="text-h3 wrap-anywhere">{label}</p>
+          <div className="flex flex-col gap-1.5">
+            <p className="text-h3 break-words wrap-anywhere">{label}</p>
             {/*
              * The eyebrow step carries a leading of 1, which is specified for a
              * one-line label. In a five-column strip the qualifier wraps, and
@@ -90,7 +107,10 @@ function CapabilityStrip({ items, tone = 'dark', className, ...props }: Capabili
              * wrapping variant relaxes the leading and nothing else.
              */}
             <p
-              className={cn('text-eyebrow leading-normal uppercase wrap-anywhere', palette.detail)}
+              className={cn(
+                'text-eyebrow break-words wrap-anywhere uppercase leading-normal',
+                CAPABILITY_TONES[tone],
+              )}
             >
               {detail}
             </p>
