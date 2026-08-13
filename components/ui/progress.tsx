@@ -16,22 +16,36 @@ import { cn } from '@/lib/utils'
  * Callers pass their own `aria-label`: a conversion job's progress needs to say
  * which job it belongs to, which only the caller knows.
  */
-function Progress({
-  className,
-  value,
-  ...props
-}: React.ComponentProps<typeof ProgressPrimitive.Root>) {
+/**
+ * A progressbar has to carry a name — it is announced on its own, away from
+ * whatever heading sits near it, and "50%" of nothing helps nobody (WCAG 4.1.2).
+ * Requiring it in the type means a caller cannot forget.
+ */
+type ProgressProps = Omit<
+  React.ComponentProps<typeof ProgressPrimitive.Root>,
+  'aria-label' | 'aria-labelledby'
+> &
+  ({ 'aria-label': string } | { 'aria-labelledby': string })
+
+function Progress({ className, value, max = 100, ...props }: ProgressProps) {
+  // Clamped once, then used for both the fill and the accessibility tree, so
+  // the two cannot disagree. shadcn scales the fill against a hard-coded 100
+  // while `max` still reaches the root through the spread — a caller passing
+  // `max={200}` gets a bar that reads full at the half-way point.
+  const percent = Math.min(100, Math.max(0, ((value ?? 0) / max) * 100))
+
   return (
     <ProgressPrimitive.Root
       data-slot="progress"
-      value={value}
+      value={value === null || value === undefined ? value : (percent * max) / 100}
+      max={max}
       className={cn('relative h-2 w-full overflow-hidden rounded-full bg-ink-3', className)}
       {...props}
     >
       <ProgressPrimitive.Indicator
         data-slot="progress-indicator"
-        className="size-full flex-1 bg-fg-dark transition-transform motion-reduce:transition-none"
-        style={{ transform: `translateX(-${100 - (value ?? 0)}%)` }}
+        className="size-full bg-fg-dark transition-transform motion-reduce:transition-none"
+        style={{ transform: `translateX(-${100 - percent}%)` }}
       />
     </ProgressPrimitive.Root>
   )

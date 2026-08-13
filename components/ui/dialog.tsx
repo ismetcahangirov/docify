@@ -66,19 +66,27 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        // Marks the panel for `DialogHeader`, which only reserves room for the
+        // close button when there is one.
+        data-close-button={showCloseButton ? '' : undefined}
         className={cn(
           // `w-[calc(100%-2rem)]` keeps a 16px gutter at 320px, so the panel
           // shrinks with the viewport instead of scrolling the page sideways.
-          'fixed top-1/2 left-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4',
-          'max-h-[calc(100dvh-2rem)] overflow-y-auto',
+          'group/dialog fixed top-1/2 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col',
+          // The panel is capped but never scrolls: the body below does. The
+          // close button is positioned against the panel, so if the panel
+          // scrolled, the button would scroll away with the content.
+          'max-h-[calc(100dvh-2rem)] overflow-hidden',
           'rounded-lg border border-line-dark bg-ink-2 p-6 text-body text-fg-dark',
           className,
         )}
         {...props}
       >
-        {children}
+        <div data-slot="dialog-body" className="flex min-h-0 flex-col gap-4 overflow-y-auto">
+          {children}
+        </div>
         {showCloseButton && (
-          <DialogPrimitive.Close data-slot="dialog-close" asChild>
+          <DialogPrimitive.Close asChild>
             <Button
               variant="ghost"
               size="icon"
@@ -95,11 +103,13 @@ function DialogContent({
 }
 
 function DialogHeader({ className, ...props }: React.ComponentProps<'div'>) {
-  // `pr-14` reserves the 44px close target plus its offset.
   return (
     <div
       data-slot="dialog-header"
-      className={cn('flex flex-col gap-2 pr-14', className)}
+      // Reserves the 44px close target plus its offset — but only when the
+      // panel actually has one, so a `showCloseButton={false}` dialog does not
+      // carry 56px of dead space beside its title.
+      className={cn('flex flex-col gap-2 group-data-[close-button]/dialog:pr-14', className)}
       {...props}
     />
   )
@@ -109,10 +119,11 @@ function DialogFooter({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       data-slot="dialog-footer"
-      className={cn(
-        '-mx-6 -mb-6 flex flex-col-reverse gap-2 border-t border-line-dark p-6 sm:flex-row sm:justify-end',
-        className,
-      )}
+      // shadcn full-bleeds this row with `-mx-6 -mb-6` and a divider. Dropped:
+      // inside the scrolling body those negative margins have no padding to
+      // cancel, so they would push the row past the panel edge — the horizontal
+      // overflow the responsive contract forbids.
+      className={cn('mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)}
       {...props}
     />
   )

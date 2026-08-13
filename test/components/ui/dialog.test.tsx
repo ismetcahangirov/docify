@@ -11,11 +11,11 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 
-function renderDialog() {
+function renderDialog(contentProps: { showCloseButton?: boolean } = {}) {
   return render(
     <Dialog>
       <DialogTrigger>Open settings</DialogTrigger>
-      <DialogContent>
+      <DialogContent {...contentProps}>
         <DialogHeader>
           <DialogTitle>Discard this job?</DialogTitle>
           <DialogDescription>The converted file has not been downloaded yet.</DialogDescription>
@@ -103,7 +103,9 @@ describe('Dialog', () => {
     const overlay = baseElement.querySelector('[data-slot="dialog-overlay"]')
 
     expect(overlay).not.toBeNull()
-    expect(overlay?.className).toContain('bg-ink')
+    // The scrim tone is the claim being made, so assert it exactly: a bare
+    // `toContain('bg-ink')` also passes for the opaque `bg-ink-2`.
+    expect(overlay?.className).toMatch(/\bbg-ink\/80\b/)
     expect(overlay?.className).not.toContain('backdrop-blur')
   })
 
@@ -123,6 +125,48 @@ describe('Dialog', () => {
     expect(screen.getByText('The converted file has not been downloaded yet.').className).toContain(
       'text-fg-dark-mut',
     )
+  })
+
+  it('hides the close control when the caller opts out', () => {
+    renderDialog({ showCloseButton: false })
+    fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+
+    expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument()
+  })
+
+  /*
+   * The close button is positioned against the panel. If the panel is also the
+   * scroll container, "top-3" is 3px from the *scrolled* origin — so with long
+   * content the only pointer affordance for closing scrolls out of sight.
+   * Scrolling the body instead keeps it anchored.
+   *
+   * jsdom has no layout engine, so this asserts the structure that makes the
+   * behaviour possible rather than the geometry itself.
+   */
+  it('scrolls its body rather than the panel, so the close control stays put', () => {
+    const { baseElement } = renderDialog()
+    fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+
+    const panel = screen.getByRole('dialog')
+    const body = baseElement.querySelector('[data-slot="dialog-body"]')
+
+    expect(panel.className).not.toContain('overflow-y-auto')
+    expect(body?.className).toContain('overflow-y-auto')
+    expect(body?.contains(screen.getByText('Discard this job?'))).toBe(true)
+    expect(body?.contains(screen.getByRole('button', { name: 'Close' }))).toBe(false)
+  })
+
+  it('reserves room for the close control only when it is shown', () => {
+    const { baseElement } = renderDialog({ showCloseButton: false })
+    fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+
+    expect(screen.getByRole('dialog')).not.toHaveAttribute('data-close-button')
+
+    const header = baseElement.querySelector('[data-slot="dialog-header"]')
+
+    // The reservation is conditional on the attribute, never unconditional.
+    expect(header?.className).not.toMatch(/(?:^|\s)pr-\d/)
+    expect(header?.className).toContain('group-data-[close-button]/dialog:pr-14')
   })
 
   it('never scrolls horizontally on a 320px viewport', () => {

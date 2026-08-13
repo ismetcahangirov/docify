@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
+import { COLOURS, globalsCss, RADII, TYPE_SCALE } from '../../support/tokens'
+
 /*
  * The retuning contract for the shadcn primitives (issue #15).
  *
@@ -30,29 +32,13 @@ const sources = EXPECTED_COMPONENTS.map((file) => {
   return [file, code] as const
 })
 
-/** The complete colour palette declared in app/globals.css. */
-const PALETTE = [
-  'shell',
-  'paper',
-  'paper-2',
-  'ink',
-  'ink-2',
-  'ink-3',
-  'line-light',
-  'line-dark',
-  'fg-light',
-  'fg-light-mut',
-  'fg-dark',
-  'fg-dark-mut',
-  'ok',
-  'warn',
-  'err',
-]
+/** The complete colour palette, read from app/globals.css rather than copied. */
+const PALETTE = [...COLOURS.keys()]
 
 /**
- * Suffixes that share a prefix with a colour utility but carry no colour:
- * the type scale (`text-h3`), the font stacks (`font-sans` is not matched, but
- * `text-…` steps are), keywords and bare numeric widths.
+ * Suffixes that share a prefix with a colour utility but carry no colour: the
+ * type scale (`text-h3`, taken from the same file as the palette), keywords,
+ * alignment values, and bare numeric widths and offsets.
  */
 const NON_COLOUR_SUFFIXES = [
   // keywords
@@ -61,13 +47,7 @@ const NON_COLOUR_SUFFIXES = [
   'inherit',
   'none',
   // type scale steps from @theme
-  'display',
-  'h2',
-  'h3',
-  'eyebrow',
-  'body',
-  'stat',
-  'tech',
+  ...TYPE_SCALE,
   // alignment / wrapping
   'left',
   'center',
@@ -101,8 +81,18 @@ function colourUtilities(code: string): string[] {
 }
 
 describe('components/ui design contract', () => {
-  it('contains exactly the three components the project has adopted', () => {
-    expect(readdirSync(uiDir).sort()).toEqual([...EXPECTED_COMPONENTS].sort())
+  /*
+   * A tripwire, not a headcount. `shadcn add` drops a component in here styled
+   * against `bg-primary` / `ring-ring` / `shadow-xs`, and nothing else in CI
+   * would notice. Failing here forces the retune to happen before the component
+   * is used. Add the filename to EXPECTED_COMPONENTS once it is retuned — the
+   * per-file assertions below then apply to it automatically.
+   */
+  it('lists every component under components/ui, so a new one cannot skip the retune', () => {
+    expect(
+      readdirSync(uiDir).sort(),
+      'a component here is not in EXPECTED_COMPONENTS — retune it to the @theme tokens first (CLAUDE.md §3), then add it to the list',
+    ).toEqual([...EXPECTED_COMPONENTS].sort())
   })
 
   describe.each(sources)('%s', (_file, code) => {
@@ -153,7 +143,9 @@ describe('components/ui design contract', () => {
 
     it('uses only the documented radius scale', () => {
       const radii = [...code.matchAll(/\brounded(?:-[a-z]+)?-([a-z0-9]+)\b/g)].map((m) => m[1])
-      const allowed = ['sm', 'md', 'lg', 'xl', 'full', 'none']
+      // `full` is the pill the design system specifies for buttons; `none` is
+      // the opt-out. Everything else has to be a step declared in @theme.
+      const allowed = [...RADII, 'full', 'none']
 
       expect(radii.filter((value) => !allowed.includes(value))).toEqual([])
     })
@@ -162,6 +154,32 @@ describe('components/ui design contract', () => {
       if (/\boutline-none\b/.test(code)) {
         expect(code).toMatch(/focus-visible:outline-2/)
       }
+    })
+  })
+
+  /*
+   * `components.json` still carries `"baseColor": "neutral"` and
+   * `"cssVariables": true`, which is what makes `shadcn add` able to write its
+   * own variable block into app/globals.css — the file CLAUDE.md names as the
+   * single source of truth for the palette. The retune of components/ui would
+   * survive that; the palette would not.
+   */
+  describe('app/globals.css', () => {
+    it('carries none of the shadcn colour variables', () => {
+      const shadcnVariables =
+        /--(?:primary|secondary|background|foreground|muted|accent|popover|card|destructive|input|ring|sidebar)[-:]/
+
+      expect(globalsCss).not.toMatch(shadcnVariables)
+    })
+
+    it('declares a single @theme block, so shadcn has not appended its own', () => {
+      expect(globalsCss.match(/@theme\b/g)).toHaveLength(1)
+    })
+
+    it('imports nothing but Tailwind', () => {
+      const imports = [...globalsCss.matchAll(/@import\s+['"]([^'"]+)['"]/g)].map((m) => m[1])
+
+      expect(imports).toEqual(['tailwindcss'])
     })
   })
 })

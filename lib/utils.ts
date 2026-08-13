@@ -12,12 +12,12 @@ import { extendTailwindMerge } from 'tailwind-merge'
  * `cn()` call. Listing the steps here restores the distinction: a step and a
  * colour coexist, two steps still collapse, two colours still collapse.
  */
-const TYPE_SCALE = ['display', 'h2', 'h3', 'eyebrow', 'body', 'stat', 'tech']
+export const TYPE_SCALE = ['display', 'h2', 'h3', 'eyebrow', 'body', 'stat', 'tech'] as const
 
 const twMerge = extendTailwindMerge({
   extend: {
     theme: {
-      text: TYPE_SCALE,
+      text: [...TYPE_SCALE],
     },
   },
 })

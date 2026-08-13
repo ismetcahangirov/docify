@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest'
 
-import { cn } from '@/lib/utils'
+import { cn, TYPE_SCALE } from '@/lib/utils'
+import { TYPE_SCALE as DECLARED_TYPE_SCALE } from '../support/tokens'
+
+describe('TYPE_SCALE', () => {
+  /*
+   * `cn` teaches tailwind-merge the scale by name. If a step is added to or
+   * renamed in app/globals.css and this list is not updated, `cn` silently
+   * reclassifies it as a colour again — the exact bug the list exists to fix,
+   * and one that no other assertion would catch.
+   */
+  it('matches every --text-* step declared in app/globals.css', () => {
+    expect([...TYPE_SCALE].sort()).toEqual([...DECLARED_TYPE_SCALE].sort())
+  })
+})
 
 describe('cn', () => {
   it('joins truthy class names and drops falsy ones', () => {
