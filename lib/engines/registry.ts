@@ -16,10 +16,14 @@
  * conversion worker, and only after the router has picked the engine.
  *
  * `ENGINES` is empty until the first engine lands, which is the correct
- * behaviour rather than a placeholder: with no candidates the router rejects
- * every task with `UNSUPPORTED_PAIR`.
+ * behaviour rather than a placeholder: with no candidates, the router rejects
+ * every non-empty task with `UNSUPPORTED_PAIR`. (An empty file is caught one
+ * step earlier, as `EMPTY_INPUT`.)
  *
- * ## Registering a new engine (CLAUDE.md §5.4)
+ * ## Registering a new engine
+ *
+ * Condensed from CLAUDE.md §5.4; `.claude/skills/docify-engine` is the
+ * authoritative version and covers each step in detail.
  *
  * 1. Create `lib/engines/<id>.ts` exporting `descriptor` and `createRunner`.
  * 2. Add the id to the `EngineId` union in `lib/router/types.ts`.
@@ -29,54 +33,57 @@
  * 5. Slot `priority` *between* existing values; never renumber the others.
  * 6. Add the dynamic-import branch in `lib/worker/conversion.worker.ts`.
  * 7. Add two router test cases: one where the engine wins, one where it loses.
- * 8. Run `pnpm size` and confirm the initial bundle did not grow.
+ * 8. Add a unit test for the engine itself, against a real small fixture file.
+ * 9. Run `pnpm size` and confirm the initial bundle did not grow.
  */
 
-import type { EngineDescriptor } from './types'
+import type { EngineDescriptor } from '@/lib/engines/types'
 import type { Capabilities, ConversionTask, EngineId } from '@/lib/router/types'
 
 /**
- * Every known engine, in registration order. Frozen because it is shared by the
- * router, the worker and the UI, and a sort in one of them must not be felt by
- * the others.
+ * Every known engine, in registration order. Frozen so that an in-place sort by
+ * one consumer cannot be felt by the router, the worker or the UI.
  */
 export const ENGINES: readonly EngineDescriptor[] = Object.freeze([])
 
 /**
- * The engines that can run `task` on this device, best candidate first.
+ * Orders two engines by how much we want to run them: `priority` ascending
+ * first, and only for engines of equal priority does the cheaper download win.
  *
- * Ordered by `priority` ascending, then by `loadCost` ascending, so a cheaper
- * download wins a tie. The sort is stable, so engines equal on both keys stay in
- * registration order.
+ * The keys are in that order and not the reverse on purpose. `canvas` needs no
+ * download at all and `ffmpeg` needs 32 MB, so cost alone would look like a
+ * usable proxy — but `webcodecs` must beat `ffmpeg` for hardware acceleration
+ * rather than for its size, and `vips` must beat `canvas` on quality-critical
+ * work despite costing 5.5 MB. Priority encodes that judgement; `loadCost` only
+ * settles ties.
  *
- * Pure and synchronous: `caps` is a parameter and the file itself is never
- * inspected, which keeps the whole selection path testable without a browser.
- * The returned array is a fresh copy — `registry` is left untouched.
- *
- * @param registry the engines to search. Defaults to `ENGINES`; passing an
- *   explicit list lets ordering be tested independently of which engines ship.
+ * Exported so the ordering can be tested against fake descriptors, which keeps
+ * the contract pinned no matter which engines happen to have shipped.
  */
-export function enginesFor(
-  task: ConversionTask,
-  caps: Capabilities,
-  registry: readonly EngineDescriptor[] = ENGINES,
-): readonly EngineDescriptor[] {
-  return registry
-    .filter((engine) => engine.supports(task, caps))
-    .sort((a, b) => a.priority - b.priority || a.loadCost - b.loadCost)
+export function byPreference(a: EngineDescriptor, b: EngineDescriptor): number {
+  return a.priority - b.priority || a.loadCost - b.loadCost
+}
+
+/**
+ * The engines that can run `task` on this device, best candidate first, already
+ * sorted by `byPreference` — callers take the head of the list and must not
+ * re-sort it. An empty result means the router should answer `UNSUPPORTED_PAIR`.
+ *
+ * Pure and synchronous: `caps` arrives as a parameter and the file itself is
+ * never inspected, which keeps the whole selection path testable without a
+ * browser. The returned array is always a fresh copy, so `ENGINES` is never
+ * reordered.
+ */
+export function enginesFor(task: ConversionTask, caps: Capabilities): readonly EngineDescriptor[] {
+  return ENGINES.filter((engine) => engine.supports(task, caps)).sort(byPreference)
 }
 
 /**
  * The descriptor registered under `id`, or `undefined` when no engine has
- * claimed that id yet. Unknown ids are not an error: `EngineId` may name an
- * engine that is planned but not yet implemented, and callers resolving an id
+ * claimed that id yet. An unknown id is not an error: `EngineId` may name an
+ * engine that is planned but not yet implemented, and a caller resolving an id
  * back to its label or load cost should degrade rather than throw.
- *
- * @param registry the engines to search. Defaults to `ENGINES`.
  */
-export function getEngine(
-  id: EngineId,
-  registry: readonly EngineDescriptor[] = ENGINES,
-): EngineDescriptor | undefined {
-  return registry.find((engine) => engine.id === id)
+export function getEngine(id: EngineId): EngineDescriptor | undefined {
+  return ENGINES.find((engine) => engine.id === id)
 }

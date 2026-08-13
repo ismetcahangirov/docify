@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { ENGINES, enginesFor, getEngine } from '@/lib/engines/registry'
+import { byPreference, ENGINES, enginesFor, getEngine } from '@/lib/engines/registry'
 import type { EngineDescriptor } from '@/lib/engines/types'
 import type { Capabilities, ConversionTask } from '@/lib/router/types'
 
@@ -28,93 +28,75 @@ function fake(id: EngineDescriptor['id'], priority: number, loadCost: number): E
   return { id, label: id, priority, loadCost, supports: () => true }
 }
 
+const order = (engines: readonly EngineDescriptor[]): string[] =>
+  [...engines].sort(byPreference).map((engine) => engine.id)
+
 describe('ENGINES', () => {
-  it('is empty until the first engine lands, so the router rejects every pair', () => {
+  it('is still empty, because no engine has landed yet', () => {
     expect(ENGINES).toEqual([])
   })
 
-  it('cannot be mutated by a consumer', () => {
+  it('is frozen, so one consumer cannot reorder the list another is reading', () => {
     expect(Object.isFrozen(ENGINES)).toBe(true)
+  })
+
+  it('registers each id at most once', () => {
+    expect(new Set(ENGINES.map((engine) => engine.id)).size).toBe(ENGINES.length)
   })
 })
 
-describe('enginesFor', () => {
-  it('returns no candidates for any task while the registry is empty', () => {
-    expect(enginesFor(jpgToPng, desktop)).toEqual([])
-    expect(enginesFor({ from: 'mp4', to: 'webm', op: 'convert' }, desktop)).toEqual([])
-  })
-
-  it('keeps only the engines that support the task', () => {
-    const yes = { ...fake('canvas', 10, 0), supports: () => true }
-    const no = { ...fake('vips', 40, 5_500_000), supports: () => false }
-
-    expect(enginesFor(jpgToPng, desktop, [no, yes])).toEqual([yes])
-  })
-
-  it('decides support from the task and the capabilities alone', () => {
-    const seen: Array<[ConversionTask, Capabilities]> = []
-    const spy: EngineDescriptor = {
-      ...fake('canvas', 10, 0),
-      supports: (task, caps) => {
-        seen.push([task, caps])
-        return false
-      },
-    }
-
-    enginesFor(jpgToPng, desktop, [spy])
-
-    expect(seen).toEqual([[jpgToPng, desktop]])
-  })
-
-  it('orders candidates by priority, lowest first', () => {
+describe('byPreference', () => {
+  it('orders engines by priority, lowest first', () => {
     const ffmpeg = fake('ffmpeg', 90, 32_000_000)
     const canvas = fake('canvas', 10, 0)
     const vips = fake('vips', 40, 5_500_000)
 
-    expect(enginesFor(jpgToPng, desktop, [ffmpeg, vips, canvas]).map((e) => e.id)).toEqual([
-      'canvas',
-      'vips',
-      'ffmpeg',
-    ])
+    expect(order([ffmpeg, vips, canvas])).toEqual(['canvas', 'vips', 'ffmpeg'])
+  })
+
+  it('prefers the better priority even when that engine costs far more to download', () => {
+    const cheapButLast = fake('ffmpeg', 90, 0)
+    const costlyButFirst = fake('canvas', 10, 32_000_000)
+
+    expect(order([cheapButLast, costlyButFirst])).toEqual(['canvas', 'ffmpeg'])
   })
 
   it('breaks a priority tie with the cheaper download', () => {
     const heavy = fake('vips', 40, 5_500_000)
     const light = fake('heif', 40, 900_000)
 
-    expect(enginesFor(jpgToPng, desktop, [heavy, light]).map((e) => e.id)).toEqual(['heif', 'vips'])
+    expect(order([heavy, light])).toEqual(['heif', 'vips'])
   })
 
   it('keeps registration order when priority and load cost are both equal', () => {
-    const first = fake('pdflib', 20, 400_000)
-    const second = fake('pdfjs', 20, 400_000)
+    const pdflib = fake('pdflib', 20, 400_000)
+    const pdfjs = fake('pdfjs', 20, 400_000)
+    const zip = fake('zip', 20, 400_000)
 
-    expect(enginesFor(jpgToPng, desktop, [first, second]).map((e) => e.id)).toEqual([
-      'pdflib',
-      'pdfjs',
-    ])
+    expect(order([pdflib, pdfjs, zip])).toEqual(['pdflib', 'pdfjs', 'zip'])
+    expect(order([zip, pdflib, pdfjs])).toEqual(['zip', 'pdflib', 'pdfjs'])
   })
 
-  it('does not reorder the registry it was given', () => {
-    const ffmpeg = fake('ffmpeg', 90, 32_000_000)
-    const canvas = fake('canvas', 10, 0)
-    const registry = [ffmpeg, canvas]
+  it('reports a tie as zero, so a stable sort leaves tied engines alone', () => {
+    expect(byPreference(fake('zip', 20, 400_000), fake('pdfjs', 20, 400_000))).toBe(0)
+  })
+})
 
-    enginesFor(jpgToPng, desktop, registry)
+describe('enginesFor', () => {
+  it('finds no candidate for any task while the registry is empty', () => {
+    expect(enginesFor(jpgToPng, desktop)).toEqual([])
+    expect(enginesFor({ from: 'mp4', to: 'webm', op: 'convert' }, desktop)).toEqual([])
+  })
 
-    expect(registry.map((e) => e.id)).toEqual(['ffmpeg', 'canvas'])
+  it('returns a fresh array, so a caller sorting the result cannot touch ENGINES', () => {
+    expect(enginesFor(jpgToPng, desktop)).not.toBe(ENGINES)
   })
 })
 
 describe('getEngine', () => {
-  it('returns undefined for an id that is not registered', () => {
+  it('returns undefined for an id no engine has claimed yet', () => {
     expect(getEngine('ffmpeg')).toBeUndefined()
-  })
-
-  it('returns the descriptor when the id is registered', () => {
-    const canvas = fake('canvas', 10, 0)
-
-    expect(getEngine('canvas', [canvas])).toBe(canvas)
+    expect(getEngine('canvas')).toBeUndefined()
   })
 
   it('constrains the id to the EngineId union', () => {
