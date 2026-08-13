@@ -6,7 +6,7 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { SectionBlock, sectionBlockVariants } from '@/components/blocks/section-block'
-import { COLOURS, contrastRatio, globalsCss, RADII } from '../support/tokens'
+import { COLOURS, contrastRatio, globalsCss, RADII, TYPE_SCALE } from '../support/tokens'
 
 /*
  * SectionBlock — the page is a stack of alternating light and dark blocks, each
@@ -14,9 +14,11 @@ import { COLOURS, contrastRatio, globalsCss, RADII } from '../support/tokens'
  *
  * The acceptance criterion was filed as `rounded-[28px]` and "inset 12px mobile
  * / 24px from sm up". Arbitrary values are forbidden by CLAUDE.md section 3, so
- * the numbers are asserted through the scales that produce them: the radius via
- * the `--radius-xl` token, the inset via Tailwind's 4px spacing step. If a token
- * is retuned the assertion follows it instead of contradicting it.
+ * the component reaches the same numbers through the scales, and the assertions
+ * follow it: the radius is looked up by the step the component actually names
+ * and then pinned to 28px, the inset is read off Tailwind's spacing scale. A
+ * component that switched to `rounded-lg` would fail here rather than quietly
+ * satisfy a test that only ever looked for the class name.
  */
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -34,9 +36,47 @@ function radius(step: string): string {
   return (declared as string).trim()
 }
 
-/** The suffix of a `<prefix>-<value>` utility on the element, if it carries one. */
-function utility(className: string, prefix: string, variant = ''): string | undefined {
-  return className.match(new RegExp(`(?:^|\\s)${variant}${prefix}-([a-z0-9-]+)`))?.[1]
+/**
+ * The value of a `<modifier><prefix>-<value>` utility, if the class list carries
+ * one. `modifier` is a Tailwind variant prefix such as `sm:`, not one of the
+ * component's own light/dark variants.
+ */
+function utility(className: string, prefix: string, modifier = ''): string | undefined {
+  return className.match(new RegExp(`(?:^|\\s)${modifier}${prefix}-([a-z0-9-]+)`))?.[1]
+}
+
+/**
+ * Suffixes that share a prefix with a colour utility but carry no colour: the
+ * type scale (`text-body`, read from the same file as the palette), keywords,
+ * border sides and bare widths.
+ */
+const NON_COLOUR_SUFFIXES = [
+  ...TYPE_SCALE,
+  'transparent',
+  'current',
+  'inherit',
+  'none',
+  't',
+  'b',
+  'l',
+  'r',
+  'x',
+  'y',
+  's',
+  'e',
+]
+
+/**
+ * *Every* colour-bearing utility value in a class list, not just the first.
+ * A single lookup per prefix would leave a second one — a `hover:bg-*`, a
+ * `sm:text-*` — unchecked.
+ */
+function colourUtilities(className: string): string[] {
+  const matches = className.matchAll(/\b(?:bg|text|border|outline|fill|stroke)-([a-z0-9-]+)/g)
+
+  return [...matches]
+    .map((match) => match[1])
+    .filter((value) => !NON_COLOUR_SUFFIXES.includes(value) && !/^\d+$/.test(value))
 }
 
 function renderBlock(props: Parameters<typeof SectionBlock>[0] = {}): HTMLElement {
@@ -70,7 +110,11 @@ describe('SectionBlock', () => {
   /*
    * Tailwind's spacing scale is 4px per step, so the filed 12px / 24px inset is
    * `mx-3` / `sm:mx-6`. Deriving the pixels from the step keeps the criterion
-   * legible without writing an arbitrary value into the component.
+   * legible without writing an arbitrary value into the component. The 4 is the
+   * one number here that is assumed rather than read: `--spacing` is Tailwind's
+   * own default and app/globals.css does not override it. Overriding it later
+   * would rescale the whole design, and this assertion should be revisited then
+   * rather than trusted.
    */
   it('insets itself 12px from the shell, and 24px from sm up', () => {
     const className = renderBlock().className
@@ -110,18 +154,34 @@ describe('SectionBlock', () => {
   })
 
   describe.each(['light', 'dark'] as const)('the %s variant', (variant) => {
+    /*
+     * Through the rendered component, not through `sectionBlockVariants` alone.
+     * Calling the cva function directly proves the recipe is right and proves
+     * nothing about the wiring: drop `variant` from the `cn()` call in the
+     * component and every recipe-only assertion still passes, because
+     * `defaultVariants` keeps handing back the light block.
+     */
+    it('reaches the element when the prop is set', () => {
+      const rendered = renderBlock({ variant }).className
+      const recipe = sectionBlockVariants({ variant })
+
+      for (const prefix of ['bg', 'text', 'border']) {
+        expect(utility(rendered, prefix), `${prefix} did not follow variant="${variant}"`).toBe(
+          utility(recipe, prefix),
+        )
+      }
+    })
+
     it('draws its fill, border and text from the @theme palette', () => {
       const className = sectionBlockVariants({ variant })
 
       for (const prefix of ['bg', 'text', 'border']) {
-        const value = utility(className, prefix)
-
-        expect(value, `${variant} sets no ${prefix} colour`).toBeDefined()
-        expect(
-          COLOURS.has(value as string),
-          `${prefix}-${value} is not a colour token in app/globals.css`,
-        ).toBe(true)
+        expect(utility(className, prefix), `${variant} sets no ${prefix} colour`).toBeDefined()
       }
+
+      const unknown = colourUtilities(className).filter((value) => !COLOURS.has(value))
+
+      expect(unknown, 'not colour tokens in app/globals.css').toEqual([])
     })
 
     it('keeps its body text legible on its own fill', () => {
@@ -143,9 +203,11 @@ describe('SectionBlock', () => {
   })
 
   it('defaults to the light variant', () => {
-    expect(renderBlock().className).toContain(
-      utility(sectionBlockVariants({ variant: 'light' }), 'bg') as string,
-    )
+    // Compared as a whole utility value: a `toContain('paper')` would also be
+    // satisfied by `bg-paper-2`, which is a hover tone rather than a block fill.
+    const fill = utility(renderBlock().className, 'bg')
+
+    expect(fill).toBe(utility(sectionBlockVariants({ variant: 'light' }), 'bg'))
   })
 
   it('lets a caller override a base utility through cn', () => {

@@ -24,6 +24,18 @@ import { cn } from '@/lib/utils'
  * Nothing here has a shadow, a ring, a blur or a gradient. The block is defined
  * by contrast against its neighbours and a 1px border, which is what keeps the
  * stack reading as flat editorial blocks rather than floating cards.
+ *
+ * Two things are deliberately the caller's:
+ *
+ * - **Vertical rhythm.** The block sets no top or bottom margin, because the gap
+ *   between two blocks belongs to the stack, not to either block — a page sets
+ *   it once with `space-y-*` and every seam matches. Without one, consecutive
+ *   blocks abut and the rounded corners cut four notches out of the seam.
+ * - **The accessible name.** A `<section>` is only a landmark once it has one,
+ *   so pass `aria-labelledby` pointing at the block's own heading (or an
+ *   `aria-label` when it has no visible one). An unnamed block is still valid
+ *   markup — it is simply a group rather than a region a screen reader can jump
+ *   to, which is the right outcome for a purely decorative band.
  */
 const sectionBlockVariants = cva(
   [
