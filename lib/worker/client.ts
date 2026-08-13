@@ -13,6 +13,8 @@
 
 import * as Comlink from 'comlink'
 
+import { ConversionCancelledError } from './errors'
+import { rejectPendingJobs } from './pending'
 import type { ConversionApi } from './types'
 
 let worker: Worker | null = null
@@ -33,6 +35,17 @@ export function ensureWorker(): Comlink.Remote<ConversionApi> {
     api = Comlink.wrap<ConversionApi>(worker)
   }
 
+  return api
+}
+
+/**
+ * The running worker's API, or `null` if none is running.
+ *
+ * For the calls that only make sense against a worker that already exists —
+ * cancelling a job, above all. Starting a thread in order to ask it to stop
+ * something it never started would be absurd.
+ */
+export function activeWorker(): Comlink.Remote<ConversionApi> | null {
   return api
 }
 
@@ -68,7 +81,9 @@ function spawn(): Worker {
   // its successor.
   const discard = (event: Event) => {
     console.error('Docify: the conversion worker failed and was shut down.', event)
-    if (worker === spawned) terminateWorker()
+    if (worker === spawned) {
+      shutDown('The conversion worker failed while this job was running.')
+    }
   }
   spawned.addEventListener('error', discard)
   spawned.addEventListener('messageerror', discard)
@@ -80,15 +95,30 @@ function spawn(): Worker {
  * Stops the worker and drops the proxy. The next `ensureWorker()` starts a fresh
  * one.
  *
- * Termination is immediate and unconditional, so any in-flight `convert()` is
- * abandoned rather than rejected. Issue #28 adds a cooperative cancel that
- * unwinds a single job and keeps the worker — and its warm engine — alive; this
- * is the sledgehammer for teardown and for recovering from a wedged worker.
+ * Termination is immediate and unconditional: it kills whatever the worker was
+ * doing mid-instruction, which is what makes it the fallback for an engine that
+ * cannot be cancelled cooperatively — one stuck inside a single synchronous
+ * WASM call never reaches the `cancel()` message waiting in its queue.
+ * `cancelConversion()` in `./jobs` is the cheaper path and the one to try
+ * first; this one costs every other running job and the loaded engine with it.
+ *
+ * Every job still in flight is rejected before the thread goes, because Comlink
+ * cannot notice that its endpoint died and would otherwise leave those promises
+ * unsettled for the rest of the session.
  *
  * Safe to call when nothing is running.
  */
 export function terminateWorker(): void {
+  shutDown('The conversion worker was shut down while this job was running.')
+}
+
+function shutDown(reason: string): void {
   worker?.terminate()
   worker = null
   api = null
+
+  // The same shape a cancelled job rejects with, because from the caller's side
+  // this is one: work that stopped without finishing and without failing on its
+  // own terms. One `catch` then handles both ways a job can be stopped.
+  rejectPendingJobs(new ConversionCancelledError(reason))
 }
