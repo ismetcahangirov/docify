@@ -48,6 +48,24 @@ describe('Dialog', () => {
     expect(dialog).toHaveAccessibleDescription('The converted file has not been downloaded yet.')
   })
 
+  it('closes on Escape', () => {
+    renderDialog()
+    fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('closes when the close control is activated', () => {
+    renderDialog()
+    fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
   it('gives the close control an accessible name', () => {
     renderDialog()
     fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))

@@ -9,8 +9,9 @@ import { cn } from '@/lib/utils'
  * Retuned from the shadcn default (issue #15).
  *
  * The track was `bg-muted` and the fill `bg-primary`; both now come from the
- * `@theme` palette. The bar is flat — a 1px-thin ink-3 track with a solid
- * fg-dark fill, no shadow, no ring and no gradient sweep.
+ * `@theme` palette. The bar is flat — an ink-3 track with a solid fg-dark
+ * fill, no shadow, no ring and no gradient sweep. `overflow-hidden` keeps the
+ * fill inside the track even if a caller passes a value outside 0-100.
  *
  * Callers pass their own `aria-label`: a conversion job's progress needs to say
  * which job it belongs to, which only the caller knows.
