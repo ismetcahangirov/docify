@@ -101,6 +101,10 @@ jobs:
             echo "::error::A .wasm binary was found in the initial chunk directory. Engines must load via dynamic import()."
             exit 1
           fi
+      # The budget reads the manifest `pnpm build` just wrote, so it belongs in
+      # this job rather than a sixth one that would have to rebuild to measure.
+      - name: Check the bundle budget
+        run: pnpm size
 
   e2e:
     name: e2e
