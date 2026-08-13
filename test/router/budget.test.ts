@@ -1,3 +1,10 @@
+// @vitest-environment node
+//
+// Deliberately not jsdom. The budget model must be a pure function of the
+// `Capabilities` it is handed — it runs during SSR and inside a Web Worker,
+// where there is no `window` and no `navigator`. Running this suite without a
+// DOM turns that invariant into a test failure instead of a production bug.
+
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import {
@@ -65,6 +72,12 @@ const ALL_ENGINES = [
   'libarchive',
 ] as const
 
+/** Device memory at which the derived desktop budget first reaches the cap. */
+const CAP_TRANSITION_GB = DESKTOP_BUDGET_CAP_BYTES / DESKTOP_MEMORY_SHARE / GB
+
+/** Device memory at which the derived desktop budget first beats the floor. */
+const FLOOR_TRANSITION_GB = DESKTOP_BUDGET_FLOOR_BYTES / DESKTOP_MEMORY_SHARE / GB
+
 describe('budgetBytes', () => {
   it('gives iOS exactly 90 MB, because Safari kills tabs well before the OS limit', () => {
     expect(budgetBytes(ios)).toBe(90 * MB)
@@ -82,8 +95,10 @@ describe('budgetBytes', () => {
   })
 
   it('derives the desktop budget from a fixed share of device memory', () => {
-    // 2 GB × 0.2 = 409.6 MB, floored to whole bytes.
-    expect(budgetBytes({ ...desktop, deviceMemoryGb: 2 })).toBe(Math.floor(2 * GB * 0.2))
+    // 2 GB × 0.2 = 409.6 MB → 429496729 bytes, floored. Written as a literal
+    // rather than as the formula, so the test cannot drift with the code.
+    expect(budgetBytes({ ...desktop, deviceMemoryGb: 2 })).toBe(429496729)
+    expect(budgetBytes({ ...desktop, deviceMemoryGb: 5 })).toBe(1024 * MB)
     expect(DESKTOP_MEMORY_SHARE).toBe(0.2)
   })
 
@@ -94,11 +109,19 @@ describe('budgetBytes', () => {
     expect(DESKTOP_BUDGET_CAP_BYTES).toBe(1200 * MB)
   })
 
-  it('applies the cap exactly at the boundary, not one step early', () => {
-    // 6 GB × 0.2 = 1228.8 MB — just over the cap.
-    expect(budgetBytes({ ...desktop, deviceMemoryGb: 6 })).toBe(1200 * MB)
-    // 5 GB × 0.2 = 1024 MB — just under it, so the derived value survives.
-    expect(budgetBytes({ ...desktop, deviceMemoryGb: 5 })).toBe(1024 * MB)
+  it('switches to the cap exactly where the derived value reaches it', () => {
+    // The cap starts binding at 1200 MB / 0.2 = 5.859375 GB, not at a round
+    // number of gigabytes — so that is where the transition must be probed.
+    expect(budgetBytes({ ...desktop, deviceMemoryGb: CAP_TRANSITION_GB })).toBe(
+      DESKTOP_BUDGET_CAP_BYTES,
+    )
+    expect(budgetBytes({ ...desktop, deviceMemoryGb: CAP_TRANSITION_GB * 1.001 })).toBe(
+      DESKTOP_BUDGET_CAP_BYTES,
+    )
+    // A hair below, the derived value must survive rather than be rounded up.
+    expect(budgetBytes({ ...desktop, deviceMemoryGb: CAP_TRANSITION_GB * 0.999 })).toBeLessThan(
+      DESKTOP_BUDGET_CAP_BYTES,
+    )
   })
 
   it('floors the desktop budget so a tiny deviceMemory reading cannot starve it', () => {
@@ -106,6 +129,19 @@ describe('budgetBytes', () => {
     // only 51 MB, which would make a desktop weaker than a phone.
     expect(budgetBytes({ ...desktop, deviceMemoryGb: 0.25 })).toBe(DESKTOP_BUDGET_FLOOR_BYTES)
     expect(DESKTOP_BUDGET_FLOOR_BYTES).toBe(140 * MB)
+  })
+
+  it('stops flooring exactly where the derived value overtakes the floor', () => {
+    // The floor stops binding at 140 MB / 0.2 = 0.68359375 GB.
+    expect(budgetBytes({ ...desktop, deviceMemoryGb: FLOOR_TRANSITION_GB })).toBe(
+      DESKTOP_BUDGET_FLOOR_BYTES,
+    )
+    expect(budgetBytes({ ...desktop, deviceMemoryGb: FLOOR_TRANSITION_GB * 0.999 })).toBe(
+      DESKTOP_BUDGET_FLOOR_BYTES,
+    )
+    expect(budgetBytes({ ...desktop, deviceMemoryGb: FLOOR_TRANSITION_GB * 1.01 })).toBeGreaterThan(
+      DESKTOP_BUDGET_FLOOR_BYTES,
+    )
   })
 
   it('falls back to the floor when deviceMemory is missing or nonsensical', () => {
@@ -120,8 +156,13 @@ describe('budgetBytes', () => {
     }
   })
 
-  it('is pure — the same capabilities always give the same number', () => {
+  it('is deterministic — the same capabilities always give the same number', () => {
+    // The purity half of the contract is enforced by the file-level
+    // `@vitest-environment node` pragma above: with no DOM in scope, any
+    // navigator/window read inside the module would throw here rather than
+    // silently pass under jsdom and only fail during SSR.
     expect(budgetBytes(desktop)).toBe(budgetBytes({ ...desktop }))
+    expect(budgetBytes(ios)).toBe(budgetBytes({ ...ios }))
   })
 })
 
@@ -132,6 +173,20 @@ describe('EXPANSION', () => {
 
     // Runtime half: the table has a factor for each of them and nothing else.
     expect(Object.keys(EXPANSION).sort()).toEqual([...ALL_ENGINES].sort())
+  })
+
+  it('pins every measured factor, so none can drift without a deliberate change', () => {
+    expect(EXPANSION).toEqual({
+      canvas: 6,
+      vips: 4,
+      heif: 5,
+      pdflib: 3,
+      pdfjs: 4,
+      webcodecs: 2.5,
+      ffmpeg: 4.5,
+      zip: 2.5,
+      libarchive: 3,
+    })
   })
 
   it('assigns every engine a factor of at least 1', () => {

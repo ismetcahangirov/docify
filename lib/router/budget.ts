@@ -25,7 +25,7 @@ const BYTES_PER_GB = 1024 * MB
  * exception, just a blank page. 90 MB is the level at which a WASM heap plus
  * the surrounding page reliably survives on the weakest supported iPhone.
  * Reported `deviceMemory` is irrelevant here: the ceiling is the browser's, not
- * the hardware's, so a 8 GB iPad Pro gets the same allowance as an iPhone SE.
+ * the hardware's, so an 8 GB iPad Pro gets the same allowance as an iPhone SE.
  */
 export const IOS_BUDGET_BYTES = 90 * MB
 
@@ -54,7 +54,7 @@ export const DESKTOP_MEMORY_SHARE = 0.2
  * wasm32 addresses at most 4 GB, and the engines we ship become unstable well
  * before that as allocation failures inside the module surface as unrecoverable
  * aborts. 1200 MB sits comfortably under that ledge, so a 64 GB workstation
- * gains no more headroom than a 8 GB laptop — the limit is the WASM heap, not
+ * gains no more headroom than an 8 GB laptop — the limit is the WASM heap, not
  * the machine.
  */
 export const DESKTOP_BUDGET_CAP_BYTES = 1200 * MB
@@ -111,14 +111,42 @@ export const EXPANSION: Record<EngineId, number> = {
  * can produce a dangerous number. Always a whole number of bytes.
  */
 export function budgetBytes(caps: Capabilities): number {
-  if (caps.platform === 'ios') return IOS_BUDGET_BYTES
-  if (caps.platform === 'android') return ANDROID_BUDGET_BYTES
+  switch (caps.platform) {
+    case 'ios':
+      return IOS_BUDGET_BYTES
+    case 'android':
+      return ANDROID_BUDGET_BYTES
+    case 'desktop':
+      return desktopBudgetBytes(caps.deviceMemoryGb)
+    default:
+      return budgetForUnhandledPlatform(caps.platform)
+  }
+}
 
-  const reportedGb = caps.deviceMemoryGb
+/** Desktop branch of {@link budgetBytes}, split out to keep the dispatch flat. */
+function desktopBudgetBytes(reportedGb: number): number {
+  // `deviceMemory` is absent outside Chromium and can be probed as 0 or NaN;
+  // treat anything implausible as "unknown" rather than as "tiny machine".
   if (!Number.isFinite(reportedGb) || reportedGb <= 0) return DESKTOP_BUDGET_FLOOR_BYTES
 
   const derived = Math.floor(reportedGb * BYTES_PER_GB * DESKTOP_MEMORY_SHARE)
   return Math.min(Math.max(derived, DESKTOP_BUDGET_FLOOR_BYTES), DESKTOP_BUDGET_CAP_BYTES)
+}
+
+/**
+ * Exhaustiveness guard for {@link budgetBytes}.
+ *
+ * The `never` parameter makes adding a `Platform` without giving it a ceiling a
+ * compile error here, rather than a silent fallthrough — and a fallthrough to
+ * the desktop branch would hand an unknown device the *largest* allowance,
+ * which is the worst possible default for a module whose failure mode is a
+ * killed tab. At runtime the value can only be a stale `Capabilities` object
+ * rehydrated from sessionStorage, so answer with the most conservative ceiling
+ * instead of throwing in the middle of the user's conversion.
+ */
+function budgetForUnhandledPlatform(platform: never): number {
+  void platform
+  return IOS_BUDGET_BYTES
 }
 
 /**
