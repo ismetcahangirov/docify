@@ -5,7 +5,12 @@ import { fileURLToPath } from 'node:url'
 import { render } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { StatPair, type StatPairProps } from '@/components/blocks/stat-pair'
+import {
+  CAPTION_TONE,
+  StatPair,
+  type StatPairProps,
+  type StatSurface,
+} from '@/components/blocks/stat-pair'
 import { COLOURS, contrastRatio, globalsCss, RADII, TYPE_SCALE } from '../support/tokens'
 
 /*
@@ -119,6 +124,22 @@ describe('StatPair', () => {
     expect(tracking).toBeGreaterThanOrEqual(-0.03)
   })
 
+  /*
+   * The caps are the display face's, and a figure is digits — but a unit symbol
+   * carries its case as meaning (`s` is seconds, `S` is siemens; `ms` and `kB`
+   * are defined lowercase), and pattern 3 sets captions in sentence case. A CSS
+   * transform over either would be the component rewriting the caller's text.
+   */
+  it('applies no case transform to the unit or the caption', () => {
+    const { container } = renderStat()
+
+    for (const name of ['stat-pair-unit', 'stat-pair-caption']) {
+      expect(slot(container, name).className, name).not.toMatch(
+        /\b(?:uppercase|lowercase|capitalize)\b/,
+      )
+    }
+  })
+
   it('keeps the unit subordinate to the figure but on the same line', () => {
     const { container } = renderStat()
     const figure = slot(container, 'stat-pair-figure')
@@ -149,20 +170,23 @@ describe('StatPair', () => {
    * it sits in. Only the caption names a colour, and a muted tone still has to
    * clear WCAG 2.2 AA for body text on the surface it is documented for.
    */
-  it('keeps the caption legible on both surfaces', () => {
-    for (const [surface, background] of [
-      ['dark', 'ink'],
-      ['light', 'paper'],
-    ] as const) {
-      const { container, unmount } = renderStat({ surface })
-      const colour = slot(container, 'stat-pair-caption').className.match(
-        /\btext-(fg-[a-z-]+)\b/,
-      )?.[1]
+  it('keeps the caption legible on every surface it offers', () => {
+    /** The block fill each surface names, per docify-design section 1. */
+    const BLOCK_FILL: Record<string, string> = { dark: 'ink', light: 'paper' }
 
-      expect(colour, `${surface} caption declares no colour`).toBeDefined()
+    // Driven by the component's own map rather than a copy of it, so a surface
+    // added later is covered here the moment it exists.
+    for (const [surface, tone] of Object.entries(CAPTION_TONE)) {
+      const { container, unmount } = renderStat({ surface: surface as StatSurface })
+      const caption = slot(container, 'stat-pair-caption')
+      const colour = tone.replace('text-', '')
+
+      expect(caption.className, `${surface} caption`).toMatch(
+        new RegExp(`(?:^|\\s)${tone}(?:\\s|$)`),
+      )
       expect(
-        contrastRatio(colour as string, background),
-        `caption ${colour} on ${background}`,
+        contrastRatio(colour, BLOCK_FILL[surface]),
+        `caption ${colour} on ${BLOCK_FILL[surface]}`,
       ).toBeGreaterThanOrEqual(4.5)
 
       unmount()
@@ -179,12 +203,15 @@ describe('StatPair', () => {
 
   /*
    * The responsive contract forbids horizontal scroll from 320px to 2560px. A
-   * five-digit figure or a long caption is a single long run of text: without
-   * an explicit wrapping guard it sets the element's min-content width and
-   * widens whatever grid cell the stat sits in.
+   * five-digit figure or a long caption is a single long run of text: as a grid
+   * item its min-content width would widen the row rather than wrap, and
+   * `min-w-0` is what removes that floor — `break-words` alone does not.
+   *
+   * jsdom computes no layout, so this can only check that the guards are
+   * declared; the measured no-scroll check belongs to `pnpm e2e`.
    */
-  it('wraps a long figure or caption instead of widening its container', () => {
-    const { container } = renderStat({ figure: '10000', caption: 'megabytes uploaded to a server' })
+  it('declares the guards that let a long figure or caption wrap', () => {
+    const { container } = renderStat()
     const className = slot(container, 'stat-pair').className
 
     expect(className).toMatch(/\bbreak-words\b/)
@@ -232,6 +259,9 @@ describe('StatPair', () => {
     })
 
     it('draws every colour from the @theme palette', () => {
+      // Mirrors NON_COLOUR_SUFFIXES in test/components/ui/design-contract.test.ts:
+      // values that share a prefix with a colour utility but carry no colour —
+      // the type scale, keywords, alignment, and bare widths and offsets.
       const allowed = [
         ...COLOURS.keys(),
         ...TYPE_SCALE,
@@ -245,6 +275,21 @@ describe('StatPair', () => {
         'balance',
         'pretty',
         'nowrap',
+        '0',
+        '1',
+        '2',
+        '4',
+        '8',
+        'offset-2',
+        'offset-4',
+        't',
+        'b',
+        'l',
+        'r',
+        'x',
+        'y',
+        's',
+        'e',
       ]
       const used = [
         ...source.matchAll(/\b(?:bg|text|border|outline|fill|stroke|ring)-([a-z0-9-]+)/g),
@@ -257,6 +302,15 @@ describe('StatPair', () => {
       const radii = [...source.matchAll(/\brounded(?:-[a-z]+)?-([a-z0-9]+)\b/g)].map((m) => m[1])
 
       expect(radii.filter((value) => ![...RADII, 'full', 'none'].includes(value))).toEqual([])
+    })
+
+    /*
+     * An arbitrary value slips past both checks above — `bg-[#171717]` and
+     * `rounded-[28px]` match neither the palette regex nor the radius one. The
+     * point of the token block is that there is no second way to spell a value.
+     */
+    it('uses no arbitrary colour or radius value', () => {
+      expect(source).not.toMatch(/\b(?:bg|text|border|outline|fill|stroke|ring|rounded)-\[/)
     })
   })
 })

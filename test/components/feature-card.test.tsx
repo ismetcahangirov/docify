@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { render, screen } from '@testing-library/react'
-import { ShieldCheck } from 'lucide-react'
+import { Cpu, ShieldCheck } from 'lucide-react'
 import { describe, expect, it } from 'vitest'
 
 import { FeatureCard, type FeatureCardProps } from '@/components/blocks/feature-card'
@@ -48,14 +48,21 @@ describe('FeatureCard', () => {
   })
 
   it('renders the icon the caller passed, hidden from assistive technology', () => {
-    const { container } = renderCard()
-    const icon = slot(container, 'feature-card-badge').querySelector('svg')
+    const shield = renderCard()
+    const shieldIcon = slot(shield.container, 'feature-card-badge').querySelector('svg')
 
     // The badge is decoration: the title already carries the card's meaning, so
     // announcing the icon would only repeat it.
-    expect(icon).not.toBeNull()
-    expect(icon).toHaveAttribute('aria-hidden', 'true')
-    expect(icon?.classList.contains('lucide-shield-check')).toBe(true)
+    expect(shieldIcon).not.toBeNull()
+    expect(shieldIcon).toHaveAttribute('aria-hidden', 'true')
+
+    const drawing = shieldIcon?.innerHTML
+    shield.unmount()
+
+    // A second icon has to produce different artwork — otherwise the card could
+    // be drawing one of its own and this suite would never know.
+    const { container } = renderCard({ icon: Cpu })
+    expect(slot(container, 'feature-card-badge').querySelector('svg')?.innerHTML).not.toBe(drawing)
   })
 
   /*
@@ -73,6 +80,18 @@ describe('FeatureCard', () => {
     expect(Number(step) * 4).toBe(44)
     expect(badge.className).toMatch(/\brounded-full\b/)
     expect(badge.className).toMatch(/\bbg-ink-3\b/)
+  })
+
+  /*
+   * The card's hover fill is the badge's own tone. Left alone the two would
+   * merge under the cursor, so they swap: the badge drops to the card's resting
+   * fill and the step between them survives the hover.
+   */
+  it('swaps the badge tone with the card on hover instead of merging them', () => {
+    const { container } = renderCard()
+
+    expect(slot(container, 'feature-card').className).toMatch(/(?:^|\s)group(?:\s|$)/)
+    expect(slot(container, 'feature-card-badge').className).toMatch(/\bgroup-hover:bg-ink-2\b/)
   })
 
   it('is a flat ink-2 surface with a 1px border and no shadow', () => {
@@ -124,11 +143,15 @@ describe('FeatureCard', () => {
 
   /*
    * The responsive contract forbids horizontal scroll from 320px to 2560px. An
-   * unbroken word in the title or the copy — a long format name, a URL — would
-   * otherwise set the card's min-content width and push its grid sideways.
+   * unbroken word in the title or the copy — a long MIME type, a URL — would
+   * otherwise set the card's min-content width and push its grid sideways;
+   * `min-w-0` is what removes that floor, `break-words` alone does not.
+   *
+   * jsdom computes no layout, so this can only check that the guards are
+   * declared; the measured no-scroll check belongs to `pnpm e2e`.
    */
-  it('wraps long copy instead of widening the card', () => {
-    const { container } = renderCard({ title: 'Converts application/vnd.openxmlformats-document' })
+  it('declares the guards that let long copy wrap', () => {
+    const { container } = renderCard()
     const className = slot(container, 'feature-card').className
 
     expect(className).toMatch(/\bbreak-words\b/)
@@ -176,6 +199,9 @@ describe('FeatureCard', () => {
     })
 
     it('draws every colour from the @theme palette', () => {
+      // Mirrors NON_COLOUR_SUFFIXES in test/components/ui/design-contract.test.ts:
+      // values that share a prefix with a colour utility but carry no colour —
+      // the type scale, keywords, alignment, and bare widths and offsets.
       const allowed = [
         ...COLOURS.keys(),
         ...TYPE_SCALE,
@@ -189,6 +215,21 @@ describe('FeatureCard', () => {
         'balance',
         'pretty',
         'nowrap',
+        '0',
+        '1',
+        '2',
+        '4',
+        '8',
+        'offset-2',
+        'offset-4',
+        't',
+        'b',
+        'l',
+        'r',
+        'x',
+        'y',
+        's',
+        'e',
       ]
       const used = [
         ...source.matchAll(/\b(?:bg|text|border|outline|fill|stroke|ring)-([a-z0-9-]+)/g),
@@ -201,6 +242,15 @@ describe('FeatureCard', () => {
       const radii = [...source.matchAll(/\brounded(?:-[a-z]+)?-([a-z0-9]+)\b/g)].map((m) => m[1])
 
       expect(radii.filter((value) => ![...RADII, 'full', 'none'].includes(value))).toEqual([])
+    })
+
+    /*
+     * An arbitrary value slips past both checks above — `bg-[#171717]` and
+     * `rounded-[28px]` match neither the palette regex nor the radius one. The
+     * point of the token block is that there is no second way to spell a value.
+     */
+    it('uses no arbitrary colour or radius value', () => {
+      expect(source).not.toMatch(/\b(?:bg|text|border|outline|fill|stroke|ring|rounded)-\[/)
     })
 
     /*

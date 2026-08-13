@@ -15,6 +15,9 @@ const CAPTION_TONE = {
   light: 'text-fg-light-mut',
 } as const
 
+/** The surfaces a stat can be placed on — the light block or the dark one. */
+export type StatSurface = keyof typeof CAPTION_TONE
+
 export type StatPairProps = Omit<React.ComponentProps<'p'>, 'children'> & {
   /** The number itself — `0`, `<2`, `100`. */
   figure: React.ReactNode
@@ -23,7 +26,7 @@ export type StatPairProps = Omit<React.ComponentProps<'p'>, 'children'> & {
   /** What the figure counts: `sent to a server`. */
   caption: React.ReactNode
   /** The surface the stat sits on. Defaults to the dark block. */
-  surface?: keyof typeof CAPTION_TONE
+  surface?: StatSurface
 }
 
 /**
@@ -49,27 +52,35 @@ function StatPair({ className, figure, unit, caption, surface = 'dark', ...props
       {...props}
     >
       <span className="flex flex-wrap items-baseline gap-2">
+        {/*
+         * `uppercase` stops at the figure. Display type is set in caps
+         * (CLAUDE.md section 3) and a figure is digits, so the transform is a
+         * no-op there — but a unit symbol carries its case as meaning. `s` is
+         * seconds and `S` is siemens; `ms`, `kB` and `dpi` are defined lowercase.
+         * Restyling the caller's unit into caps would be rewriting their data.
+         */}
         <span data-slot="stat-pair-figure" className="font-display text-stat uppercase">
           {figure}
         </span>
         {unit === undefined ? null : (
           <>
             {' '}
-            <span data-slot="stat-pair-unit" className="font-display text-h3 uppercase">
+            <span data-slot="stat-pair-unit" className="font-display text-h3">
               {unit}
             </span>
           </>
         )}
       </span>{' '}
       {/*
-       * The caption is the eyebrow step — the design system's one 12px role —
-       * so it is set in the eyebrow's case and tracking too. Its leading is
-       * relaxed by a step because the token's `1` is sized for a single-line
-       * eyebrow, and these captions run to two or three lines.
+       * The caption borrows the eyebrow step — the design system's one 12px
+       * role — for its size, tracking and muted tone, but not its case: pattern
+       * 3 sets captions in sentence case. Its leading is relaxed by a step
+       * because the token's `1` is sized for a single-line eyebrow, and these
+       * captions run to two or three lines.
        */}
       <span
         data-slot="stat-pair-caption"
-        className={cn('text-eyebrow leading-snug uppercase', CAPTION_TONE[surface])}
+        className={cn('text-eyebrow leading-snug', CAPTION_TONE[surface])}
       >
         {caption}
       </span>

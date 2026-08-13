@@ -3,7 +3,7 @@ import type { LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
-export type FeatureCardProps = React.ComponentProps<'article'> & {
+export type FeatureCardProps = React.ComponentProps<'div'> & {
   /**
    * The lucide icon shown in the badge, passed as the component itself so the
    * card can size it and hide it from assistive technology. Taking it from the
@@ -21,19 +21,21 @@ export type FeatureCardProps = React.ComponentProps<'article'> & {
  * (docify-design section 4): a 44px circular icon badge, a title, and two lines
  * of copy on an `--color-ink-2` surface.
  *
- * The card is an `<article>` because each one is self-contained and reorderable;
- * the heading is an `<h3>` because the pattern places these under a block's H2.
+ * The heading is an `<h3>` because the pattern places these cards under a
+ * block's H2. The card itself is a plain `<div>`: `<article>` would put an
+ * unnamed `role="article"` in the accessibility tree for every card in the grid,
+ * and naming it needs an id that only a client component could generate.
  */
 function FeatureCard({ className, icon: Icon, title, children, ...props }: FeatureCardProps) {
   return (
-    <article
+    <div
       data-slot="feature-card"
       // Flat fill plus a 1px border — no shadow, no glow. `min-w-0` and
       // `break-words` keep an unbroken word (a long MIME type, a URL) from
       // setting the card's min-content width and pushing its grid sideways,
       // which is the horizontal scroll the responsive contract forbids.
       className={cn(
-        'flex min-w-0 flex-col items-start gap-5 break-words',
+        'group flex min-w-0 flex-col items-start gap-5 break-words',
         'rounded-lg border border-line-dark bg-ink-2 p-6 transition-colors hover:bg-ink-3',
         className,
       )}
@@ -45,13 +47,15 @@ function FeatureCard({ className, icon: Icon, title, children, ...props }: Featu
        * icon size. It is also the touch-target floor, which matters the moment
        * anything here becomes interactive.
        *
-       * The badge carries a border of its own because the card's hover fill is
-       * the badge's own `--color-ink-3`: without it the badge would dissolve
-       * into the card under the cursor.
+       * On hover the card takes the badge's own `--color-ink-3`, so the two
+       * swap rather than merge: the badge drops to the card's resting fill and
+       * the step between them survives. That step is one tone either way — the
+       * separation between the dark surfaces in this palette is deliberately
+       * faint, and the badge's 1px border is what actually draws its edge.
        */}
       <span
         data-slot="feature-card-badge"
-        className="flex size-11 shrink-0 items-center justify-center rounded-full border border-line-dark bg-ink-3 text-fg-dark"
+        className="flex size-11 shrink-0 items-center justify-center rounded-full border border-line-dark bg-ink-3 text-fg-dark transition-colors group-hover:bg-ink-2"
       >
         <Icon aria-hidden="true" className="size-5" strokeWidth={1.5} />
       </span>
@@ -64,7 +68,7 @@ function FeatureCard({ className, icon: Icon, title, children, ...props }: Featu
           {children}
         </p>
       </div>
-    </article>
+    </div>
   )
 }
 
