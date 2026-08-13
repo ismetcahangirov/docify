@@ -110,30 +110,52 @@ export function describeToolCall(toolName, toolInput = {}) {
   }
 }
 
-export function listEntries() {
-  ensureDirs()
-  return readdirSync(ENTRIES_DIR)
+/** Machine-independent string order. localeCompare would depend on the runtime's ICU data. */
+const byString = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
+
+/**
+ * Splits one entry file into its frontmatter fields and its body.
+ *
+ * The file is normalised before anything is matched: a leading byte-order mark
+ * removed, then CR and CRLF folded to LF. Entries are written by hooks at
+ * runtime and edited by hand on Windows, so a file may hold CRLF whatever
+ * .gitattributes says about the checkout, and a PowerShell redirect leaves a
+ * BOM. Either one defeats an anchored `^---` and the failure is silent: the
+ * frontmatter block does not match at all, so the entry loses its description,
+ * falls back to type `note`, and carries its own header into the indexed body.
+ * Normalising once, here, is also what keeps a trailing `\r` off every field.
+ */
+export function parseEntry(raw, file) {
+  const text = raw.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n')
+  const fm = text.match(/^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n?/)
+  const meta = {}
+  if (fm) {
+    for (const line of fm[1].split('\n')) {
+      const m = line.match(/^(\w+):\s*(.*)$/)
+      if (m) meta[m[1]] = m[2].trim()
+    }
+  }
+  return {
+    file,
+    name: meta.name || file.replace(/\.md$/, ''),
+    description: meta.description || '',
+    type: meta.type || 'note',
+    date: meta.date || '',
+    body: (fm ? text.slice(fm[0].length) : text).trim(),
+  }
+}
+
+/**
+ * Reads every entry, newest first. Ties break on filename so that two machines
+ * reading the same entries produce the same list — readdirSync order is
+ * filesystem-defined, and today every entry carries the same date.
+ */
+export function listEntries(dir = ENTRIES_DIR) {
+  if (dir === ENTRIES_DIR) ensureDirs()
+  return readdirSync(dir)
     .filter((f) => f.endsWith('.md'))
-    .map((f) => {
-      const raw = readFileSync(join(ENTRIES_DIR, f), 'utf8')
-      const fm = raw.match(/^---\n([\s\S]*?)\n---\n?/)
-      const meta = {}
-      if (fm) {
-        for (const line of fm[1].split('\n')) {
-          const m = line.match(/^(\w+):\s*(.*)$/)
-          if (m) meta[m[1]] = m[2].trim()
-        }
-      }
-      return {
-        file: f,
-        name: meta.name || f.replace(/\.md$/, ''),
-        description: meta.description || '',
-        type: meta.type || 'note',
-        date: meta.date || '',
-        body: raw.replace(/^---\n[\s\S]*?\n---\n?/, '').trim(),
-      }
-    })
-    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    .map((f) => parseEntry(readFileSync(join(dir, f), 'utf8'), f))
+    .sort((a, b) => byString(b.date || '', a.date || '') || byString(a.file, b.file))
 }
 
 export function writeEntry({ name, description, type, date, body }) {
@@ -154,9 +176,15 @@ ${body.trim()}
   return file
 }
 
-/** Regenerates MEMORY.md — the index a human (or a fresh session) reads first. */
-export function rebuildMemoryIndexMd() {
-  const entries = listEntries()
+/**
+ * Renders MEMORY.md from parsed entries.
+ *
+ * Sections are sorted by type name rather than left in encounter order: encounter
+ * order depends on which entry happens to sort first, so adding one entry could
+ * reshuffle every heading and make MEMORY.md show up as modified for no reason.
+ * Rows keep the caller's order, which listEntries makes newest-first.
+ */
+export function renderMemoryIndex(entries) {
   const byType = new Map()
   for (const e of entries) {
     if (!byType.has(e.type)) byType.set(e.type, [])
@@ -164,23 +192,25 @@ export function rebuildMemoryIndexMd() {
   }
 
   const sections = [...byType.entries()]
+    .sort(([a], [b]) => byString(a, b))
     .map(([type, items]) => {
       const rows = items.map((e) => `- [${e.name}](entries/${e.file}) — ${e.description}`).join('\n')
       return `## ${type}\n\n${rows}`
     })
     .join('\n\n')
 
-  writeFileSync(
-    INDEX_MD,
-    `# Docify Memory Index
+  return `# Docify Memory Index
 
 Durable facts carried across sessions. One file per fact in \`entries/\`.
 Search with the \`docify-memory\` skill; do not paste whole entries into context.
 
 ${sections || '_No entries yet._'}
-`,
-    'utf8',
-  )
+`
+}
+
+/** Regenerates MEMORY.md — the index a human (or a fresh session) reads first. */
+export function rebuildMemoryIndexMd() {
+  writeFileSync(INDEX_MD, renderMemoryIndex(listEntries()), 'utf8')
 }
 
 /**
