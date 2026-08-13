@@ -15,6 +15,7 @@ interface LocalFontOptions {
   variable: string
   display: string
   preload: boolean
+  adjustFontFallback?: false | 'Arial' | 'Times New Roman'
   fallback?: string[]
 }
 
@@ -40,6 +41,8 @@ const { archivo, fontVariables, inter, jetbrainsMono } = await import('@/app/fon
 
 // app/fonts.ts resolves every `src` relative to its own directory.
 const appDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../app')
+
+const [archivoCall, interCall, monoCall] = fontCalls
 
 describe('app/fonts', () => {
   it('declares exactly the three families the design system uses', () => {
@@ -79,8 +82,40 @@ describe('app/fonts', () => {
     }
   })
 
-  it('combines the three variables into a single className for <html>', () => {
-    expect(fontVariables).toBe(`${archivo.variable} ${inter.variable} ${jetbrainsMono.variable}`)
-    expect(fontVariables.split(' ')).toHaveLength(3)
+  // A wrong weight range is invisible until a heading renders: declaring '400'
+  // for a variable file makes every 700/800 heading synthetically bold instead.
+  it('declares the weight range and style each file actually contains', () => {
+    expect(archivoCall.src).toEqual([
+      { path: '../public/fonts/archivo-latin-variable.woff2', weight: '100 900', style: 'normal' },
+    ])
+    expect(interCall.src).toEqual([
+      { path: '../public/fonts/inter-latin-variable.woff2', weight: '100 900', style: 'normal' },
+    ])
+    expect(monoCall.src).toEqual([
+      { path: '../public/fonts/jetbrains-mono-latin-400.woff2', weight: '400', style: 'normal' },
+    ])
+  })
+
+  it('ends each fallback stack in the right generic family', () => {
+    expect(archivoCall.fallback?.at(-1)).toBe('sans-serif')
+    expect(interCall.fallback?.at(-1)).toBe('sans-serif')
+    expect(monoCall.fallback?.at(-1)).toBe('monospace')
+  })
+
+  // Next's metric-adjusted fallback is a local("Arial") face, which resolves
+  // almost everywhere and would shadow the monospace stack entirely.
+  it('keeps the Arial-based metric fallback away from the monospace family', () => {
+    expect(monoCall.adjustFontFallback).toBe(false)
+    expect(archivoCall.adjustFontFallback).toBeUndefined()
+    expect(interCall.adjustFontFallback).toBeUndefined()
+  })
+
+  it('combines all three variables into a single className for <html>', () => {
+    const classNames = fontVariables.split(' ')
+
+    expect(classNames).toHaveLength(3)
+    expect(classNames).toContain(archivo.variable)
+    expect(classNames).toContain(inter.variable)
+    expect(classNames).toContain(jetbrainsMono.variable)
   })
 })

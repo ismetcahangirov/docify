@@ -12,13 +12,17 @@ import localFont from 'next/font/local'
  * no network at all. Licence: `public/fonts/OFL.txt`.
  *
  * Only the `latin` subset is shipped (the same unicode-range Google serves for
- * it). Note that U+2192 `→` is *outside* that range: the primary-button arrow
- * in CLAUDE.md section 3 must be an inline SVG, not a text glyph, or it will
- * render in a fallback face.
+ * it), upright only, and JetBrains Mono at a single weight. Italics and mono
+ * bold are therefore synthesised by the browser — deliberate, since the type
+ * scale in CLAUDE.md section 3 asks for neither. Note also that U+2192 `→` is
+ * *outside* the latin range: the primary-button arrow must be an inline SVG,
+ * not a text glyph, or it renders in a fallback face. Tracked in issue #124.
  *
- * Each family exposes a CSS variable; `app/globals.css` maps those onto the
- * `--font-display` / `--font-sans` / `--font-mono` theme tokens. Nothing outside
- * that file should reference these variables directly.
+ * Each family exposes a CSS variable. `app/globals.css` maps those onto the
+ * `--font-display` / `--font-sans` / `--font-mono` theme tokens — that mapping
+ * lands with the design tokens in issue #13, so until it does nothing on the
+ * page actually uses these faces. Nothing outside `app/globals.css` should
+ * reference the variables directly.
  *
  * The option objects have to be inline literals — the Next font loader reads
  * them at compile time and rejects anything it cannot statically evaluate.
@@ -54,7 +58,16 @@ export const inter = localFont({
   fallback: ['ui-sans-serif', 'system-ui', 'sans-serif'],
 })
 
-/** Technical face: file sizes, formats, byte counts. One weight is enough. */
+/**
+ * Technical face: file sizes, formats, byte counts. One weight is enough.
+ *
+ * `adjustFontFallback` is off here. Left at its default it synthesises a
+ * `local("Arial")` face with this font's metrics and inserts it ahead of the
+ * `fallback` list — which resolves on virtually every machine and so makes the
+ * real monospace stack below unreachable. Byte counts would then render
+ * proportionally during the swap window, and permanently if the woff2 failed.
+ * Arial is a fair metric proxy for Archivo and Inter; for a mono face it is not.
+ */
 export const jetbrainsMono = localFont({
   src: [
     {
@@ -66,6 +79,7 @@ export const jetbrainsMono = localFont({
   variable: '--font-jetbrains-mono',
   display: 'swap',
   preload: true,
+  adjustFontFallback: false,
   fallback: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
 })
 

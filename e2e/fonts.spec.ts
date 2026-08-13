@@ -17,30 +17,51 @@ const THIRD_PARTY_FONT_HOSTS = [
 
 const FONT_FILE = /\.(woff2?|ttf|otf|eot)(\?|$)/
 
+/**
+ * `/` is a marketing route; `/convert` is cross-origin isolated by
+ * next.config.ts, where `Cross-Origin-Embedder-Policy: require-corp` would make
+ * a cross-origin font fail outright rather than merely leak.
+ */
+const ROUTES = ['/', '/convert']
+
 // Issue #14: the network panel must show zero external font requests. Fonts are
 // the only third-party resource a marketing page normally reaches for, and a
 // request to fonts.gstatic.com would leak a visitor's IP to Google on every
 // page view — which contradicts the privacy claim the product is sold on.
 test.describe('font delivery', () => {
-  test('never requests a font from a third-party host', async ({ page, baseURL }) => {
-    const urls: string[] = []
-    page.on('request', (request) => urls.push(request.url()))
+  for (const route of ROUTES) {
+    test(`serves every font of ${route} from this origin`, async ({ page, baseURL }) => {
+      expect(baseURL, 'playwright.config.ts must define a baseURL').toBeTruthy()
+      const origin = new URL(baseURL as string).origin
 
-    await page.goto('/')
-    await loadDeclaredFonts(page)
+      const urls: string[] = []
+      page.on('request', (request) => urls.push(request.url()))
 
-    for (const host of THIRD_PARTY_FONT_HOSTS) {
-      expect(urls.filter((url) => url.includes(host))).toEqual([])
-    }
+      await page.goto(route)
+      await loadDeclaredFonts(page)
 
-    const origin = new URL(baseURL ?? '').origin
-    const fontUrls = urls.filter((url) => FONT_FILE.test(url))
+      for (const host of THIRD_PARTY_FONT_HOSTS) {
+        expect(urls.filter((url) => url.includes(host))).toEqual([])
+      }
 
-    expect(fontUrls.length).toBeGreaterThan(0)
-    for (const url of fontUrls) {
-      expect(new URL(url).origin).toBe(origin)
-    }
-  })
+      const fontUrls = urls.filter((url) => FONT_FILE.test(url))
+
+      // Guards against the assertion above passing because nothing loaded at all.
+      expect(fontUrls.length).toBeGreaterThan(0)
+      for (const url of fontUrls) {
+        expect(new URL(url).origin).toBe(origin)
+      }
+    })
+
+    test(`ships no markup on ${route} pointing at a font CDN`, async ({ page }) => {
+      const response = await page.goto(route)
+      const html = (await response?.text()) ?? ''
+
+      for (const host of THIRD_PARTY_FONT_HOSTS) {
+        expect(html).not.toContain(host)
+      }
+    })
+  }
 
   test('exposes each family as a CSS variable on the html element', async ({ page }) => {
     await page.goto('/')
@@ -67,21 +88,16 @@ test.describe('font delivery', () => {
       expect(count).toBeGreaterThan(0)
     }
   })
-
-  test('ships no stylesheet or preload pointing at a font CDN', async ({ page }) => {
-    const response = await page.goto('/')
-    const html = (await response?.text()) ?? ''
-
-    for (const host of THIRD_PARTY_FONT_HOSTS) {
-      expect(html).not.toContain(host)
-    }
-  })
 })
 
 /**
  * Nothing on the page is guaranteed to *use* the three families yet, so the
  * browser would never fetch them and a "fonts came from this origin" assertion
  * would pass vacuously. Loading them explicitly forces the fetch.
+ *
+ * Only the first family of each stack is requested — that is the real face. The
+ * rest of the stack is metric-adjusted `local()` fallbacks and generics, whose
+ * availability varies by machine and says nothing about self-hosting.
  */
 async function loadDeclaredFonts(page: Page): Promise<number[]> {
   return page.evaluate(
@@ -90,13 +106,13 @@ async function loadDeclaredFonts(page: Page): Promise<number[]> {
       const counts: number[] = []
 
       for (const variable of variables) {
-        const family = root.getPropertyValue(variable).trim()
+        const family = root.getPropertyValue(variable).trim().split(',')[0]
         const faces = family ? await document.fonts.load(`1em ${family}`) : []
         counts.push(faces.length)
       }
 
       return counts
     },
-    FONT_VARIABLES as unknown as string[],
+    [...FONT_VARIABLES],
   )
 }
