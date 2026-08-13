@@ -108,6 +108,8 @@ pnpm build        # production build
 pnpm test         # unit tests
 pnpm e2e          # end-to-end tests
 pnpm lint         # lint
+pnpm format       # format with Prettier
+pnpm format:check # verify formatting without writing
 pnpm typecheck    # type check
 pnpm size         # bundle budget check
 ```
@@ -119,6 +121,9 @@ once:
 ```bash
 pnpm exec playwright install chromium
 ```
+
+A Husky `pre-commit` hook runs `lint-staged`, which lints and formats only the
+files you staged. It is installed automatically by `pnpm install`.
 
 > **Temporary:** `pnpm size` arrives with the bundle budget task.
 

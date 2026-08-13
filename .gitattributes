@@ -1,0 +1,28 @@
+# Normalise every text file to LF, in the repository *and* in the working tree.
+#
+# Prettier is configured with `endOfLine: 'lf'`, but this project is developed
+# on Windows, where `core.autocrlf=true` hands CRLF files to the working tree.
+# Without this file `pnpm format:check` passes on Linux CI and fails on the
+# author's own machine. Pinning eol=lf makes the two agree, and keeps CRLF from
+# ever reaching the repository.
+* text=auto eol=lf
+
+# Shell hooks must keep LF regardless of the above being relaxed later.
+.husky/* text eol=lf
+
+# Windows batch files are the one text format that misbehaves with LF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets — never touched by the eol filter and never diffed as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.avif binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.wasm binary

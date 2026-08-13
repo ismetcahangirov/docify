@@ -46,6 +46,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      # Formatting is part of the lint gate rather than a sixth job: it shares
+      # the same install and runs in under a second.
+      - run: pnpm format:check
 
   typecheck:
     name: typecheck
