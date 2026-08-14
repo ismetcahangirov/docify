@@ -23,7 +23,7 @@
  * When every source page survives, the loaded document is edited in place. Its
  * outlines, annotations, form fields and metadata all point at page objects that
  * keep their identity, so they keep working, and no page is copied — which
- * matters on the 200 MB scan that motivates `EXPANSION.pdflib`.
+ * matters on the 200 MB scan that `MEMORY.pdflib` is sized for.
  *
  * When a page is dropped, the result is rebuilt into a fresh document instead.
  * pdf-lib's page-tree removal unlinks a page but never collects it: an in-place
