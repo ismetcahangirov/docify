@@ -109,14 +109,20 @@ export function createConversionApi(loadRunner: RunnerLoader = loadEngineRunner)
 /**
  * The real loader.
  *
- * Every branch this grows in EPIC 4 is an `await import('@/lib/engines/<id>')`
- * and never a static import — one static import here drops a 32 MB WASM binary
- * into the worker chunk and breaks CLAUDE.md §2.3.
+ * Every branch is an `await import('@/lib/engines/<id>')` and never a static
+ * import — one static import here drops a 32 MB WASM binary into the worker
+ * chunk and breaks CLAUDE.md §2.3. `test/worker/static-import-graph.test.ts`
+ * enforces that against the source.
  */
 async function loadEngineRunner(engine: EngineId): Promise<EngineRunner> {
+  if (engine === 'canvas') {
+    const { createRunner } = await import('@/lib/engines/canvas')
+    return createRunner()
+  }
+
   throw new Error(
     `No runner is registered for engine "${engine}" yet. ` +
-      'Conversion engines arrive in EPIC 4; the worker shell only answers ping() so far.',
+      'The remaining engines arrive over EPICs 4–6.',
   )
 }
 

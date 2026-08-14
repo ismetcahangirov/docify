@@ -161,7 +161,7 @@ describe('terminateWorker', () => {
 })
 
 describe('convert', () => {
-  it('is reachable across the worker boundary but has no engine behind it yet', async () => {
+  it('carries an engine failure back across the worker boundary', async () => {
     const { ensureWorker } = await loadClient()
 
     const request = {
@@ -170,6 +170,10 @@ describe('convert', () => {
       files: [new Blob(['x'])],
     }
 
-    await expect(ensureWorker().convert(request)).rejects.toThrow(/canvas/)
+    // The canvas runner loads here, then fails on `createImageBitmap`, which
+    // jsdom does not implement. What is being tested is the crossing: whatever
+    // the engine threw has to arrive on this side as a rejection rather than as
+    // a hung promise or an `error` event on the worker.
+    await expect(ensureWorker().convert(request)).rejects.toThrow(/createImageBitmap/)
   })
 })

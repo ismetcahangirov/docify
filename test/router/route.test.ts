@@ -16,6 +16,7 @@ import type {
   Capabilities,
   ConversionTask,
   EngineId,
+  FormatId,
   RouteResult,
   WarningCode,
 } from '@/lib/router/types'
@@ -293,17 +294,18 @@ describe('route — the twelve cases the plan requires', () => {
 })
 
 describe('route — rejections', () => {
-  it('rejects with UNSUPPORTED_PAIR while the engine registry is still empty', async () => {
-    // Issue #26 shipped `ENGINES` empty on purpose and left this assertion to
-    // the router. The list that actually ships is loaded and handed over
-    // verbatim rather than assumed, so the case stays honest as engines land.
-    // Whether the list is still empty is the registry suite's assertion.
+  it('rejects with UNSUPPORTED_PAIR when the engines that actually ship claim nothing', async () => {
+    // The list that actually ships is loaded and handed over verbatim rather
+    // than assumed, so the case stays honest as engines land. RAR → MP4 is not
+    // on any engine's roadmap, so it stays unclaimed however the list grows.
     const real =
       await vi.importActual<typeof import('@/lib/engines/registry')>('@/lib/engines/registry')
 
     register(...real.ENGINES)
 
-    expect(refused(route(jpgToPng, 2 * MB, desktop)).code).toBe('UNSUPPORTED_PAIR')
+    expect(refused(route({ from: 'rar', to: 'mp4', op: 'convert' }, 2 * MB, desktop)).code).toBe(
+      'UNSUPPORTED_PAIR',
+    )
   })
 
   it('refuses a negative or unreadable size as EMPTY_INPUT', () => {
@@ -545,5 +547,76 @@ describe('route — purity', () => {
 
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.warnings).toBeInstanceOf(Array)
+  })
+})
+
+describe('route — the canvas engine as it actually ships (issue #30)', () => {
+  /** The real descriptor, not a stand-in: these cases pin what it claims. */
+  const realCanvas = async () =>
+    (await vi.importActual<typeof import('@/lib/engines/canvas')>('@/lib/engines/canvas'))
+      .descriptor
+
+  it('is selected for every pair among jpg, png, webp and bmp', async () => {
+    register(await realCanvas(), vips(), ffmpeg())
+    const formats: FormatId[] = ['jpg', 'png', 'webp', 'bmp']
+
+    for (const from of formats) {
+      for (const to of formats) {
+        const result = chosen(route({ from, to, op: 'convert' }, 2 * MB, desktop))
+
+        expect(result.engine).toBe('canvas')
+        expect(result.loadCost).toBe(0)
+      }
+    }
+  })
+
+  it('warns about nothing at all for png → bmp, the flagship zero-download job', async () => {
+    register(await realCanvas())
+
+    // Neither side is lossy and there is no download, so a clean conversion has
+    // to arrive with an empty warning list rather than a reassuring one.
+    expect(
+      chosen(route({ from: 'png', to: 'bmp', op: 'convert' }, 2 * MB, desktop)).warnings,
+    ).toEqual([])
+  })
+
+  it('is not selected for a format the browser cannot write, leaving the pair to vips', async () => {
+    register(await realCanvas(), vips())
+
+    expect(chosen(route(tiffToPng, 2 * MB, desktop)).engine).toBe('vips')
+  })
+
+  it('does not claim heic, avif or any operation beyond a plain convert', async () => {
+    register(await realCanvas())
+
+    expect(refused(route(heicToJpg, 2 * MB, desktop)).code).toBe('UNSUPPORTED_PAIR')
+    expect(refused(route({ from: 'jpg', to: 'avif', op: 'convert' }, 2 * MB, desktop)).code).toBe(
+      'UNSUPPORTED_PAIR',
+    )
+    expect(refused(route({ from: 'jpg', to: 'jpg', op: 'compress' }, 2 * MB, desktop)).code).toBe(
+      'UNSUPPORTED_PAIR',
+    )
+  })
+
+  it('leaves the browser-API gate to the router, so a missing API is named', async () => {
+    // The descriptor deliberately ignores `Capabilities`: a browser without
+    // OffscreenCanvas must hear which API is missing, not "unsupported pair".
+    register(await realCanvas())
+
+    const result = refused(route(jpgToPng, 2 * MB, { ...desktop, offscreenCanvas: false }))
+
+    expect(result.code).toBe('CODEC_UNAVAILABLE')
+    expect(result.message).toContain('OffscreenCanvas')
+  })
+
+  it('refuses an image too large for a decoded bitmap to fit in the budget', async () => {
+    register(await realCanvas())
+
+    // A canvas holds 6× the encoded input, so a 1200 MB desktop budget tops out
+    // at 200 MB of JPEG — and 300 MB of it cannot be decoded safely.
+    const result = refused(route(jpgToPng, 300 * MB, desktop))
+
+    expect(result.code).toBe('FILE_TOO_LARGE')
+    expect(result.message).toContain('200 MB')
   })
 })
