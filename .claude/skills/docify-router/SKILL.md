@@ -103,7 +103,7 @@ suggestion: 'Please try again.'
 
 ## Required test matrix
 
-`lib/router/router.test.ts` must cover all of these:
+`test/router/route-matrix.test.ts` must cover all of these:
 
 ```
 ✓ desktop + heic→jpg + 3MB                      → 'heif'
@@ -120,7 +120,7 @@ suggestion: 'Please try again.'
 ✓ vips loadCost 5.5MB                           → no LARGE_DOWNLOAD (below the 8MB threshold)
 ```
 
-Plus, for multi-file jobs:
+Plus, in `test/router/route-multi-file.test.ts`, for multi-file jobs:
 
 ```
 ✓ merge, 100 x 50MB, desktop                    → FILE_TOO_LARGE quoting the 4.9GB total
