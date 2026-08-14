@@ -30,6 +30,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const WORKER_ENTRY = 'lib/worker/conversion.worker.ts'
 const CLIENT = 'lib/worker/client.ts'
 const JOBS = 'lib/worker/jobs.ts'
+const REGISTRY = 'lib/engines/registry.ts'
 
 /** Anything whose presence in the worker chunk would mean an engine leaked in. */
 const HEAVY_PACKAGE = /wasm|ffmpeg|vips|heif|heic|pdf|mp4box|fflate|libarchive|canvas|jszip/i
@@ -37,6 +38,7 @@ const HEAVY_PACKAGE = /wasm|ffmpeg|vips|heif|heic|pdf|mp4box|fflate|libarchive|c
 const workerGraph = staticGraphOf(WORKER_ENTRY, repoRoot)
 const clientGraph = staticGraphOf(CLIENT, repoRoot)
 const jobsGraph = staticGraphOf(JOBS, repoRoot)
+const registryGraph = staticGraphOf(REGISTRY, repoRoot)
 
 describe('the walker, on the shapes that could hide a leak', () => {
   const LEAK = './engines/ffmpeg'
@@ -125,6 +127,20 @@ describe('the conversion worker entry', () => {
 
   it('costs exactly one runtime dependency', () => {
     expect(workerGraph.packages).toEqual(['comlink'])
+  })
+})
+
+describe('the engine registry', () => {
+  it('was walked at all — the assertion below passes on an empty graph', () => {
+    expect(registryGraph.files).toContain('lib/engines/vips.ts')
+  })
+
+  it('reaches no WASM package, so every descriptor stays free to import', () => {
+    // The registry is statically imported by the router, which the page imports.
+    // A descriptor module that statically imported its own engine would put a
+    // multi-megabyte binary in the first-load bundle (CLAUDE.md §2.3), and no
+    // amount of care in the worker would undo it.
+    expect(registryGraph.packages.filter((name) => HEAVY_PACKAGE.test(name))).toEqual([])
   })
 })
 

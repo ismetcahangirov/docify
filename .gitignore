@@ -25,6 +25,11 @@ next-env.d.ts
 # production
 dist/
 
+# WASM engines copied out of node_modules by `pnpm vendor`, which `pnpm dev`
+# and `pnpm build` both run. Reproducible from the lockfile, so the binaries
+# themselves are not committed. See scripts/vendor-wasm-vips/vendor.mjs.
+public/vendor/
+
 # misc
 .DS_Store
 *.pem

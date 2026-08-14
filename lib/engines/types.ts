@@ -10,6 +10,8 @@
 
 import type { Capabilities, ConversionTask, EngineId } from '@/lib/router/types'
 
+import type { ImageOptions } from './image-options'
+
 export interface EngineDescriptor {
   id: EngineId
   /** Name shown to the user, e.g. "Hardware-accelerated (WebCodecs)". */
@@ -29,7 +31,7 @@ export interface EngineDescriptor {
  * What the worker hands to a runner.
  *
  * Deliberately minimal. Per-operation settings — quality, target width, page
- * ranges — are not modelled yet: a single catch-all options record is either too
+ * ranges — are not modelled as one catch-all record, which would be either too
  * loose to be worth typing or too narrow for `split` and `organize`. Each engine
  * adds the optional, concretely typed slot it needs when it lands.
  */
@@ -37,6 +39,12 @@ export interface EngineInput {
   task: ConversionTask
   /** Source files in user order. Single-file operations receive exactly one. */
   files: readonly Blob[]
+  /**
+   * Settings for image work — quality, target size, metadata. Absent means
+   * "every default", which is a valid job rather than a missing argument; see
+   * `./image-options` for what each default is and why.
+   */
+  image?: ImageOptions
 }
 
 /**

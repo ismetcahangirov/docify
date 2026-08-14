@@ -48,6 +48,10 @@ describe('ENGINES', () => {
     expect(getEngine('heif')?.priority).toBe(35)
   })
 
+  it('carries the vips engine at the priority the plan gives it', () => {
+    expect(getEngine('vips')?.priority).toBe(40)
+  })
+
   it('is frozen, so one consumer cannot reorder the list another is reading', () => {
     expect(Object.isFrozen(ENGINES)).toBe(true)
   })
@@ -95,9 +99,18 @@ describe('byPreference', () => {
 })
 
 describe('enginesFor', () => {
-  it('finds no candidate for a task no registered engine claims', () => {
+  it('finds no candidate for a pair no registered engine claims', () => {
     expect(enginesFor({ from: 'rar', to: 'mp4', op: 'convert' }, desktop)).toEqual([])
     expect(enginesFor({ from: 'mp4', to: 'webm', op: 'convert' }, desktop)).toEqual([])
+  })
+
+  it('finds the engine that does claim the pair', () => {
+    // Canvas and vips both write PNG from JPEG, and canvas is cheaper, so the
+    // pair has two candidates in preference order rather than one.
+    expect(enginesFor(jpgToPng, desktop).map((engine) => engine.id)).toEqual(['canvas', 'vips'])
+    expect(
+      enginesFor({ from: 'tiff', to: 'png', op: 'convert' }, desktop).map((engine) => engine.id),
+    ).toEqual(['vips'])
   })
 
   it('returns them in preference order, best candidate first', () => {
@@ -118,6 +131,10 @@ describe('getEngine', () => {
 
   it('finds a registered engine by its id', () => {
     for (const engine of ENGINES) expect(getEngine(engine.id)).toBe(engine)
+  })
+
+  it('resolves an id an engine has claimed', () => {
+    expect(getEngine('vips')?.priority).toBe(40)
   })
 
   it('constrains the id to the EngineId union', () => {
