@@ -41,11 +41,22 @@
  * name, so a JPEG called `.png` routes here claiming to be a PNG. Every file is
  * therefore sniffed by its magic bytes rather than by its label, and a file that
  * is neither is rejected by name — see {@link embed}.
+ *
+ * It also does not trust the *size* of a PNG to predict what decoding it costs.
+ * `embedPng` inflates the image to raw samples and holds them uncompressed until
+ * `save()` deflates them again, so the job's peak follows its pixels and not its
+ * bytes: twelve 1500 × 2000 screenshots weigh 750 kB and measure 202 MB.
+ * `route()` is handed byte counts and cannot see that, so the ceiling lives here
+ * — {@link guardDecodedPixels}, shaped after `canvasSize()` in
+ * `./pdf-render-plan` and measured in
+ * `docs/router/memory-budget-measurement.md`.
  */
 
 import { PageSizes, PDFDocument, type PDFImage } from 'pdf-lib'
 
 import type { PdfLayoutOptions } from './pdf-options'
+import { assertDecodedPixelsFit, imageLabel, PDFLIB_DECODED_BYTES_PER_PIXEL } from './raster-limits'
+import { pngSize } from './raster-size'
 import type { EngineInput, ProgressCallback } from './types'
 
 /**
@@ -100,6 +111,9 @@ export async function imagesToPdf(
   const layout = input.pdf?.layout
   const margin = marginOf(layout)
   const doc = await PDFDocument.create()
+  // Every PNG embedded so far stays decoded until `save()`, so the bound is the
+  // running total rather than the largest single image.
+  let decodedPixels = 0
 
   for (const [index, file] of files.entries()) {
     throwIfAborted(signal)
@@ -112,6 +126,8 @@ export async function imagesToPdf(
     // has to survive a 1 GB phone (`descriptor.supports` gates on nothing).
     const bytes = new Uint8Array(await file.arrayBuffer())
     throwIfAborted(signal)
+
+    decodedPixels = guardDecodedPixels(bytes, file, index, decodedPixels, input.budgetBytes)
 
     const image = await embed(doc, bytes, file, index)
     const placement = place(image, layout, margin)
@@ -131,6 +147,45 @@ export async function imagesToPdf(
 }
 
 /**
+ * Refuses the job if this image's pixels take it past what the device can
+ * decode, and answers the running total either way.
+ *
+ * Reads the IHDR and returns *before* `embedPng` is called, which is the whole
+ * point: an out-of-memory inside a decoder is not a catchable error on the
+ * platforms this protects, it is a blank tab. A file whose header cannot be read
+ * is passed through untouched — {@link embed} has the better error for "this is
+ * not an image", and a guard that cannot measure something must not be the thing
+ * that refuses it.
+ *
+ * Only PNG is charged. `embedJpg` scans to SOF0 and copies the bytes into a
+ * `DCTDecode` stream without running a Huffman decoder, so a 400 megapixel JPEG
+ * costs its bytes and nothing more — which the router already budgets, and which
+ * `images-jpg-24` measured at 1.7× the input.
+ */
+function guardDecodedPixels(
+  bytes: Uint8Array,
+  file: Blob,
+  index: number,
+  pixelsSoFar: number,
+  budgetBytes: number | undefined,
+): number {
+  const size = pngSize(bytes)
+  if (size === null) return pixelsSoFar
+
+  const jobPixels = pixelsSoFar + size.width * size.height
+
+  assertDecodedPixelsFit({
+    label: imageLabel(file, index),
+    size,
+    jobPixels,
+    bytesPerPixel: PDFLIB_DECODED_BYTES_PER_PIXEL,
+    budgetBytes,
+  })
+
+  return jobPixels
+}
+
+/**
  * Embeds one image, choosing the decoder from the bytes.
  *
  * The rejection quotes the file and names the fix (CLAUDE.md §2.5). "Unsupported
@@ -147,7 +202,7 @@ async function embed(
   if (startsWith(bytes, JPEG_SIGNATURE)) return doc.embedJpg(bytes)
 
   throw new Error(
-    `${nameOf(file, index)} is not a JPEG or a PNG, whatever its name says. A PDF ` +
+    `${imageLabel(file, index)} is not a JPEG or a PNG, whatever its name says. A PDF ` +
       'can embed only those two, so convert it to PNG first and build the document from the result.',
   )
 }
@@ -216,19 +271,6 @@ function marginOf(layout: PdfLayoutOptions | undefined): number {
   }
 
   return margin
-}
-
-/**
- * How to refer to a file in an error.
- *
- * `EngineInput.files` is typed as `Blob` because that is all the contract needs,
- * but the worker forwards the user's `File` objects, which carry the name that
- * makes a rejection actionable. The position is the fallback, not the default.
- */
-function nameOf(file: Blob, index: number): string {
-  const name: unknown = (file as { name?: unknown }).name
-
-  return typeof name === 'string' && name.length > 0 ? `"${name}"` : `Image ${index + 1}`
 }
 
 function startsWith(bytes: Uint8Array, signature: Uint8Array): boolean {

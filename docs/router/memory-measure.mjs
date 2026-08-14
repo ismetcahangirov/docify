@@ -84,18 +84,29 @@ async function mergeScenario(paths) {
   return { inputBytes, fileCount: paths.length, ...result }
 }
 
-/** Mirrors `lib/engines/pdf-from-images.ts`. */
+/**
+ * Mirrors `lib/engines/pdf-from-images.ts`.
+ *
+ * Also counts the *decoded* pixels, which is the axis the input bytes cannot
+ * predict and the one `lib/engines/raster-limits.ts` bounds. Only the PNGs are
+ * counted: `embedJpg` reads SOF0 and copies the bytes into a `DCTDecode` stream
+ * without ever decoding them, so a JPEG's pixels cost nothing here — which is
+ * why `images-jpg-24` carries 288 Mpx and peaks at 1.7× its bytes.
+ */
 async function imagesScenario(paths) {
   const inputBytes = paths.reduce((sum, path) => sum + readFileSync(path).length, 0)
 
   const result = await withPeak(async (sample) => {
     const doc = await PDFDocument.create()
+    let decodedPixels = 0
 
     for (const path of paths) {
       const bytes = readFileSync(path)
-      const image = path.endsWith('.png') ? await doc.embedPng(bytes) : await doc.embedJpg(bytes)
+      const png = path.endsWith('.png')
+      const image = png ? await doc.embedPng(bytes) : await doc.embedJpg(bytes)
       const page = doc.addPage([image.width, image.height])
 
+      if (png) decodedPixels += image.width * image.height
       page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height })
       sample()
     }
@@ -103,7 +114,7 @@ async function imagesScenario(paths) {
     const out = await doc.save()
     sample()
 
-    return { outputBytes: out.length }
+    return { outputBytes: out.length, decodedPixels }
   })
 
   return { inputBytes, fileCount: paths.length, ...result }
@@ -241,6 +252,13 @@ function scenariosFor(corpusDir) {
     'images-jpg-24': () => imagesScenario(files('photo-', '.jpg')),
     'images-png-12': () => imagesScenario(files('shot-', '.png')),
     'images-flat-png-12': () => imagesScenario(files('flat-', '.png')),
+    // The pixel sweep behind `PDFLIB_DECODED_BYTES_PER_PIXEL` in
+    // `lib/engines/raster-limits.ts`: the same image at four job sizes, so the
+    // per-pixel cost can be read off the slope rather than off one point.
+    'images-flat-png-1': () => imagesScenario(files('flat-', '.png').slice(0, 1)),
+    'images-flat-png-3': () => imagesScenario(files('flat-', '.png').slice(0, 3)),
+    'images-flat-png-6': () => imagesScenario(files('flat-', '.png').slice(0, 6)),
+    'images-flat-png-24': () => imagesScenario(cycle(files('flat-', '.png'), 24)),
     'images-mixed-36': () =>
       imagesScenario([...files('photo-', '.jpg'), ...files('shot-', '.png')]),
     'organize-scan-large': () => organizeScenario(join(corpusDir, 'scan-large.pdf')),
@@ -292,13 +310,26 @@ function print(rows) {
   const mb = (bytes) => (bytes / MB).toFixed(1)
   const ratio = (peak, input) => (peak / input).toFixed(2)
 
-  console.log(['scenario', 'files', 'in MB', 'peak MB', 'peak/in', 'peak+blob/in'].join('\t'))
+  console.log(
+    [
+      'scenario',
+      'files',
+      'in MB',
+      'peak MB',
+      'peak/in',
+      'peak+blob/in',
+      'Mpx',
+      'peak+blob/px',
+    ].join('\t'),
+  )
 
   for (const row of rows) {
     if (row.failed !== undefined) {
       console.log([row.scenario, 'FAILED', row.failed].join('\t'))
       continue
     }
+
+    const withBlob = row.outputBytes === undefined ? undefined : row.peakLiveBytes + row.outputBytes
 
     console.log(
       [
@@ -307,9 +338,9 @@ function print(rows) {
         mb(row.inputBytes),
         mb(row.peakLiveBytes),
         ratio(row.peakLiveBytes, row.inputBytes),
-        row.outputBytes === undefined
-          ? ''
-          : ratio(row.peakLiveBytes + row.outputBytes, row.inputBytes),
+        withBlob === undefined ? '' : ratio(withBlob, row.inputBytes),
+        row.decodedPixels ? (row.decodedPixels / 1e6).toFixed(1) : '',
+        row.decodedPixels && withBlob !== undefined ? ratio(withBlob, row.decodedPixels) : '',
       ].join('\t'),
     )
   }

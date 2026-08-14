@@ -22,6 +22,8 @@
 import type { FormatId } from '@/lib/router/types'
 
 import { encodeBmp } from './bmp'
+import { assertBitmapFits, imageLabel } from './raster-limits'
+import { rasterSize } from './raster-size'
 import type { EngineInput, EngineRunner, ProgressCallback } from './types'
 
 /** The formats a browser canvas can both read and write. */
@@ -104,6 +106,10 @@ export function createCanvasRunner(
 
       const target = targetFormat(input.task.to)
       const source = singleFile(input)
+      await refuseOversizedSource(source)
+      // The header read above is I/O, short but not free, and it sits between
+      // the caller pressing cancel and anything else noticing.
+      throwIfAborted(signal)
       onProgress(0)
 
       let bitmap: ImageBitmap | null = null
@@ -112,6 +118,12 @@ export function createCanvasRunner(
         bitmap = await environment.decode(source)
         throwIfAborted(signal)
         onProgress(DECODED)
+
+        // Again, on what the decoder actually produced. The header sniff above
+        // reads PNG, JPEG and WebP; a browser also decodes BMP, AVIF and, on
+        // Apple hardware, HEIC, and the canvas about to be allocated is sized
+        // from the bitmap rather than from anything the file declared.
+        assertBitmapFits(imageLabel(source), bitmap)
 
         const canvas = environment.createCanvas(bitmap.width, bitmap.height)
         draw(canvas, bitmap, target)
@@ -181,6 +193,59 @@ function targetFormat(format: FormatId): CanvasFormat {
   if (format in MIME_TYPES) return format as CanvasFormat
 
   throw new Error(`The canvas engine cannot write ${format.toUpperCase()} files.`)
+}
+
+/**
+ * How much of a file has to be read to find its dimensions.
+ *
+ * A PNG's IHDR is the first chunk and lands inside 24 bytes. A JPEG's SOF0 sits
+ * behind whatever APP segments the camera wrote — Exif, a thumbnail, an ICC
+ * profile split across a dozen APP2 markers — and 64 kB clears all of those with
+ * room to spare. Reading a slice rather than the whole file matters: `source`
+ * can be a 200 MB image, and copying it here to look at its header would be a
+ * second copy of the very thing this guard exists to bound.
+ */
+const HEADER_SLICE_BYTES = 65_536
+
+/**
+ * Refuses a source whose declared size no browser bitmap could hold, before one
+ * is asked for.
+ *
+ * The best moment to stop is the one before `createImageBitmap` allocates
+ * `width × height × 4`, because an out-of-memory inside a browser decoder is not
+ * a catchable error on the platforms this protects — and a WebP or a PNG can
+ * declare 20 000 × 20 000 in a file of a few hundred bytes.
+ *
+ * This is the *early* half of the guard, and it is allowed to abstain: a BMP, an
+ * AVIF or a source whose header cannot be read is simply not refused here. The
+ * check on the decoded bitmap in `run` is the one that always happens, one
+ * allocation later.
+ */
+async function refuseOversizedSource(source: Blob): Promise<void> {
+  const head = await headerOf(source)
+  const size = head === null ? null : rasterSize(head)
+  if (size === null) return
+
+  assertBitmapFits(imageLabel(source), size)
+}
+
+/**
+ * The first {@link HEADER_SLICE_BYTES} of `source`, or `null` if it has no
+ * `slice` to give them with.
+ *
+ * A feature check rather than a `try`, deliberately. `Blob.slice` is universal
+ * in a browser and in a worker, but `EngineInput` only promises a `Blob`, and a
+ * value that has crossed a structured clone in a host with partial `Blob`
+ * support arrives as data without methods — that is a source this cannot sniff,
+ * and abstaining is right. A read that *fails* is a different thing: a
+ * `NotReadableError` means the user moved or deleted the file after picking it,
+ * which is more actionable than the decoder failure that would replace it, so it
+ * is left to propagate.
+ */
+async function headerOf(source: Blob): Promise<Uint8Array | null> {
+  if (typeof source.slice !== 'function') return null
+
+  return new Uint8Array(await source.slice(0, HEADER_SLICE_BYTES).arrayBuffer())
 }
 
 function singleFile(input: EngineInput): Blob {

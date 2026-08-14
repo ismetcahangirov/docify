@@ -241,6 +241,20 @@ describe('run', () => {
     ).rejects.toThrow(/exactly one file/i)
   })
 
+  it('quotes the file name when the pixel ceiling refuses the image', async () => {
+    // The name is what makes the rejection actionable: "unsupported image" would
+    // leave someone re-checking a camera roll to find which photo it meant.
+    const runner = await createRunner({
+      load: async () => fakeModule(20_000, 20_000),
+      encode: recordingEncoder(),
+    })
+    const files = [new File([new Uint8Array([1, 2, 3])], 'sunset.heic')]
+
+    await expect(
+      runner.run(input(convert('heic', 'jpg'), files), new AbortController().signal, () => {}),
+    ).rejects.toThrow(/"sunset\.heic" is 20000 × 20000 pixels/)
+  })
+
   it('refuses a job with several files rather than silently dropping the rest', async () => {
     const runner = await createRunner({
       load: async () => fakeModule(),

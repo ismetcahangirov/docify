@@ -14,6 +14,8 @@ import { BACKDROP, createCanvasRunner } from '@/lib/engines/canvas-runner'
 import type { EngineInput } from '@/lib/engines/types'
 import type { ConversionTask, FormatId } from '@/lib/router/types'
 
+import { pngBytes } from './synthetic-images'
+
 class FakeBitmap {
   closeCount = 0
 
@@ -354,6 +356,54 @@ describe('the canvas runner — refusals', () => {
         noProgress,
       ),
     ).rejects.toThrow(/image\/webp/)
+  })
+
+  it('refuses a PNG that is too many pixels without decoding it at all', async () => {
+    // The header says 20000 × 20000 and the pixels say ten by ten. Only a guard
+    // that read the IHDR and stopped can quote the first number, which is what
+    // "before any bitmap is allocated" has to mean.
+    const { environment, decoded } = harness()
+    const bytes = pngBytes(10, 10)
+    const fields = new DataView(bytes.buffer)
+    fields.setUint32(16, 20_000)
+    fields.setUint32(20, 20_000)
+
+    await expect(
+      createCanvasRunner(environment).run(
+        { task: { from: 'png', to: 'jpg', op: 'convert' }, files: [new File([bytes], 'wall.png')] },
+        new AbortController().signal,
+        noProgress,
+      ),
+    ).rejects.toThrow(
+      /"wall\.png" is 20000 × 20000 pixels[\s\S]*larger than a browser canvas can hold/,
+    )
+    expect(decoded).toEqual([])
+  })
+
+  it('refuses an unsniffable format on the decoded size, before allocating a canvas', async () => {
+    // A browser reads WebP, BMP, AVIF and — on Apple hardware — HEIC, and none
+    // of those headers is parsed here. The decoded bitmap still names its own
+    // size, and the canvas drawn from it is another `width × height × 4`.
+    const created: [number, number][] = []
+    const environment: CanvasEnvironment = {
+      decode: async () => new FakeBitmap(20_000, 20_000) as unknown as ImageBitmap,
+      createCanvas: (width, height) => {
+        created.push([width, height])
+        throw new Error('the runner should have stopped before creating a canvas')
+      },
+    }
+
+    await expect(
+      createCanvasRunner(environment).run(
+        {
+          task: { from: 'webp', to: 'png', op: 'convert' },
+          files: [new File([new Uint8Array(16)], 'mural.webp')],
+        },
+        new AbortController().signal,
+        noProgress,
+      ),
+    ).rejects.toThrow(/"mural\.webp" is 20000 × 20000 pixels/)
+    expect(created).toEqual([])
   })
 
   it('reports a canvas that will not give up a 2d context', async () => {

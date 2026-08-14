@@ -32,8 +32,15 @@
  * and not their total. The 6× factor is the honest part of the model and the
  * incomplete one — a decoded bitmap is `width × height × 4` regardless of how
  * well the source compressed, so the factor holds for photographs and
- * understates a flat-coloured PNG badly. See the "what the model still cannot
- * see" section of `docs/router/memory-budget-measurement.md`.
+ * understates a flat-coloured PNG badly. See the "decoded-pixel ceiling" section
+ * of `docs/router/memory-budget-measurement.md`, which explains why closing that
+ * gap properly needs a browser measurement harness nobody has built yet.
+ *
+ * What the runner does refuse is the part that is a *fact* rather than an
+ * estimate: an image past what a browser canvas can hold, which comes back as a
+ * blank surface rather than an error. `assertBitmapFits` in `./raster-limits`
+ * checks it twice — on the header before `createImageBitmap`, and on the decoded
+ * bitmap before the canvas — each time before the allocation it guards.
  *
  * ## The two halves
  *

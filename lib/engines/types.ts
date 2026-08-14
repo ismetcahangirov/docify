@@ -52,6 +52,21 @@ export interface EngineInput {
    * See `./pdf-options` for the slot each operation reads.
    */
   pdf?: PdfOptions
+  /**
+   * Memory this device may spend on the job, in bytes: `budgetBytes(caps)` from
+   * `lib/router/budget.ts`, computed on the main thread that routed.
+   *
+   * A number and not the `Capabilities` it came from, on purpose. The worker
+   * must not be able to re-decide anything (CLAUDE.md §2.4) — it is handed the
+   * answer, not the inputs. It exists because one bound cannot be enforced in
+   * `lib/router/` at all: a decoded bitmap costs `width × height × bytes` and
+   * `route()` never opens a file, so `./raster-limits` has to apply the budget
+   * itself, beside the bytes it is decoding.
+   *
+   * Absent means "the caller did not say", not "no budget": see
+   * `DEFAULT_BUDGET_BYTES`, which is what applies then.
+   */
+  budgetBytes?: number
 }
 
 /**

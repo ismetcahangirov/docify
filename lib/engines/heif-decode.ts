@@ -13,6 +13,7 @@
  */
 
 import type { RgbaBitmap } from './bitmap'
+import { assertBitmapFits } from './raster-limits'
 
 /**
  * What libheif hands to `display`'s callback: the buffer it was given, or `null`
@@ -95,8 +96,16 @@ async function instantiate(): Promise<HeifModule> {
  *
  * Synchronous inside libheif: the decode cannot be interrupted once it starts,
  * so cancellation is checked around this call rather than within it.
+ *
+ * `label` is how the image is named if it is refused — see `./raster-limits`.
+ * The default reads as a sentence on its own, because a `Blob` carries no name
+ * and there is nothing better to say about it.
  */
-export async function decodeHeif(module: HeifModule, bytes: Uint8Array): Promise<RgbaBitmap> {
+export async function decodeHeif(
+  module: HeifModule,
+  bytes: Uint8Array,
+  label = 'This image',
+): Promise<RgbaBitmap> {
   const images = new module.HeifDecoder().decode(bytes)
 
   if (images.length === 0) {
@@ -115,6 +124,14 @@ export async function decodeHeif(module: HeifModule, bytes: Uint8Array): Promise
         `This HEIC file reports impossible dimensions (${width} by ${height}), so it cannot be decoded.`,
       )
     }
+
+    // The line below allocates `width × height × 4` and `./bitmap` then draws it
+    // onto an `OffscreenCanvas` of the same size, so an image past what a canvas
+    // can hold produces a blank file rather than an error. Checked here because
+    // this is the last point before the first of those two allocations, and
+    // because a HEIC's dimensions are not predicted by its bytes — the codec is
+    // the whole point of the format — so `route()` cannot bound it.
+    assertBitmapFits(label, { width, height })
 
     const bitmap: RgbaBitmap = { width, height, data: new Uint8ClampedArray(width * height * 4) }
 

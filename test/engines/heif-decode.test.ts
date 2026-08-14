@@ -174,6 +174,46 @@ describe('decodeHeif, against a fake libheif', () => {
       decodeHeif(fakeModule([fakeImage({ width: 0, height: 4 })]), fixture),
     ).rejects.toThrow(/dimensions/i)
   })
+
+  it('refuses an image larger than the canvas it would be encoded through', async () => {
+    // libheif reports the dimensions before anything is allocated, so this is
+    // the cheapest possible place to stop: the `Uint8ClampedArray` on the next
+    // line would be 1.6 GB, and the `OffscreenCanvas` `./bitmap` draws it onto
+    // would come back blank rather than throwing.
+    await expect(
+      decodeHeif(
+        fakeModule([fakeImage({ width: 20_000, height: 20_000 })]),
+        fixture,
+        '"beach.heic"',
+      ),
+    ).rejects.toThrow(/"beach\.heic" is 20000 × 20000 pixels[\s\S]*browser canvas can hold/)
+  })
+
+  it('decodes a full-size phone photo, which is the conversion this engine exists for', async () => {
+    // 4032 × 3024 is what an iPhone writes. A ceiling that refused it would be
+    // worse than the crash it was guarding against.
+    const bitmap = await decodeHeif(fakeModule([fakeImage({ width: 4032, height: 3024 })]), fixture)
+
+    expect([bitmap.width, bitmap.height]).toEqual([4032, 3024])
+  })
+
+  it('refers to the image generically when the caller has no name for it', async () => {
+    await expect(
+      decodeHeif(fakeModule([fakeImage({ width: 20_000, height: 20_000 })]), fixture),
+    ).rejects.toThrow(/This image is 20000 × 20000 pixels/)
+  })
+
+  it('releases every image when the pixel ceiling refuses the job', async () => {
+    const freed: string[] = []
+
+    await expect(
+      decodeHeif(
+        fakeModule([fakeImage({ width: 20_000, height: 20_000, freed, name: 'a' })]),
+        fixture,
+      ),
+    ).rejects.toThrow()
+    expect(freed).toEqual(['a'])
+  })
 })
 
 describe('decodeHeif, against the real libheif build', () => {
