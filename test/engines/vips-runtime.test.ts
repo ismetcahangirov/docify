@@ -28,6 +28,20 @@ import { VIPS_VENDORED_FILES, vipsLibDir } from '@/scripts/vendor-wasm-vips/vend
 
 const bytesOf = (file: string): number => statSync(join(vipsLibDir(), file)).size
 
+/**
+ * What the guard refuses a base with — returned rather than matched, so two
+ * refusals can be compared for being the same message and not merely both loud.
+ */
+const rejectionFor = (base: string): string => {
+  try {
+    vipsModuleUrl(base)
+  } catch (error) {
+    return (error as Error).message
+  }
+
+  throw new Error(`vipsModuleUrl(${JSON.stringify(base)}) resolved a base it cannot resolve`)
+}
+
 describe('where wasm-vips is fetched from', () => {
   it('resolves to this origin, never a CDN', () => {
     expect(vipsModuleUrl('https://docify.app/convert/heic-to-jpg')).toBe(
@@ -41,10 +55,17 @@ describe('where wasm-vips is fetched from', () => {
     )
   })
 
-  it('says where to look when there is no origin at all', () => {
+  it('names the asset it could not resolve when there is no origin at all', () => {
     // Server rendering, or a test without a location. `new URL()` would throw
     // about an invalid base, which points nowhere useful.
-    expect(() => vipsModuleUrl('')).toThrow(/browser/i)
+    expect(rejectionFor('')).toContain(`${VIPS_ASSET_PATH}${VIPS_MODULE_FILE}`)
+  })
+
+  it('says the same when the origin is opaque, which serialises to "null"', () => {
+    // A sandboxed iframe, a data: document, a file:// page. The string is not
+    // empty, so an emptiness check waves it through and `new URL(path, 'null')`
+    // throws `Invalid URL` — the failure this guard exists to replace.
+    expect(rejectionFor('null')).toBe(rejectionFor(''))
   })
 
   it('serves the module from the directory the vendor script writes', () => {

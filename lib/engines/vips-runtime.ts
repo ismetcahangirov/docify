@@ -108,13 +108,17 @@ export type VipsLoader = (dynamicLibraries: readonly string[]) => Promise<VipsMo
  * asserted without a document. Left out, it reads the worker's own location.
  */
 export function vipsModuleUrl(base: string = globalThis.location?.origin ?? ''): string {
-  // An empty base means this module is being evaluated somewhere it has no
-  // business being — during server rendering, or in a test without a location.
-  // `new URL()` would throw about an invalid base, which points nowhere useful.
-  if (base === '') {
+  // Exactly two bases cannot resolve a same-origin path, and `location.origin`
+  // yields nothing else: `''` is no location at all — server rendering, or a
+  // test without one — and `'null'` is an opaque origin serialised, which is
+  // what a sandboxed iframe, a data: or srcdoc document, and a file:// page
+  // report. `new URL()` rejects both with `Invalid URL`, which points nowhere
+  // useful, so both are named here instead.
+  if (base === '' || base === 'null') {
     throw new Error(
-      'wasm-vips can only be loaded in the browser: no origin is available to resolve ' +
-        `${VIPS_ASSET_PATH}${VIPS_MODULE_FILE} against.`,
+      'wasm-vips is served from this origin, and there is none to resolve ' +
+        `${VIPS_ASSET_PATH}${VIPS_MODULE_FILE} against: server rendering has no location, and a ` +
+        'sandboxed iframe, a data: document or a file:// page has an opaque origin.',
     )
   }
 
