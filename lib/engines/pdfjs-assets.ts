@@ -65,8 +65,11 @@ export function pdfjsAssetUrls(
 ): Required<PdfAssetUrls> {
   // An empty base means this module is being evaluated somewhere it has no
   // business being — during server rendering, or in a test without a location.
-  // `new URL()` would throw about an invalid base, which points nowhere useful.
-  if (base === '') {
+  // `'null'` is an opaque origin serialised: a sandboxed iframe, or a document
+  // loaded from a data: or blob: URL. Neither can resolve a same-origin path,
+  // and `new URL()` would throw about an invalid base, which points nowhere
+  // useful.
+  if (base === '' || base === 'null') {
     throw new Error(
       'pdf.js can only be loaded in the browser: no origin is available to resolve ' +
         `${PDFJS_ASSET_PATH} against.`,

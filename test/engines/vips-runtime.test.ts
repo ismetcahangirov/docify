@@ -47,6 +47,14 @@ describe('where wasm-vips is fetched from', () => {
     expect(() => vipsModuleUrl('')).toThrow(/browser/i)
   })
 
+  it('says the same when the origin is opaque, which serialises to "null"', () => {
+    // A sandboxed iframe, or a document loaded from a data: or blob: URL. The
+    // string is not empty, so an emptiness check waves it through and
+    // `new URL(path, 'null')` throws `Invalid URL` — the failure the guard exists
+    // to replace.
+    expect(() => vipsModuleUrl('null')).toThrow(/browser/i)
+  })
+
   it('serves the module from the directory the vendor script writes', () => {
     expect(VIPS_ASSET_PATH).toBe('/vendor/wasm-vips/')
     expect(VIPS_ASSETS).toContain(VIPS_MODULE_FILE)

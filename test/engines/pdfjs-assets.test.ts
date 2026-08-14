@@ -146,6 +146,14 @@ describe('where pdf.js fetches its optional data from', () => {
   it('says where to look when there is no origin at all', () => {
     expect(() => pdfjsAssetUrls('')).toThrow(/browser/i)
   })
+
+  it('says the same when the origin is opaque, which serialises to "null"', () => {
+    // A sandboxed iframe, or a document loaded from a data: or blob: URL. The
+    // string is not empty, so an emptiness check waves it through and
+    // `new URL(path, 'null')` throws `Invalid URL` — the failure the guard exists
+    // to replace.
+    expect(() => pdfjsAssetUrls('null')).toThrow(/browser/i)
+  })
 })
 
 describe('the vendored tree', () => {
