@@ -25,9 +25,10 @@ next-env.d.ts
 # production
 dist/
 
-# WASM engines copied out of node_modules by `pnpm vendor`, which `pnpm dev`
-# and `pnpm build` both run. Reproducible from the lockfile, so the binaries
-# themselves are not committed. See scripts/vendor-wasm-vips/vendor.mjs.
+# Engine binaries and pdf.js' optional data, copied out of node_modules by
+# `pnpm vendor`, which `pnpm dev` and `pnpm build` both run. Reproducible from
+# the lockfile, so the files themselves are not committed. See
+# scripts/vendor-wasm-vips/vendor.mjs and scripts/vendor-pdfjs/vendor.mjs.
 public/vendor/
 
 # misc

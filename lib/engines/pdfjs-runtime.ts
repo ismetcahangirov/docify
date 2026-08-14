@@ -45,16 +45,17 @@
  * download. The legacy build is the same library with those calls compiled away;
  * it costs about 108 kB more and it runs wherever the descriptor says it will.
  *
- * ## What is deliberately not configured
+ * ## Where the optional data comes from
  *
- * `cMapUrl`, `standardFontDataUrl`, `iccUrl` and `wasmUrl` point pdf.js at
- * optional data it fetches on demand: CJK character maps, the fourteen standard
- * PDF fonts, ICC profiles, and the JPEG 2000 decoder. Serving them means
- * vendoring assets into `public/`, which is a build-pipeline change rather than
- * an engine change. Without them a document still renders — pdf.js substitutes a
- * font and skips the colour transform — so the gap shows up as a page whose text
- * is drawn in the wrong face, never as a failed conversion.
+ * `cMapUrl`, `standardFontDataUrl`, `iccUrl` and `wasmUrl` point pdf.js at data
+ * it fetches on demand, vendored into `public/vendor/pdfjs/`. `./pdfjs-assets`
+ * has the reasoning; what matters here is that all four are passed together, and
+ * that {@link loadPdfDocument} takes them as a parameter so a test can watch what
+ * pdf.js does without them.
  */
+
+import { type PdfAssetUrls, pdfjsAssetUrls } from './pdfjs-assets'
+import { NoFilterFactory, OffscreenCanvasFactory } from './pdfjs-factories'
 
 /**
  * The drawing surface, declared as the four members that are actually touched.
@@ -127,93 +128,6 @@ interface PdfjsModule {
  *  not the user's problem and not ours, exactly as with libvips' stderr. */
 const VERBOSITY_ERRORS = 0
 
-/** A scratch surface pdf.js allocates for itself, in the shape it expects back. */
-interface CanvasEntry {
-  canvas: OffscreenCanvas | null
-  context: OffscreenCanvasRenderingContext2D | null
-}
-
-/**
- * Where pdf.js gets the extra surfaces it needs mid-page — transparency groups,
- * soft masks, tiling patterns, type-3 glyphs.
- *
- * Its own default reaches for `document.createElement('canvas')`, which on this
- * thread is a `TypeError` the moment a document uses any of those features. Most
- * do. Passing this class is therefore not a nicety; it is the difference between
- * rendering a real PDF and rendering only the simple ones.
- */
-class OffscreenCanvasFactory {
-  create(width: number, height: number): CanvasEntry {
-    if (width <= 0 || height <= 0) throw new Error('Invalid canvas size')
-
-    const canvas = new OffscreenCanvas(width, height)
-
-    // `willReadFrequently` matches what pdf.js asks for on the page canvas: it
-    // reads pixels back constantly for masks and blends, and the software path
-    // is faster than a GPU round trip for that.
-    return { canvas, context: canvas.getContext('2d', { willReadFrequently: true }) }
-  }
-
-  reset(entry: CanvasEntry, width: number, height: number): void {
-    if (entry.canvas === null) throw new Error('Canvas is not specified')
-
-    entry.canvas.width = width
-    entry.canvas.height = height
-  }
-
-  destroy(entry: CanvasEntry): void {
-    if (entry.canvas === null) throw new Error('Canvas is not specified')
-
-    // Zeroing both axes is what actually frees the backing store; dropping the
-    // reference alone leaves it alive until the next collection, and a document
-    // full of soft masks allocates one of these per drawn image.
-    entry.canvas.width = 0
-    entry.canvas.height = 0
-    entry.canvas = null
-    entry.context = null
-  }
-}
-
-/**
- * The no-op filter factory, matching what pdf.js itself installs outside a DOM.
- *
- * Its browser factory implements image decode arrays and soft-mask luminosity
- * as SVG filters, which it builds by appending a hidden `<defs>` to
- * `document.body`. There is no body here. pdf.js ships exactly this fallback for
- * environments without one, and the cost is that an image with a `/Decode`
- * array renders without it rather than crashing the page.
- */
-class NoFilterFactory {
-  addFilter(): string {
-    return 'none'
-  }
-  addHCMFilter(): string {
-    return 'none'
-  }
-  addAlphaFilter(): string {
-    return 'none'
-  }
-  addLuminosityFilter(): string {
-    return 'none'
-  }
-  addKnockoutFilter(): string {
-    return 'none'
-  }
-  addHighlightHCMFilter(): string {
-    return 'none'
-  }
-  addSelectionHCMFilter(): string {
-    return 'none'
-  }
-  addSelectionFilter(): string {
-    return 'none'
-  }
-  createSelectionStyle(): null {
-    return null
-  }
-  destroy(): void {}
-}
-
 /** The real surface: an `OffscreenCanvas`, which only exists on a worker. */
 export function createOffscreenCanvas(width: number, height: number): RenderCanvas {
   return new OffscreenCanvas(width, height)
@@ -236,12 +150,20 @@ export function releaseCanvas(canvas: RenderCanvas): void {
  *
  * pdf.js takes ownership of the buffer — it transfers it to its message handler
  * — so the caller must not read `data` again afterwards.
+ *
+ * `assets` defaults to the vendored directories on this origin. It is a
+ * parameter because "the right font was used" is only observable next to a run
+ * where it was not.
  */
-export async function loadPdfDocument(data: Uint8Array): Promise<PdfLoadingTask> {
+export async function loadPdfDocument(
+  data: Uint8Array,
+  assets: PdfAssetUrls = pdfjsAssetUrls(),
+): Promise<PdfLoadingTask> {
   const pdfjs = await importPdfjs()
 
   return pdfjs.getDocument({
     data,
+    ...assets,
     CanvasFactory: OffscreenCanvasFactory,
     FilterFactory: NoFilterFactory,
     // The DOM `FontFace` route ends at `document.fonts`, which a worker does not
@@ -249,9 +171,16 @@ export async function loadPdfDocument(data: Uint8Array): Promise<PdfLoadingTask>
     // and the only thing that works here.
     disableFontFace: true,
     useSystemFonts: false,
-    // Stated rather than inferred: pdf.js otherwise decides by reading
-    // `document.baseURI`, which is another `window`-shaped hole in a worker.
-    useWorkerFetch: false,
+    // The only value that works here, and stated rather than inferred because
+    // pdf.js otherwise decides by reading `document.baseURI`, which is another
+    // `window`-shaped hole in a worker. Its `false` branch routes every asset
+    // fetch through the API half's `fetchData`, which dereferences
+    // `document.baseURI` unconditionally and therefore throws on this thread —
+    // caught, warned about, and turned into exactly the silently wrong page the
+    // vendored assets exist to prevent. `false` also disables ICC colour
+    // management outright, whatever `iccUrl` says. `true` fetches from the
+    // worker half instead, with a plain same-origin `fetch` and no DOM.
+    useWorkerFetch: true,
     // Both are worker-safe when present and absent from Firefox and older
     // Safari. pdf.js defaults them to "yes, this is a browser", which is the
     // wrong question — the right one is whether the global exists here.

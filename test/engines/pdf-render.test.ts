@@ -388,8 +388,17 @@ describe('pdf.js itself, on a document built here', () => {
     return document.save()
   }
 
+  /**
+   * These fixtures are rectangles: no text, no fonts, no character maps, and so
+   * nothing for pdf.js to fetch. Saying that explicitly is what lets them run
+   * outside a browser — `loadPdfDocument` otherwise resolves the vendored asset
+   * directories against an origin the node environment does not have. Which
+   * face pdf.js draws with is `./pdfjs-assets.test.ts`' subject, not this one's.
+   */
+  const open = (data: Uint8Array) => loadPdfDocument(data, {})
+
   it('opens a document without spawning a worker of its own', async () => {
-    const loading = await loadPdfDocument(
+    const loading = await open(
       await fixture([
         [612, 792],
         [595, 842],
@@ -405,7 +414,7 @@ describe('pdf.js itself, on a document built here', () => {
   })
 
   it('reports the pixel size the dpi setting is built on', async () => {
-    const loading = await loadPdfDocument(await fixture([[612, 792]]))
+    const loading = await open(await fixture([[612, 792]]))
 
     try {
       const page = await (await loading.promise).getPage(1)
@@ -419,7 +428,7 @@ describe('pdf.js itself, on a document built here', () => {
   })
 
   it('keeps the geometry of each page rather than of the first', async () => {
-    const loading = await loadPdfDocument(
+    const loading = await open(
       await fixture([
         [612, 792],
         [200, 100],
