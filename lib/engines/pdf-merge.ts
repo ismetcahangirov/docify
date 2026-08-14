@@ -34,8 +34,9 @@
  * which is a feature of its own rather than a line in this one.
  */
 
-import { EncryptedPDFError, PDFDocument, type PDFPage } from 'pdf-lib'
+import { PDFDocument, type PDFPage } from 'pdf-lib'
 
+import { openPdf } from './pdf-open'
 import type { PdfOperation } from './pdflib'
 import type { EngineInput, ProgressCallback } from './types'
 
@@ -220,40 +221,39 @@ async function append(merged: PDFDocument, bytes: Uint8Array, described: string)
  * Parses one source document and lifts its pages out, translating pdf-lib's
  * failures into something a person can act on.
  *
- * Left alone, a truncated download surfaces as `Cannot read properties of
- * undefined (reading 'Pages')` — thrown not by `load` but by the first read of
- * the page tree — with no indication of which of a hundred files caused it.
- * Both calls therefore sit inside one guard, and CLAUDE.md §2.5 asks the same
- * of an engine as of the router: say what is wrong, and say what to do next.
+ * The copy is the structural read `openPdf` closes its guard around: left alone,
+ * a truncated download surfaces as `Cannot read properties of undefined (reading
+ * 'Pages')` — thrown not by `load` but by the first read of the page tree — with
+ * no indication of which of a hundred files caused it. Naming the file is what
+ * merge adds over the other operations, and CLAUDE.md §2.5 asks the same of an
+ * engine as of the router: say what is wrong, and say what to do next.
  *
- * The source document is deliberately local. Once its pages have been deep
- * copied into `merged`, nothing else needs it, and letting it fall out of scope
- * here is what stops a hundred parsed documents accumulating.
+ * pdf-lib's own parser message is dropped rather than quoted here, unlike in
+ * split and organize: a merge failure already carries a file name and a
+ * position, and "Expected instance of PDFDict" after them buys the user nothing
+ * they can act on.
+ *
+ * The source document is deliberately local to the read. Once its pages have
+ * been deep copied into `merged`, nothing else needs it, and letting it fall out
+ * of scope here is what stops a hundred parsed documents accumulating.
  */
-async function copyPagesFrom(
+function copyPagesFrom(
   merged: PDFDocument,
   bytes: Uint8Array,
   described: string,
 ): Promise<PDFPage[]> {
-  try {
-    // `ignoreEncryption` stays off: pdf-lib cannot decrypt, and ignoring the
-    // flag would merge unreadable streams into a document that opens as noise.
-    const source = await PDFDocument.load(bytes)
-
-    return await merged.copyPages(source, source.getPageIndices())
-  } catch (error) {
-    if (error instanceof EncryptedPDFError) {
-      throw new Error(
-        `${described} is password-protected, and merging cannot read an encrypted PDF. ` +
-          `Remove its password in a PDF reader first, then merge.`,
-      )
-    }
-
-    throw new Error(
+  return openPdf(bytes, {
+    // `ignoreEncryption` stays off — the default: pdf-lib cannot decrypt, and
+    // ignoring the flag would merge unreadable streams into a document that
+    // opens as noise.
+    read: (source) => merged.copyPages(source, source.getPageIndices()),
+    encrypted:
+      `${described} is password-protected, and merging cannot read an encrypted PDF. ` +
+      `Remove its password in a PDF reader first, then merge.`,
+    damaged: () =>
       `${described} could not be read as a PDF — the file looks damaged or incomplete. ` +
-        `Open it in a PDF reader to check it, or remove it from the list.`,
-    )
-  }
+      `Open it in a PDF reader to check it, or remove it from the list.`,
+  })
 }
 
 /**

@@ -35,6 +35,7 @@
 
 import { degrees, PDFDocument, type PDFPage } from 'pdf-lib'
 
+import { openPdf } from './pdf-open'
 import { type OrganizePlan, planOrganize, QUARTER_TURNS } from './pdf-organize-plan'
 import type { PageRotation } from './pdf-options'
 import type { PdfOperation } from './pdflib'
@@ -76,38 +77,26 @@ export const organizePages: PdfOperation = async (input, signal, onProgress) => 
 /**
  * The parsed document and its page count.
  *
- * The count is read inside the guard rather than by the caller because
- * `PDFDocument.load` is lenient: handed bytes with no usable catalog it resolves
- * happily and defers the failure to the first structural read, which surfaces as
- * a bare `Cannot read properties of undefined`. Touching the page tree here is
- * what makes "can this file be opened at all" an answered question.
+ * The count is read inside `openPdf`'s guard rather than after it because
+ * `PDFDocument.load` defers a bad catalog to the first structural read — see
+ * `./pdf-open` for why that guard exists at all.
  *
  * `updateMetadata: false` because most of this operation edits the loaded
  * document in place: pdf-lib would otherwise stamp its own producer and
  * modification date onto a file the user only asked to turn a page of.
  */
 async function open(file: Blob): Promise<{ source: PDFDocument; pageCount: number }> {
-  const bytes = new Uint8Array(await file.arrayBuffer())
-
-  try {
-    const source = await PDFDocument.load(bytes, { updateMetadata: false })
-
-    return { source, pageCount: source.getPageCount() }
-  } catch (reason) {
-    const detail = reason instanceof Error ? reason.message : String(reason)
-
-    if (/encrypt/i.test(detail)) {
-      throw new Error(
-        'This PDF is password-protected, so its pages cannot be rearranged. Remove ' +
-          'the password where the file was created, then organise the unprotected copy.',
-      )
-    }
-
+  return openPdf(new Uint8Array(await file.arrayBuffer()), {
+    load: { updateMetadata: false },
+    read: (source) => ({ source, pageCount: source.getPageCount() }),
+    encrypted:
+      'This PDF is password-protected, so its pages cannot be rearranged. Remove ' +
+      'the password where the file was created, then organise the unprotected copy.',
     // The parser message is kept, after a sentence that says what it is about:
     // "Expected instance of PDFDict" alone tells the user nothing, but it is
     // what distinguishes a truncated download from a file that is not a PDF.
-    throw new Error(`This file could not be read as a PDF: ${detail}`)
-  }
+    damaged: (detail) => `This file could not be read as a PDF: ${detail}`,
+  })
 }
 
 /**

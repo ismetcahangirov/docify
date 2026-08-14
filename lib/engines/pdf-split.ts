@@ -32,6 +32,7 @@
 
 import { PDFDocument } from 'pdf-lib'
 
+import { openPdf } from './pdf-open'
 import { type PageSpan, parsePageSpans } from './pdf-pages'
 import type { PdfSplitOptions } from './pdf-options'
 import type { PdfOperation } from './pdflib'
@@ -127,34 +128,22 @@ async function extract(source: PDFDocument, span: PageSpan): Promise<Uint8Array>
 /**
  * The parsed document and its page count.
  *
- * The count is read here rather than by the caller because `PDFDocument.load`
- * is lenient: handed bytes with no usable catalog it resolves happily and
- * defers the failure to the first structural read, which then surfaces as a
- * bare `Cannot read properties of undefined`. Touching the page tree inside the
- * guard is what makes "can this file be opened at all" an answered question.
+ * The count is read inside `openPdf`'s guard rather than after it because
+ * `PDFDocument.load` defers a bad catalog to the first structural read — see
+ * `./pdf-open` for why that guard exists at all. Both values come out of the one
+ * read, so nothing parses the page tree twice.
  */
 async function open(file: Blob): Promise<{ source: PDFDocument; pageCount: number }> {
-  const bytes = new Uint8Array(await file.arrayBuffer())
-
-  try {
-    const source = await PDFDocument.load(bytes)
-
-    return { source, pageCount: source.getPageCount() }
-  } catch (reason) {
-    const detail = reason instanceof Error ? reason.message : String(reason)
-
-    if (/encrypt/i.test(detail)) {
-      throw new Error(
-        'This PDF is password-protected, so its pages cannot be read. Remove the ' +
-          'password where the file was created, then split the unprotected copy.',
-      )
-    }
-
+  return openPdf(new Uint8Array(await file.arrayBuffer()), {
+    read: (source) => ({ source, pageCount: source.getPageCount() }),
+    encrypted:
+      'This PDF is password-protected, so its pages cannot be read. Remove the ' +
+      'password where the file was created, then split the unprotected copy.',
     // The parser message is kept, after a sentence that says what it is about:
     // "Expected instance of PDFDict" alone tells the user nothing, but it is
     // what distinguishes a truncated download from a file that is not a PDF.
-    throw new Error(`This file could not be read as a PDF: ${detail}`)
-  }
+    damaged: (detail) => `This file could not be read as a PDF: ${detail}`,
+  })
 }
 
 /**
