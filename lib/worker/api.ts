@@ -10,13 +10,13 @@
 
 import { releaseProxy } from 'comlink'
 
-import type { EngineRunner, ProgressCallback } from '@/lib/engines/types'
+import type { EngineInput, EngineRunner, ProgressCallback } from '@/lib/engines/types'
 import type { EngineId } from '@/lib/router/types'
 
 import { ConversionCancelledError } from './errors'
 import { createJobRegistry } from './job-registry'
 import { createProgressRelay } from './progress-relay'
-import type { ConversionApi, RemoteProgressCallback } from './types'
+import type { ConversionApi, ConvertRequest, RemoteProgressCallback } from './types'
 
 /**
  * How the worker gets hold of a runner.
@@ -75,10 +75,8 @@ export function createConversionApi(loadRunner: RunnerLoader = loadEngineRunner)
         // work the user has already walked away from.
         throwIfAborted(controller.signal)
 
-        const blob = await runner.run(
-          { task: request.task, files: request.files },
-          controller.signal,
-          (progress) => relay?.report(progress),
+        const blob = await runner.run(engineInput(request), controller.signal, (progress) =>
+          relay?.report(progress),
         )
 
         // A runner that swallowed its signal and finished anyway must not hand
@@ -123,11 +121,33 @@ async function loadEngineRunner(engine: EngineId): Promise<EngineRunner> {
   if (engine === 'canvas') return (await import('@/lib/engines/canvas')).createRunner()
   if (engine === 'heif') return (await import('@/lib/engines/heif')).createRunner()
   if (engine === 'vips') return (await import('@/lib/engines/vips')).createRunner()
+  if (engine === 'pdflib') return (await import('@/lib/engines/pdflib')).createRunner()
+  if (engine === 'pdfjs') return (await import('@/lib/engines/pdfjs')).createRunner()
 
   throw new Error(
     `No runner is registered for engine "${engine}" yet. ` +
       'The remaining engines arrive over EPICs 4 to 6.',
   )
+}
+
+/**
+ * The request minus the two fields that are the worker's business alone.
+ *
+ * Subtractive rather than a hand-written list of the fields to keep, and that is
+ * the whole point: `ConvertRequest extends EngineInput`, so every settings slot
+ * an engine gains — `image`, `pdf`, whatever a video engine needs — has to reach
+ * the runner without anyone remembering to add a line here. Listing the fields
+ * instead is how `image` came to be dropped silently, which does not fail: the
+ * engine simply applies its defaults, and the user's chosen quality, page range
+ * or rotation disappears somewhere between the settings panel and the file they
+ * download.
+ */
+function engineInput(request: ConvertRequest): EngineInput {
+  const { engine, jobId, ...input } = request
+  void engine
+  void jobId
+
+  return input
 }
 
 function throwIfAborted(signal: AbortSignal): void {

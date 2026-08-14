@@ -98,6 +98,33 @@ describe('convert', () => {
     await settle()
 
     expect(runner.input).toEqual({ task: TASK, files: request.files })
+    // The routing decision and the cancellation handle are the worker's own
+    // business; an engine that could read them might start second-guessing one.
+    expect(runner.input).not.toHaveProperty('engine')
+    expect(runner.input).not.toHaveProperty('jobId')
+  })
+
+  it('carries every settings slot across to the runner', async () => {
+    // The failure this pins is silent by nature: a dropped `pdf` or `image`
+    // does not throw, it makes the engine apply its defaults, so the user's
+    // chosen page range or quality vanishes between the panel and the download.
+    // Written against slots that exist today and asserted subtractively, so a
+    // settings slot added tomorrow is covered without editing this test.
+    const runner = new PumpedRunner()
+    const api = createConversionApi(loaderFor(runner))
+    const request: ConvertRequest = {
+      ...requestFor('a'),
+      image: { quality: 60 },
+      pdf: { render: { dpi: 300, pages: '1-3' } },
+    }
+
+    void api.convert(request)
+    await settle()
+
+    const { engine, jobId, ...input } = request
+    void engine
+    void jobId
+    expect(runner.input).toEqual(input)
   })
 
   it('asks the loader for the engine the router chose', async () => {

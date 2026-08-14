@@ -11,6 +11,7 @@
 import type { Capabilities, ConversionTask, EngineId } from '@/lib/router/types'
 
 import type { ImageOptions } from './image-options'
+import type { PdfOptions } from './pdf-options'
 
 export interface EngineDescriptor {
   id: EngineId
@@ -45,6 +46,12 @@ export interface EngineInput {
    * `./image-options` for what each default is and why.
    */
   image?: ImageOptions
+  /**
+   * Settings for document work — page ranges, rotations, page geometry. Absent
+   * means every default, which is a valid job: merging needs no settings at all.
+   * See `./pdf-options` for the slot each operation reads.
+   */
+  pdf?: PdfOptions
 }
 
 /**

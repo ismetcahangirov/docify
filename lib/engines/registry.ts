@@ -38,6 +38,8 @@
 
 import { descriptor as canvas } from '@/lib/engines/canvas'
 import { descriptor as heif } from '@/lib/engines/heif'
+import { descriptor as pdfjs } from '@/lib/engines/pdfjs'
+import { descriptor as pdflib } from '@/lib/engines/pdflib'
 import type { EngineDescriptor } from '@/lib/engines/types'
 import { descriptor as vips } from '@/lib/engines/vips'
 import type { Capabilities, ConversionTask, EngineId } from '@/lib/router/types'
@@ -46,7 +48,13 @@ import type { Capabilities, ConversionTask, EngineId } from '@/lib/router/types'
  * Every known engine, in registration order. Frozen so that an in-place sort by
  * one consumer cannot be felt by the router, the worker or the UI.
  */
-export const ENGINES: readonly EngineDescriptor[] = Object.freeze([canvas, heif, vips])
+export const ENGINES: readonly EngineDescriptor[] = Object.freeze([
+  canvas,
+  pdflib,
+  pdfjs,
+  heif,
+  vips,
+])
 
 /**
  * Orders two engines by how much we want to run them: `priority` ascending
