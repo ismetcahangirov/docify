@@ -56,5 +56,9 @@ yarn-error.log*
 .claude/memory/index.db-*
 .claude/memory/sessions/
 
+# Isolated checkouts for parallel agent work. Each is a full working copy
+# created by `git worktree add`; the branches inside are what gets pushed.
+.claude/worktrees/
+
 # local claude overrides
 .claude/settings.local.json
