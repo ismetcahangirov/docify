@@ -1,5 +1,9 @@
 // @vitest-environment node
 
+import { statSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import { createRunner, descriptor, PDFJS_LOAD_COST } from '@/lib/engines/pdfjs'
@@ -54,17 +58,38 @@ describe('the pdfjs descriptor', () => {
   })
 })
 
+describe('the load cost the router prices pdf.js with', () => {
+  const buildDir = dirname(
+    createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.mjs'),
+  )
+  const bytesOf = (file: string): number => statSync(join(buildDir, file)).size
+
+  it('is the measured size of both halves of the legacy build', () => {
+    // Measured rather than remembered: an upgrade that changes the download
+    // fails here instead of quietly making the router's cost model wrong. Both
+    // halves, because the API entry alone cannot open a document and Docify
+    // loads the worker module itself — see `lib/engines/pdfjs-runtime.ts`.
+    expect(PDFJS_LOAD_COST).toBe(bytesOf('pdf.min.mjs') + bytesOf('pdf.worker.min.mjs'))
+  })
+
+  it('stays under the 8 MB LARGE_DOWNLOAD threshold', () => {
+    expect(PDFJS_LOAD_COST).toBeLessThan(8 * 1024 * 1024)
+  })
+})
+
 describe('the pdfjs runner', () => {
   const nothing = () => {}
 
-  it('names the operation and its issue when it has not been implemented yet', async () => {
+  it('refuses a task it never claims, rather than downloading pdf.js to find out', async () => {
+    // Only reachable when `supports()` and the runner disagree, which is a
+    // routing bug — but one that must not cost the user 1.8 MB to discover.
     await expect(
       createRunner().run(
-        { task: pdfToJpg, files: [new Blob(['%PDF-1.7'])] },
+        { task: { from: 'pdf', to: 'pdf', op: 'merge' }, files: [new Blob(['%PDF-1.7'])] },
         new AbortController().signal,
         nothing,
       ),
-    ).rejects.toThrow(/render/i)
+    ).rejects.toThrow(/JPG or PNG/)
   })
 
   it('honours a signal that is already aborted before doing any work', async () => {

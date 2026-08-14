@@ -29,11 +29,18 @@ import type { Capabilities, ConversionTask, FormatId } from '@/lib/router/types'
 import type { EngineDescriptor, EngineInput, EngineRunner, ProgressCallback } from './types'
 
 /**
- * `pdf.min.mjs` plus `pdf.worker.min.mjs`, measured. Both are needed: pdf.js
- * moves parsing into a worker of its own and the main entry alone cannot open a
- * document. Re-measure on upgrade — the router quotes this to the user.
+ * `legacy/build/pdf.min.mjs` plus `legacy/build/pdf.worker.min.mjs`, measured.
+ *
+ * Both halves are needed. pdf.js keeps its parser in a worker module and the API
+ * entry alone cannot open a document — and Docify declines to spawn that worker,
+ * loading the module here instead, for the reasons in `./pdfjs-runtime`.
+ *
+ * The legacy build rather than the default one, which costs about 108 kB less
+ * and calls JavaScript that several current browsers do not have. Pinned by a
+ * test that re-measures the installed package, so an upgrade that changes the
+ * download fails there rather than quietly making the router's cost model wrong.
  */
-export const PDFJS_LOAD_COST = 1_717_000
+export const PDFJS_LOAD_COST = 1_824_935
 
 /** What a rendered page can be written as: the raster formats a canvas encodes. */
 const RENDERABLE_TARGETS: ReadonlySet<FormatId> = new Set(['jpg', 'png'])
@@ -54,23 +61,31 @@ export const descriptor: EngineDescriptor = {
 }
 
 /**
- * Builds the runner. pdf.js is not touched until `run()`: booting it spawns a
- * worker and downloads 1.7 MB, and neither should happen for a job the user may
- * still cancel.
+ * Builds the runner. pdf.js is not touched until `run()`: loading it costs 1.8 MB
+ * and several hundred milliseconds of parsing, and neither should happen for a
+ * job the user may still cancel.
  */
 export function createRunner(): EngineRunner {
   return {
     async run(input: EngineInput, signal: AbortSignal, onProgress: ProgressCallback) {
       throwIfAborted(signal)
 
-      // Replaced by `await import('./pdf-render')` when issue #41 lands. Until
-      // then the only honest answer is a throw: an empty image would download
-      // as a successful conversion.
-      void input
-      void onProgress
-      throw new Error(
-        'The pdf.js engine cannot render pages to images yet — issue #41 implements it.',
-      )
+      const { task } = input
+      if (task.op !== 'convert' || !RENDERABLE_TARGETS.has(task.to)) {
+        // Reached only when `supports()` and this disagree, which is a routing
+        // bug. Saying so beats downloading pdf.js to discover it.
+        throw new Error(
+          `The pdf.js engine renders pages to JPG or PNG, not "${task.to}" by "${task.op}".`,
+        )
+      }
+
+      const { renderPdfPages } = await import('./pdf-render')
+
+      // Loading takes seconds on a slow connection, which makes it the likeliest
+      // moment for the user to give up.
+      throwIfAborted(signal)
+
+      return renderPdfPages(input, signal, onProgress)
     },
   }
 }
