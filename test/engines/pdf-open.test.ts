@@ -101,6 +101,20 @@ describe('opening a document that cannot be read', () => {
     await expect(failure).rejects.toThrow(/Pages/)
   })
 
+  it('catches a read that rejects rather than throws', async () => {
+    // Merge's read is `copyPages`, which returns a promise. Handing that promise
+    // back instead of awaiting it inside the guard would let pdf-lib's own words
+    // reach the user with no file name attached — the failure this module
+    // exists to prevent.
+    await expect(
+      openPdf(await fixture(1), {
+        read: () => Promise.reject(new Error('deferred by the page tree')),
+        encrypted,
+        damaged,
+      }),
+    ).rejects.toThrow(/could not be read as a PDF: deferred by the page tree/)
+  })
+
   it('keeps the parser’s own words inside the caller’s sentence', async () => {
     // "Expected instance of PDFDict" alone tells the user nothing, but it is
     // what distinguishes a truncated download from a file that is not a PDF.

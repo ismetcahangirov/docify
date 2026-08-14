@@ -71,6 +71,9 @@ export async function openPdf<T>(bytes: Uint8Array, options: PdfOpenOptions<T>):
     // `ignoreEncryption` is left to the caller and defaults to off: pdf-lib
     // cannot decrypt, and ignoring the flag would read unreadable streams into
     // a document that opens as noise.
+    // `await` on the read is load-bearing, not stylistic: without it a read that
+    // rejects rather than throws — merge's `copyPages` — settles outside this
+    // guard and reaches the user as pdf-lib's own words.
     return await options.read(await PDFDocument.load(bytes, options.load))
   } catch (reason) {
     const detail = reason instanceof Error ? reason.message : String(reason)
