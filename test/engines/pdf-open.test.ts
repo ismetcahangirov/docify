@@ -139,3 +139,43 @@ describe('opening a document that cannot be read', () => {
     ).rejects.toThrow(/no stack, no message/)
   })
 })
+
+describe('opening a document for a job that is being cancelled', () => {
+  it('lets the AbortError a read throws through untouched', async () => {
+    // A read that checks its signal is the whole reason this matters: the guard
+    // wraps the caller's callback, so without an exemption a cancel would come
+    // back to the user as "this file is damaged" and be debugged as an engine
+    // fault rather than a guard one.
+    const cancelled = new DOMException('The conversion was cancelled.', 'AbortError')
+
+    const failure = openPdf(await fixture(1), {
+      read: () => {
+        throw cancelled
+      },
+      encrypted,
+      damaged,
+    })
+
+    // Identity, not shape: rewrapping would preserve the name and still lose the
+    // cause chain the worker attaches when it reports the cancellation.
+    await expect(failure).rejects.toBe(cancelled)
+  })
+
+  it('recognises an abort by name rather than by type', async () => {
+    // `lib/worker/errors.ts` throws a plain `Error` subclass named `AbortError`
+    // because a `DOMException` does not survive the worker boundary. Matching on
+    // `instanceof DOMException` here would translate that one into the damaged
+    // wording, which is the same bug wearing the other shape.
+    const cancelled = Object.assign(new Error('The conversion was cancelled.'), {
+      name: 'AbortError',
+    })
+
+    const failure = openPdf(await fixture(1), {
+      read: () => Promise.reject(cancelled),
+      encrypted,
+      damaged,
+    })
+
+    await expect(failure).rejects.toBe(cancelled)
+  })
+})

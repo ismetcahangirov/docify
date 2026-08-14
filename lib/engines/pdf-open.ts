@@ -76,6 +76,13 @@ export async function openPdf<T>(bytes: Uint8Array, options: PdfOpenOptions<T>):
     // guard and reaches the user as pdf-lib's own words.
     return await options.read(await PDFDocument.load(bytes, options.load))
   } catch (reason) {
+    // A cancel is not a verdict on the file. The read is the caller's, and a
+    // caller that checks its signal in there throws from inside this guard, so
+    // without this line pressing cancel would tell the user their PDF is
+    // damaged — a report that gets debugged as an engine fault rather than as
+    // the guard overreaching.
+    if (isAbort(reason)) throw reason
+
     const detail = reason instanceof Error ? reason.message : String(reason)
 
     // The type is the reliable signal and the text is the fallback: pdf-lib
@@ -87,4 +94,22 @@ export async function openPdf<T>(bytes: Uint8Array, options: PdfOpenOptions<T>):
 
     throw new Error(options.damaged(detail))
   }
+}
+
+/**
+ * Whether a failure is a cancellation rather than something about the document.
+ *
+ * The name is the check and the type deliberately is not. The engines throw
+ * `DOMException`, but `lib/worker/errors.ts` throws a plain `Error` subclass
+ * named `AbortError` because a `DOMException` does not survive Comlink's error
+ * path — so `instanceof DOMException` would recognise one caller's cancel and
+ * translate the other's into "your file is damaged". `AbortSignal.reason` is
+ * also whatever the aborting code passed, which need not be an `Error` at all.
+ */
+function isAbort(reason: unknown): boolean {
+  return (
+    typeof reason === 'object' &&
+    reason !== null &&
+    (reason as { name?: unknown }).name === 'AbortError'
+  )
 }
