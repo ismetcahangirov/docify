@@ -374,7 +374,9 @@ describe('the canvas runner — refusals', () => {
         new AbortController().signal,
         noProgress,
       ),
-    ).rejects.toThrow(/"wall\.png" is 20000 × 20000 pixels[\s\S]*Resize it below/)
+    ).rejects.toThrow(
+      /"wall\.png" is 20000 × 20000 pixels[\s\S]*larger than a browser canvas can hold/,
+    )
     expect(decoded).toEqual([])
   })
 

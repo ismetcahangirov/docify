@@ -13,7 +13,7 @@
  */
 
 import type { RgbaBitmap } from './bitmap'
-import { assertDecodedPixelsFit, BITMAP_DECODED_BYTES_PER_PIXEL } from './raster-limits'
+import { assertBitmapFits } from './raster-limits'
 
 /**
  * What libheif hands to `display`'s callback: the buffer it was given, or `null`
@@ -125,16 +125,13 @@ export async function decodeHeif(
       )
     }
 
-    // The line below allocates `width × height × 4`, and the canvas `./bitmap`
-    // encodes it through allocates as much again. A HEIC's dimensions are not
-    // predicted by its bytes — the codec is the point of the format — so the
-    // router cannot bound this and the check belongs here, one line before the
-    // allocation rather than after it.
-    assertDecodedPixelsFit({
-      label,
-      size: { width, height },
-      bytesPerPixel: BITMAP_DECODED_BYTES_PER_PIXEL,
-    })
+    // The line below allocates `width × height × 4` and `./bitmap` then draws it
+    // onto an `OffscreenCanvas` of the same size, so an image past what a canvas
+    // can hold produces a blank file rather than an error. Checked here because
+    // this is the last point before the first of those two allocations, and
+    // because a HEIC's dimensions are not predicted by its bytes — the codec is
+    // the whole point of the format — so `route()` cannot bound it.
+    assertBitmapFits(label, { width, height })
 
     const bitmap: RgbaBitmap = { width, height, data: new Uint8ClampedArray(width * height * 4) }
 

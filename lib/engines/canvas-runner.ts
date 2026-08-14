@@ -22,12 +22,8 @@
 import type { FormatId } from '@/lib/router/types'
 
 import { encodeBmp } from './bmp'
-import {
-  assertDecodedPixelsFit,
-  BITMAP_DECODED_BYTES_PER_PIXEL,
-  imageLabel,
-  rasterSize,
-} from './raster-limits'
+import { assertBitmapFits, imageLabel } from './raster-limits'
+import { rasterSize } from './raster-size'
 import type { EngineInput, EngineRunner, ProgressCallback } from './types'
 
 /** The formats a browser canvas can both read and write. */
@@ -111,6 +107,9 @@ export function createCanvasRunner(
       const target = targetFormat(input.task.to)
       const source = singleFile(input)
       await refuseOversizedSource(source)
+      // The header read above is I/O, short but not free, and it sits between
+      // the caller pressing cancel and anything else noticing.
+      throwIfAborted(signal)
       onProgress(0)
 
       let bitmap: ImageBitmap | null = null
@@ -121,14 +120,10 @@ export function createCanvasRunner(
         onProgress(DECODED)
 
         // Again, on what the decoder actually produced. The header sniff above
-        // reads PNG and JPEG; a browser also decodes WebP, BMP, AVIF and, on
-        // Apple hardware, HEIC, and the canvas about to be allocated is another
-        // `width × height × 4` on top of the bitmap that is already live.
-        assertDecodedPixelsFit({
-          label: imageLabel(source),
-          size: bitmap,
-          bytesPerPixel: BITMAP_DECODED_BYTES_PER_PIXEL,
-        })
+        // reads PNG, JPEG and WebP; a browser also decodes BMP, AVIF and, on
+        // Apple hardware, HEIC, and the canvas about to be allocated is sized
+        // from the bitmap rather than from anything the file declared.
+        assertBitmapFits(imageLabel(source), bitmap)
 
         const canvas = environment.createCanvas(bitmap.width, bitmap.height)
         draw(canvas, bitmap, target)
@@ -213,46 +208,44 @@ function targetFormat(format: FormatId): CanvasFormat {
 const HEADER_SLICE_BYTES = 65_536
 
 /**
- * Refuses a source whose pixels cannot fit, before it is handed to a decoder.
+ * Refuses a source whose declared size no browser bitmap could hold, before one
+ * is asked for.
  *
  * The best moment to stop is the one before `createImageBitmap` allocates
  * `width × height × 4`, because an out-of-memory inside a browser decoder is not
- * a catchable error on the platforms this protects.
+ * a catchable error on the platforms this protects — and a WebP or a PNG can
+ * declare 20 000 × 20 000 in a file of a few hundred bytes.
  *
- * This is the *early* half of the guard, and it is allowed to abstain: a WebP,
- * a BMP or a source whose first bytes cannot be read is simply not refused here.
- * The check on the decoded bitmap in `run` is the one that always happens, one
- * allocation later. Abstaining is why the read below is fallible and the
- * assertion after it is not.
+ * This is the *early* half of the guard, and it is allowed to abstain: a BMP, an
+ * AVIF or a source whose header cannot be read is simply not refused here. The
+ * check on the decoded bitmap in `run` is the one that always happens, one
+ * allocation later.
  */
 async function refuseOversizedSource(source: Blob): Promise<void> {
   const head = await headerOf(source)
   const size = head === null ? null : rasterSize(head)
   if (size === null) return
 
-  assertDecodedPixelsFit({
-    label: imageLabel(source),
-    size,
-    bytesPerPixel: BITMAP_DECODED_BYTES_PER_PIXEL,
-  })
+  assertBitmapFits(imageLabel(source), size)
 }
 
 /**
- * The first {@link HEADER_SLICE_BYTES} of `source`, or `null` if it will not
- * give them up.
+ * The first {@link HEADER_SLICE_BYTES} of `source`, or `null` if it has no
+ * `slice` to give them with.
  *
- * `Blob.slice` is universal in a browser and in a worker, but `EngineInput` only
- * promises a `Blob`, and a value that has crossed a structured clone in a host
- * with partial `Blob` support arrives as data without methods. That is a source
- * this cannot sniff, not a job it should refuse — so it answers `null` and lets
- * the decoder be the one to complain.
+ * A feature check rather than a `try`, deliberately. `Blob.slice` is universal
+ * in a browser and in a worker, but `EngineInput` only promises a `Blob`, and a
+ * value that has crossed a structured clone in a host with partial `Blob`
+ * support arrives as data without methods — that is a source this cannot sniff,
+ * and abstaining is right. A read that *fails* is a different thing: a
+ * `NotReadableError` means the user moved or deleted the file after picking it,
+ * which is more actionable than the decoder failure that would replace it, so it
+ * is left to propagate.
  */
 async function headerOf(source: Blob): Promise<Uint8Array | null> {
-  try {
-    return new Uint8Array(await source.slice(0, HEADER_SLICE_BYTES).arrayBuffer())
-  } catch {
-    return null
-  }
+  if (typeof source.slice !== 'function') return null
+
+  return new Uint8Array(await source.slice(0, HEADER_SLICE_BYTES).arrayBuffer())
 }
 
 function singleFile(input: EngineInput): Blob {

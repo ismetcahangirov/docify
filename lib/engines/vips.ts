@@ -26,14 +26,15 @@
  * ## Why it carries no decoded-pixel ceiling
  *
  * `./raster-limits` bounds the other three raster engines, because each of them
- * materialises a whole `width × height × 4` bitmap that the input's size does
- * not predict. libvips does not. Both entry points below stream: `newFromBuffer`
- * with `access: 'sequential'` hands the writer scanline regions, and
- * `thumbnailBuffer` shrinks on load inside the codec before a full-resolution
- * image ever exists. That is the reason `MEMORY.vips` is 4 where `MEMORY.canvas`
- * is 6, and a pixel ceiling here would refuse work this engine finishes in a few
- * hundred kilobytes. Issue #160 decided this deliberately; if a future operation
- * forces a random-access pipeline, the ceiling comes back with it.
+ * materialises a whole bitmap whose cost the input's size does not predict —
+ * `width × height` and not bytes. libvips does not. Both entry points below
+ * stream: `newFromBuffer` with `access: 'sequential'` hands the writer scanline
+ * regions, and `thumbnailBuffer` shrinks on load inside the codec before a
+ * full-resolution image ever exists. That is the reason `MEMORY.vips` is 4 where
+ * `MEMORY.canvas` is 6, and a pixel ceiling here would refuse work this engine
+ * finishes in a few hundred kilobytes. Issue #160 decided this deliberately; if
+ * a future operation forces a random-access pipeline, the ceiling comes back
+ * with it.
  *
  * ## Lazy loading
  *

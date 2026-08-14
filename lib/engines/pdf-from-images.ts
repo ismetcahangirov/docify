@@ -55,12 +55,8 @@
 import { PageSizes, PDFDocument, type PDFImage } from 'pdf-lib'
 
 import type { PdfLayoutOptions } from './pdf-options'
-import {
-  assertDecodedPixelsFit,
-  imageLabel,
-  PDFLIB_DECODED_BYTES_PER_PIXEL,
-  pngSize,
-} from './raster-limits'
+import { assertDecodedPixelsFit, imageLabel, PDFLIB_DECODED_BYTES_PER_PIXEL } from './raster-limits'
+import { pngSize } from './raster-size'
 import type { EngineInput, ProgressCallback } from './types'
 
 /**
@@ -131,7 +127,7 @@ export async function imagesToPdf(
     const bytes = new Uint8Array(await file.arrayBuffer())
     throwIfAborted(signal)
 
-    decodedPixels = guardDecodedPixels(bytes, file, index, decodedPixels)
+    decodedPixels = guardDecodedPixels(bytes, file, index, decodedPixels, input.budgetBytes)
 
     const image = await embed(doc, bytes, file, index)
     const placement = place(image, layout, margin)
@@ -171,6 +167,7 @@ function guardDecodedPixels(
   file: Blob,
   index: number,
   pixelsSoFar: number,
+  budgetBytes: number | undefined,
 ): number {
   const size = pngSize(bytes)
   if (size === null) return pixelsSoFar
@@ -182,6 +179,7 @@ function guardDecodedPixels(
     size,
     jobPixels,
     bytesPerPixel: PDFLIB_DECODED_BYTES_PER_PIXEL,
+    budgetBytes,
   })
 
   return jobPixels

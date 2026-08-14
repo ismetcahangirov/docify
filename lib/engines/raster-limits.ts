@@ -1,64 +1,73 @@
 /**
- * The decoded-pixel ceiling, and the header readers that make it enforceable.
+ * Two ceilings on decoded pixels, and the arithmetic behind each.
  *
- * ## Why this cannot live in the router
+ * ## Why the router cannot impose either
  *
  * `route()` is handed byte counts and never opens a file (CLAUDE.md §5.1), so
  * every number in `MEMORY` is a multiple of the input's *size*. A decoded bitmap
- * is `width × height × bytesPerPixel` however well the file compressed, and the
- * two are not related: twelve 1500 × 2000 screenshots weigh 750 kB and peak at
- * 189 MB through `./pdf-from-images` — 258× their bytes — while the same pixel
- * count as photographic grain is 103 MB of input for 184 MB of peak, or 1.8×.
- * No factor and no fixed reserve describes both rows. The measurement is in
- * `docs/router/memory-budget-measurement.md`; the guard has to be here, beside
- * the bytes being decoded, and it is shaped after `canvasSize()` in
- * `./pdf-render-plan`, which refuses a page before anything is allocated.
+ * is `width × height × bytes-per-pixel` however well the file compressed, and
+ * the two are not related: twelve 1500 × 2000 screenshots weigh 750 kB and peak
+ * at up to 193 MB through `./pdf-from-images`, while the same pixel count as
+ * photographic grain is 103 MB of input for 184 MB of peak. No factor and no
+ * fixed reserve describes both. The guard has to sit beside the bytes being
+ * decoded, shaped after `canvasSize()` in `./pdf-render-plan`, which refuses a
+ * page before anything is allocated. `docs/router/memory-budget-measurement.md`
+ * is the measurement.
+ *
+ * ## Why two ceilings and not one
+ *
+ * They answer different questions and only one of them is a memory budget.
+ *
+ * {@link assertDecodedPixelsFit} is the **measured** bound, and it exists for
+ * the case the issue was filed for: `embedPng` holds every image's samples
+ * uncompressed until `save()`, so an images → PDF job's cost accumulates across
+ * files and nothing fixed describes it. It is a function of the device budget.
+ *
+ * {@link assertBitmapFits} is the **factual** bound for the engines that decode
+ * through a browser bitmap. A canvas past {@link MAX_BITMAP_SIDE} or
+ * {@link MAX_BITMAP_PIXELS} yields a blank surface rather than an exception, so
+ * this refuses a file no browser could have rendered anyway. It is deliberately
+ * *not* derived from the memory budget: what a decoded `ImageBitmap` plus its
+ * canvas actually costs has never been measured — `createImageBitmap` and
+ * `OffscreenCanvas` have no Node stand-in, which is why `MEMORY.canvas` and
+ * `MEMORY.heif` are unmeasured too — and a ceiling built from an estimated
+ * per-pixel cost against a deliberately conservative budget would refuse a
+ * 12 megapixel phone photo, which is the single commonest input the app has.
+ * Refusing the common case to prevent a crash that has not been measured is a
+ * worse trade than the crash. Measuring it needs the browser harness
+ * `docs/router/memory-budget-measurement.md` says has not been built.
  *
  * ## One helper, not four copies
  *
- * `pdf-from-images`, `canvas` and `heif` all materialise a full decoded bitmap
- * and all need the same three things: a size read out of a header, the same
- * arithmetic against the same budget, and — the part that matters most — the
- * *same sentence*, because a rejection that varies by engine teaches the user
- * nothing (CLAUDE.md §2.5). What differs between them is one number, so
- * `bytesPerPixel` is a parameter and everything else is shared. A JPEG SOF0
- * reader written three times would be three subtly different marker walks.
- *
- * `vips` is deliberately **not** guarded. libvips never materialises the bitmap:
- * `newFromBuffer` with `access: 'sequential'` and `thumbnailBuffer`'s
- * shrink-on-load both work in scanline regions, which is why its factor is 4
- * against the canvas engine's 6. A pixel ceiling there would refuse jobs it
- * completes in a few hundred kilobytes.
- *
- * ## Which budget
- *
- * `budgetBytes(caps)` is pure and would be the right number to compare against,
- * but the conversion worker carries no `Capabilities` at all — `ConvertRequest`
- * in `lib/worker/types.ts` is deliberately just the engine id and the input, and
- * the worker never re-routes (CLAUDE.md §2.4). So the budget arrives here as an
- * optional parameter and defaults to {@link CONSERVATIVE_BUDGET_BYTES} when
- * nobody supplies one: the same choice `budgetForUnhandledPlatform` makes in
- * `lib/router/budget.ts`, for the same reason — an unknown device must not be
- * handed the largest allowance by a module whose failure mode is a killed tab.
+ * `pdf-from-images`, `canvas` and `heif` need the same arithmetic and — the part
+ * that settles it — the same sentence, because a refusal whose wording changes
+ * with the engine teaches the user nothing (CLAUDE.md §2.5). `vips` is
+ * deliberately guarded by neither: libvips streams in scanline regions and never
+ * materialises the bitmap either ceiling would be protecting. See its module
+ * header.
  */
 
-import { IOS_BUDGET_BYTES } from '@/lib/router/budget'
+import { DESKTOP_BUDGET_FLOOR_BYTES } from '@/lib/router/budget'
 
-/** Pixel dimensions read from a file's header, before any decoder sees it. */
-export interface ImageSize {
-  readonly width: number
-  readonly height: number
-}
+import type { ImageSize } from './raster-size'
 
 /**
- * The budget assumed when the caller does not know the device.
+ * The budget assumed when the caller does not say which device this is.
  *
- * iOS is the smallest ceiling any platform gets, and mobile Safari enforces it
- * by killing the tab without a catchable error. Assuming it costs a desktop
- * some headroom it could have used; assuming anything larger costs an iPhone
- * user their file.
+ * `budgetBytes(caps)` is pure and is the right number, but it has to be passed
+ * in: the conversion worker carries no `Capabilities`, deliberately, because it
+ * never re-routes (CLAUDE.md §2.4, `lib/worker/types.ts`). `EngineInput
+ * .budgetBytes` is how a caller that has already routed hands its answer over.
+ *
+ * The fallback is the *floor* rather than the iOS ceiling, and that is a
+ * deliberate departure from "assume the weakest device". This is a second bound
+ * on an axis the router cannot see, not a replacement for the router's own
+ * check — that one already ran, against the real device budget, on the job's
+ * bytes. Assuming a phone here would refuse on a workstation a job measured at
+ * 118 MB against a 1200 MB allowance. The floor still refuses the runaway case
+ * this exists for, on every device.
  */
-export const CONSERVATIVE_BUDGET_BYTES = IOS_BUDGET_BYTES
+export const DEFAULT_BUDGET_BYTES = DESKTOP_BUDGET_FLOOR_BYTES
 
 /**
  * What one decoded pixel costs pdf-lib, measured.
@@ -66,124 +75,38 @@ export const CONSERVATIVE_BUDGET_BYTES = IOS_BUDGET_BYTES
  * `embedPng` decodes to raw samples and holds them *uncompressed* until
  * `save()` deflates them, so an images → PDF job keeps every image's pixels
  * alive at once. The sweep in `docs/router/memory-budget-measurement.md` runs
- * the same flat PNG at one, three, six, twelve and twenty-four images; 8 is the
- * rate at which the predicted cost first covers the measured peak everywhere
- * that peak reaches the smallest platform budget. Twelve of them measure 202 MB
- * against an iPhone's 90 MB, and this is what refuses them.
+ * the same flat PNG at one, three, six, twelve and twenty-four images: the
+ * measured curve crosses the 90 MB iOS budget at 12.0 megapixels, which is 7.83
+ * bytes per pixel, and 8 is the next whole number up.
  *
  * JPEG is charged nothing, and that is not an oversight: `embedJpg` scans to
  * SOF0 and copies the bytes into a `DCTDecode` stream without running a Huffman
  * decoder, which is why `images-jpg-24` carries 288 Mpx and still peaks at 1.7×
- * its bytes. Those bytes the router already budgets.
+ * its bytes. Those bytes the router already budgets — and it is why a phone
+ * making a PDF of its own camera roll is unaffected by any of this.
  */
 export const PDFLIB_DECODED_BYTES_PER_PIXEL = 8
 
 /**
- * What one decoded pixel costs an engine that decodes through a browser bitmap.
+ * Canvas limits, taken from the strictest mainstream implementation rather than
+ * the most generous.
  *
- * Structural rather than measured — `createImageBitmap` and `OffscreenCanvas`
- * have no Node stand-in, which is the same reason `MEMORY.canvas`, `.vips` and
- * `.heif` are unmeasured. Four bytes for the RGBA pixels and four for the canvas
- * backing store they are drawn onto, both live at the same moment: in
- * `./canvas-runner` between `decode()` and `bitmap.close()`, and in `./heif`
- * between `decodeHeif`'s `Uint8ClampedArray(width * height * 4)` and the
- * `OffscreenCanvas` `./bitmap` encodes it through.
+ * Safari refuses a canvas past 16 384 px on either axis and browsers cap total
+ * area independently of that. Exceeding either yields a blank surface rather
+ * than an exception — the conversion "succeeds" and the user downloads an empty
+ * image — so the check has to happen before anything is allocated.
  *
- * That it equals {@link PDFLIB_DECODED_BYTES_PER_PIXEL} is a coincidence of two
- * different allocations, not one number used twice — they are separate so that
- * re-measuring either cannot silently move the other.
+ * The same two numbers appear as `MAX_CANVAS_SIDE` and `MAX_CANVAS_PIXELS` in
+ * `./pdf-render-plan`, which reached them first and for the same reason. They
+ * are stated again here rather than imported because that module pulls the
+ * whole pdf.js page-planning graph in behind it, and this one is reached from
+ * the canvas engine, whose entire point is that it downloads nothing.
  */
-export const BITMAP_DECODED_BYTES_PER_PIXEL = 8
-
-const PNG_SIGNATURE = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
-const JPEG_SIGNATURE = Uint8Array.of(0xff, 0xd8, 0xff)
-
-/** Byte offset of the IHDR width field: 8 of signature, 4 of length, 4 of type. */
-const IHDR_WIDTH_OFFSET = 16
-const IHDR_MIN_LENGTH = IHDR_WIDTH_OFFSET + 8
+export const MAX_BITMAP_SIDE = 16_384
+export const MAX_BITMAP_PIXELS = 67_108_864
 
 const MEGAPIXEL = 1_000_000
 const MB = 1024 * 1024
-
-/**
- * The dimensions in a PNG's IHDR, or `null` if this is not a PNG whose header
- * can be trusted.
- *
- * IHDR is required by the spec to be the *first* chunk, so its position is
- * fixed and no chunk walk is needed. `null` rather than a throw: the caller
- * already has a better error for "this is not an image", and a guard that
- * cannot read a size must not be the thing that refuses the file.
- */
-export function pngSize(bytes: Uint8Array): ImageSize | null {
-  if (!startsWith(bytes, PNG_SIGNATURE) || bytes.length < IHDR_MIN_LENGTH) return null
-  if (!isChunkType(bytes, 12, 'IHDR')) return null
-
-  const fields = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-
-  return sizeOf(fields.getUint32(IHDR_WIDTH_OFFSET), fields.getUint32(IHDR_WIDTH_OFFSET + 4))
-}
-
-/**
- * The dimensions in a JPEG's start-of-frame segment, or `null`.
- *
- * Walks the marker chain rather than assuming an offset: a camera file opens
- * with APP0/APP1 (JFIF, Exif) and can carry a colour profile split across a
- * dozen APP2 segments before the frame header arrives. The walk stops at SOS,
- * after which the bytes are entropy-coded and `0xFF` no longer introduces a
- * marker.
- */
-export function jpegSize(bytes: Uint8Array): ImageSize | null {
-  if (!startsWith(bytes, JPEG_SIGNATURE)) return null
-
-  const fields = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  let at = 2
-
-  while (at + 4 <= bytes.length) {
-    if (bytes[at] !== 0xff) return null
-
-    // Any number of 0xFF bytes may pad the gap before a marker code (JPEG, B.1.1.3).
-    const code = bytes[at + 1]
-    if (code === 0xff) {
-      at += 1
-      continue
-    }
-
-    // Standalone markers carry no length: TEM and the eight restart markers.
-    if (code === 0x01 || (code >= 0xd0 && code <= 0xd7)) {
-      at += 2
-      continue
-    }
-
-    // SOS begins the entropy-coded data; EOI ends the image. Either way there is
-    // no frame header left to find.
-    if (code === 0xda || code === 0xd9) return null
-
-    const length = fields.getUint16(at + 2)
-    if (length < 2) return null
-
-    if (isStartOfFrame(code)) {
-      // Segment length, one byte of sample precision, then height before width.
-      if (at + 9 > bytes.length) return null
-
-      return sizeOf(fields.getUint16(at + 7), fields.getUint16(at + 5))
-    }
-
-    at += 2 + length
-  }
-
-  return null
-}
-
-/**
- * The dimensions of whichever of the two formats these bytes actually are.
- *
- * Sniffed, never taken from the file name: `descriptor.supports()` gates on
- * `task.from`, which is derived from the extension, so a JPEG called `.png`
- * reaches an engine claiming to be a PNG.
- */
-export function rasterSize(bytes: Uint8Array): ImageSize | null {
-  return pngSize(bytes) ?? jpegSize(bytes)
-}
 
 /**
  * How to refer to a file in a refusal.
@@ -207,13 +130,18 @@ export function imageLabel(file: Blob, index?: number): string {
  *
  * A whole number, so it can be compared against a pixel count without a
  * rounding argument, and floored rather than rounded — the limit is a ceiling,
- * not an estimate.
+ * not an estimate. A per-pixel cost that is not a positive finite number
+ * answers `0` rather than `Infinity`: this is a memory ceiling, and the worst
+ * failure it could have is silently admitting everything.
  */
 export function maxDecodedPixels(
   bytesPerPixel: number,
-  budgetBytes: number = CONSERVATIVE_BUDGET_BYTES,
+  budgetBytes: number = DEFAULT_BUDGET_BYTES,
 ): number {
-  return Math.max(0, Math.floor(budgetBytes / bytesPerPixel))
+  if (!Number.isFinite(bytesPerPixel) || bytesPerPixel <= 0) return 0
+  if (!Number.isFinite(budgetBytes) || budgetBytes <= 0) return 0
+
+  return Math.floor(budgetBytes / bytesPerPixel)
 }
 
 /** One image's contribution to a job, and the ceiling it is measured against. */
@@ -224,16 +152,17 @@ export interface DecodedPixelCheck {
   size: ImageSize
   /**
    * Decoded pixels the job reaches *including* this image. Omit for an engine
-   * that decodes one file at a time and releases it before the next.
+   * that decodes one file at a time and releases it before the next. Never
+   * counts for less than this image alone.
    */
   jobPixels?: number
   bytesPerPixel: number
-  /** From `budgetBytes(caps)` where it is known; conservative where it is not. */
+  /** From `budgetBytes(caps)` where it is known; {@link DEFAULT_BUDGET_BYTES} where it is not. */
   budgetBytes?: number
 }
 
 /**
- * Refuses a job whose decoded pixels cannot fit the budget.
+ * Refuses a job whose decoded pixels cannot fit the memory budget.
  *
  * Synchronous and called before the decoder is handed anything, which is the
  * whole point: by the time an out-of-memory shows up as a failed allocation the
@@ -241,12 +170,14 @@ export interface DecodedPixelCheck {
  *
  * The message names the file, its dimensions and the ceiling in the same unit
  * (CLAUDE.md §2.5), and the suggestion differs by case because the fix does: one
- * enormous image is resized, a long batch of ordinary ones is split up.
+ * oversized image is resized, a long batch of ordinary ones is split up.
  */
 export function assertDecodedPixelsFit(check: DecodedPixelCheck): void {
-  const { label, size, bytesPerPixel, budgetBytes = CONSERVATIVE_BUDGET_BYTES } = check
+  const { label, size, bytesPerPixel, budgetBytes = DEFAULT_BUDGET_BYTES } = check
   const ownPixels = size.width * size.height
-  const jobPixels = check.jobPixels ?? ownPixels
+  // Never below this image's own pixels: a caller that under-reports the running
+  // total must not be able to talk the ceiling into admitting one huge file.
+  const jobPixels = Math.max(check.jobPixels ?? ownPixels, ownPixels)
   const limit = maxDecodedPixels(bytesPerPixel, budgetBytes)
 
   if (jobPixels <= limit) return
@@ -260,14 +191,39 @@ export function assertDecodedPixelsFit(check: DecodedPixelCheck): void {
     throw new Error(
       `${dimensions} and brings this job to ${megapixels(jobPixels)} megapixels, which is ` +
         `more than this device can decode at once — ${ceiling}. Build the document from ` +
-        'fewer images at a time, or resize them first.',
+        'fewer images at a time, or use the resize tool on them first.',
     )
   }
 
   throw new Error(
     `${dimensions}, which is ${megapixels(ownPixels)} megapixels and more than this device ` +
-      `can decode at once — ${ceiling}. Resize it below ${square(limit)} first, then ` +
-      'convert it.',
+      `can decode at once — ${ceiling}. Use the resize tool to bring it under ` +
+      `${square(limit)}, then convert the result.`,
+  )
+}
+
+/**
+ * Refuses an image no browser bitmap could hold, before one is asked for.
+ *
+ * Not a memory budget — see the module header. This is the size past which a
+ * canvas comes back blank, so the alternative to refusing is an empty file
+ * presented to the user as a successful conversion.
+ */
+export function assertBitmapFits(label: string, size: ImageSize): void {
+  const { width, height } = size
+
+  if (
+    width <= MAX_BITMAP_SIDE &&
+    height <= MAX_BITMAP_SIDE &&
+    width * height <= MAX_BITMAP_PIXELS
+  ) {
+    return
+  }
+
+  throw new Error(
+    `${label} is ${width} × ${height} pixels, which is larger than a browser canvas can ` +
+      `hold — at most ${MAX_BITMAP_SIDE} pixels on a side and ${megapixels(MAX_BITMAP_PIXELS)} ` +
+      'megapixels in total. Use the resize tool to bring it under that, then convert the result.',
   )
 }
 
@@ -279,32 +235,11 @@ function megapixels(pixels: number): string {
 /**
  * The limit expressed as a square, which is the only shape that can be quoted
  * without knowing the user's aspect ratio. Rounded down to 10 px so it reads as
- * guidance rather than as a threshold to hit exactly.
+ * guidance rather than as a threshold to hit exactly, and never below 10 —
+ * "resize it below 0 × 0" is not an instruction anyone can follow.
  */
 function square(limitPixels: number): string {
-  const side = Math.floor(Math.sqrt(limitPixels) / 10) * 10
+  const side = Math.max(10, Math.floor(Math.sqrt(limitPixels) / 10) * 10)
 
   return `${side} × ${side} pixels`
-}
-
-/** Positive integers only — a zero or absurd dimension is a header we cannot use. */
-function sizeOf(width: number, height: number): ImageSize | null {
-  if (!Number.isInteger(width) || !Number.isInteger(height)) return null
-  if (width <= 0 || height <= 0) return null
-
-  return { width, height }
-}
-
-function isStartOfFrame(code: number): boolean {
-  // SOF0..SOF15, minus the three markers that share the range but are not
-  // frame headers: DHT (0xC4), JPG (0xC8) and DAC (0xCC).
-  return code >= 0xc0 && code <= 0xcf && code !== 0xc4 && code !== 0xc8 && code !== 0xcc
-}
-
-function isChunkType(bytes: Uint8Array, at: number, type: string): boolean {
-  return [...type].every((character, index) => bytes[at + index] === character.charCodeAt(0))
-}
-
-function startsWith(bytes: Uint8Array, signature: Uint8Array): boolean {
-  return bytes.length >= signature.length && signature.every((byte, index) => bytes[index] === byte)
 }

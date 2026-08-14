@@ -26,12 +26,16 @@ const png = (width: number, height: number, name = 'photo.png') =>
 const jpeg = (width: number, height: number, name = 'photo.jpg') =>
   new File([jpegBytes(width, height)], name)
 
-function input(files: readonly Blob[], layout?: PdfLayoutOptions): EngineInput {
-  return { task, files, pdf: layout === undefined ? undefined : { layout } }
+function input(
+  files: readonly Blob[],
+  layout?: PdfLayoutOptions,
+  budgetBytes?: number,
+): EngineInput {
+  return { task, files, pdf: layout === undefined ? undefined : { layout }, budgetBytes }
 }
 
-const build = (files: readonly Blob[], layout?: PdfLayoutOptions) =>
-  imagesToPdf(input(files, layout), new AbortController().signal, nothing)
+const build = (files: readonly Blob[], layout?: PdfLayoutOptions, budgetBytes?: number) =>
+  imagesToPdf(input(files, layout, budgetBytes), new AbortController().signal, nothing)
 
 describe('the pixels-to-points assumption', () => {
   it('maps one image pixel to one PDF point, which is 72 dpi', () => {
@@ -187,21 +191,47 @@ describe('the decoded-pixel ceiling', () => {
     return new File([bytes], name)
   }
 
+  /**
+   * A budget under which one `flat` image below fits and four do not.
+   *
+   * 400 × 400 is 160 000 pixels, so at 8 bytes each a 4 MB budget admits
+   * 500 000 — three of them, not four.
+   */
+  const TIGHT_BUDGET_BYTES = 4_000_000
+  const flat = (index: number) => new File([pngBytes(400, 400)], `shot-${index}.png`)
+
   it('refuses one image whose pixels cannot fit, before it is decoded', async () => {
     await expect(build([oversizedPng(20_000, 20_000, 'poster.png')])).rejects.toThrow(
-      /"poster\.png" is 20000 × 20000 pixels[\s\S]*megapixels[\s\S]*Resize it below/,
+      /"poster\.png" is 20000 × 20000 pixels[\s\S]*400\.0 megapixels[\s\S]*resize tool/,
     )
   })
 
   it('counts the images already embedded, not just the one in hand', async () => {
-    // Every PNG stays decoded until `save()` deflates it, so the bound is the
-    // running total. The message says so — "brings this job to" rather than the
-    // single-image wording — which is the observable difference between the two
-    // branches, and the case the router structurally cannot see: these files
-    // weigh a few hundred bytes between them.
-    await expect(build([png(10, 10), oversizedPng(4000, 4000, 'shot-2.png')])).rejects.toThrow(
-      /"shot-2\.png" is 4000 × 4000 pixels and brings this job to 16\.0 megapixels[\s\S]*fewer images/,
+    // The case the router structurally cannot see, and the one the issue was
+    // filed for. Every one of these four is real, decodable and comfortably
+    // inside the ceiling on its own; together they are not. A guard that charged
+    // the largest image rather than the running total would pass all four.
+    await expect(
+      build([flat(1), flat(2), flat(3), flat(4)], undefined, TIGHT_BUDGET_BYTES),
+    ).rejects.toThrow(
+      /"shot-4\.png" is 400 × 400 pixels and brings this job to 0\.6 megapixels[\s\S]*fewer images/,
     )
+  })
+
+  it('admits the images that fit before the one that does not', async () => {
+    const pages = await placements(
+      await build([flat(1), flat(2), flat(3)], undefined, TIGHT_BUDGET_BYTES),
+    )
+
+    expect(pages).toHaveLength(3)
+  })
+
+  it('takes the budget from the job rather than assuming a device', async () => {
+    // The same four images the tight budget refuses. `budgetBytes` is what the
+    // main thread already computed with `budgetBytes(caps)` when it routed.
+    const out = await build([flat(1), flat(2), flat(3), flat(4)], undefined, 400_000_000)
+
+    expect(out.type).toBe('application/pdf')
   })
 
   it('charges a JPEG nothing, because pdf-lib never decodes one', async () => {

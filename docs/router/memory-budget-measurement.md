@@ -71,7 +71,7 @@ Two deliberate compromises, both of which change what a result means:
 | `pdflib` | **Measured**, four operations, below |
 | `zip` | **Measured** through `fflate` directly, which is what the engine will be built on |
 | `pdfjs` | **Half measured.** Parsing runs in Node; rendering needs a canvas, so the render term is an estimate — see below |
-| `canvas`, `vips`, `heif` | **Not measured.** Browser APIs and WASM modules with no Node equivalent; their factors are unchanged from before this document existed. What their factors cannot express — the pixel count a file's size does not predict — is bounded in the engines instead; see "the decoded-pixel ceiling" |
+| `canvas`, `vips`, `heif` | **Not measured.** Browser APIs and WASM modules with no Node equivalent; their factors are unchanged from before this document existed. `canvas` and `heif` do carry a hard ceiling on what a browser canvas can hold, which is a fact rather than a measurement — see "the decoded-pixel ceiling" |
 | `webcodecs`, `ffmpeg`, `libarchive` | **Not measured.** No engine ships yet, and none of the three has a Node stand-in worth measuring. Their factors and `holds` values are carried over and are as good as the guess that produced them |
 
 Measuring the browser engines needs a Playwright harness on a cross-origin-isolated
@@ -238,57 +238,102 @@ Conservative at the top end is the safe direction: the desktop budget is the one
 platform where an over-tight ceiling costs a user something, and 157 Mpx is a
 larger images → PDF job than the app has any other reason to accept.
 
-The twelve screenshots that opened the issue are 36 Mpx, so they are refused on a
-phone and admitted on a desktop — which is the answer both measurements support.
+The twelve screenshots that opened the issue are 36 Mpx, so a phone and a
+140 MB device refuse them and a desktop accepts them — which is the answer both
+measurements support.
 
-### Which budget the engine actually uses
+JPEG is charged nothing at all, which is what keeps the common case out of the
+way of this: `embedJpg` scans to SOF0 and copies the bytes into a `DCTDecode`
+stream without running a Huffman decoder, so `images-jpg-24` carries 288 Mpx and
+still peaks at 1.7× its bytes. A phone making a PDF of its own camera roll is
+unaffected by the ceiling entirely.
 
-`budgetBytes(caps)` is pure and is the right number to compare against, but the
-conversion worker carries no `Capabilities`: `ConvertRequest` in
-`lib/worker/types.ts` is the engine id and the input, deliberately, because the
-worker never re-routes (CLAUDE.md §2.4). So `assertDecodedPixelsFit` takes the
-budget as a parameter and falls back to `IOS_BUDGET_BYTES` when nobody supplies
-one — the same choice `budgetForUnhandledPlatform` makes in `lib/router/budget.ts`
-for the same reason. **Today nobody supplies one**, so every device is held to
-the phone ceiling. Threading `budgetBytes(caps)` from the main thread through
-`EngineInput` is a one-field change and is what should happen when the UI that
-starts conversions lands; the arithmetic is already a function of the budget and
-will not need rewriting.
+### Which budget the engine uses
 
-### The other three raster engines
+`budgetBytes(caps)` is pure and is the right number, but it has to be handed
+over: the conversion worker carries no `Capabilities`, deliberately, because it
+never re-routes (CLAUDE.md §2.4, `lib/worker/types.ts`). `EngineInput.budgetBytes`
+is the field the main thread puts its already-computed answer in — a number, not
+the `Capabilities` it came from, so the worker still cannot decide anything.
 
-One helper serves all of them rather than a copy each. They need the same marker
-walk, the same arithmetic, and — the reason that settles it — the same sentence,
-because a refusal whose wording changes with the engine teaches the user nothing
-(CLAUDE.md §2.5). What differs is one number, so `bytesPerPixel` is a parameter.
+When it is absent, `DEFAULT_BUDGET_BYTES` applies, and that is
+`DESKTOP_BUDGET_FLOOR_BYTES` (140 MB) rather than the iOS ceiling. That is a
+deliberate departure from "assume the weakest device", and the reason is that
+this is a *second* bound on an axis the router cannot see, not a replacement for
+the router's own check — that one already ran, against the real device budget, on
+the job's bytes. Assuming a phone here would refuse, on a workstation, a job
+measured at 118 MB against a 1200 MB allowance. The floor still refuses the
+runaway case this exists for, on every device.
 
-- **`canvas`** checks twice: on the sniffed PNG or JPEG header before
-  `createImageBitmap`, and on the decoded bitmap before the canvas it is drawn
-  onto — which covers WebP, BMP, AVIF and the HEIC that Apple hardware decodes,
-  none of whose headers are parsed here.
-- **`heif`** checks where libheif reports the dimensions, one line before
-  `new Uint8ClampedArray(width * height * 4)`.
-- **`vips` is deliberately not guarded.** libvips never materialises the bitmap:
-  `newFromBuffer` with `access: 'sequential'` hands the writer scanline regions
-  and `thumbnailBuffer` shrinks on load inside the codec. That is why
-  `MEMORY.vips` is 4 where `MEMORY.canvas` is 6, and a pixel ceiling there would
-  refuse work the engine finishes in a few hundred kilobytes. If an operation
-  ever forces a random-access pipeline, the ceiling comes back with it.
+### The other three raster engines, and why only one of them shares this number
 
-`BITMAP_DECODED_BYTES_PER_PIXEL` — the 8 the canvas and HEIC engines use — is
-**structural, not measured**: four bytes of RGBA plus four for the canvas backing
-store, both live at once. `createImageBitmap` and `OffscreenCanvas` have no Node
-stand-in, which is the same reason `MEMORY.canvas` and `MEMORY.heif` are
-unmeasured, and measuring it needs the Playwright harness this document already
-says it does not pretend to have. It equals the pdf-lib number by coincidence of
-two different allocations; the constants are separate so that re-measuring either
-cannot silently move the other.
+One helper serves all of them rather than a copy each: they need the same header
+readers, the same arithmetic and — the reason that settles it — the same
+sentence, because a refusal whose wording changes with the engine teaches the
+user nothing (CLAUDE.md §2.5). But they do **not** share this ceiling, because
+only pdf-lib's per-pixel cost has been measured.
+
+`canvas` and `heif` are bounded by `assertBitmapFits` instead: at most
+16 384 px on a side and 67.1 Mpx in total, which is what a browser canvas can
+hold before it silently returns a blank surface. That is a *fact* rather than an
+estimate, it is the same pair of numbers `canvasSize()` in `pdf-render-plan.ts`
+already uses, and it refuses a file no browser could have rendered anyway.
+
+It is tempting to give them a budget-derived ceiling too, and it would be wrong
+today. What a decoded `ImageBitmap` plus the canvas it is drawn onto actually
+costs has never been measured — `createImageBitmap` and `OffscreenCanvas` have no
+Node stand-in, which is exactly why `MEMORY.canvas` and `MEMORY.heif` are
+unmeasured in the table above. The obvious structural estimate is 8 bytes per
+pixel, four of RGBA and four for the canvas, and at the iOS budget that puts the
+ceiling at 11.8 Mpx — below a 4032 × 3024 iPhone photo, which is the single
+commonest input the app has and the entire reason the HEIC engine exists.
+Refusing the app's headline conversion on the strength of an unmeasured constant
+is a worse outcome than the crash it was guarding against. Measuring it needs the
+Playwright harness this document already says has not been built; until then the
+factual ceiling is the honest one.
+
+`vips` is bounded by neither, and that is also deliberate. libvips never
+materialises the bitmap: `newFromBuffer` with `access: 'sequential'` hands the
+writer scanline regions and `thumbnailBuffer` shrinks on load inside the codec.
+That is why `MEMORY.vips` is 4 where `MEMORY.canvas` is 6, and a pixel ceiling
+there would refuse work the engine finishes in a few hundred kilobytes. If an
+operation ever forces a random-access pipeline, the ceiling comes back with it.
+
+### Where each check sits
+
+Every one of them is before the allocation it guards, which is the only placement
+worth having — an out-of-memory inside a browser decoder is a blank tab, not a
+catchable error.
+
+| Engine | Reads the size from | Refuses before |
+| --- | --- | --- |
+| `pdf-from-images` | the PNG `IHDR` | `embedPng` |
+| `canvas` | the PNG `IHDR`, JPEG `SOF0` or WebP `VP8X`/`VP8 ` | `createImageBitmap` |
+| `canvas` (again) | the decoded `ImageBitmap` | `new OffscreenCanvas` |
+| `heif` | libheif's own `get_width`/`get_height` | `new Uint8ClampedArray(w * h * 4)` |
+
+The second canvas row is not redundancy. A browser also decodes BMP, AVIF and,
+on Apple hardware, HEIC, and `lib/engines/raster-size.ts` has no reader for any
+of them; abstaining and checking the decoded bitmap one allocation later is
+better than guessing at a header format.
 
 ## What the model still cannot see
 
-The decoded-pixel hole above is now guarded in three of the four raster engines
-and consciously left open in the fourth. These are the ones that are not:
+`images-flat-png-12` used to be the row this section opened with. It is now
+`lib/engines/raster-limits.ts`'s job, guarded before `embedPng` and measured
+above. These are the holes that are still open:
 
+- **What a browser bitmap costs per pixel.** `canvas` and `heif` are held to
+  what a canvas can *hold*, not to what it costs, because nobody has measured
+  the second number — see "the other three raster engines" above. Until the
+  browser harness exists, `MEMORY.canvas` at 6× and `MEMORY.heif` at 5× of the
+  *input bytes* are all that stands between a flat 60 megapixel PNG and a phone,
+  and they understate it by two orders of magnitude. This is the largest thing
+  this document knows it cannot see.
+- **Nobody sets `EngineInput.budgetBytes` yet.** No UI starts conversions, so
+  every job today runs at `DEFAULT_BUDGET_BYTES`. The field is the whole fix and
+  the arithmetic already takes it; the caller has to pass `budgetBytes(caps)`
+  when it lands.
 - `pdf-split` holds one `PDFDocument` per page until the archive is written, so
   its cost scales with page count. `split-vector-large` is 200 pages of 0.3 MB
   peaking at 44 MB, which the model under-predicts by 10 MB.
@@ -298,7 +343,3 @@ and consciously left open in the fourth. These are the ones that are not:
   at a time and 300 result blobs by the end. Browsers spill large blobs to disk,
   which is why this is a note rather than a factor, but it is a permission the
   multi-file budget grants and did not grant before.
-- The pixel ceiling itself is held to the phone budget on every device, because
-  the worker is not told which device it is on. See "which budget the engine
-  actually uses" above — the cost is a desktop refusing a job it could have run,
-  which is the failure direction this document prefers.
