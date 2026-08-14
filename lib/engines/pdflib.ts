@@ -125,7 +125,7 @@ async function loadOperation(task: ConversionTask): Promise<PdfOperation> {
       return (await import('./pdf-split')).splitPdf
     case 'organize':
     case 'rotate':
-      throw notImplemented(task.op, 40)
+      return (await import('./pdf-organize')).organizePages
     case 'convert':
       return (await import('./pdf-from-images')).imagesToPdf
     default:
