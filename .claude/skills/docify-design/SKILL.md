@@ -19,7 +19,10 @@ Monochrome, high-contrast, sectional block layout. An editorial / audio-brand ae
 ❌ Decorative gradient backgrounds
 ```
 
-These are blocked in CI by a lint rule in `eslint.config.mjs`.
+These are blocked in CI by the design gate in `scripts/design-lint/`, which runs
+as the second half of `pnpm lint` (`pnpm lint:design` on its own). It reads
+`app/`, `components/` and `lib/`; hex codes are allowed only inside the `@theme`
+block of `app/globals.css`.
 
 ## Tokens
 
