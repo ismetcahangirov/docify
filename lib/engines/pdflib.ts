@@ -122,7 +122,7 @@ async function loadOperation(task: ConversionTask): Promise<PdfOperation> {
     case 'merge':
       throw notImplemented('merge', 38)
     case 'split':
-      throw notImplemented('split', 39)
+      return (await import('./pdf-split')).splitPdf
     case 'organize':
     case 'rotate':
       throw notImplemented(task.op, 40)
