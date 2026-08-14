@@ -7,7 +7,8 @@
  * the budget model, the priority table and the codec gates, and then drifts
  * from all three.
  *
- * Three properties hold, and `test/router/route.test.ts` enforces them:
+ * Three properties hold. `test/router/route-purity.test.ts` enforces the first
+ * two; `test/router/route-rejections.test.ts` enforces the third:
  *
  * - **Pure.** No `await`, no I/O, no `navigator`, no `window`, no probing —
  *   every input arrives as a parameter. That is what lets the whole selection
