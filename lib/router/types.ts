@@ -114,10 +114,11 @@ export type MemoryScope = 'all-at-once' | 'one-at-a-time'
  *
  * The affine shape exists because a single multiple of the input cannot
  * describe every engine. pdf.js sizes its canvas from the requested DPI, so a
- * 1 367-byte vector PDF still allocates 8.4 MB of pixels — six thousand times
- * its input, against any factor anyone would write down. That allocation does
- * not scale with the file, so it belongs in `reserveBytes` rather than in a
- * factor that has to be wrong for one of the two cases.
+ * 13 kB vector PDF still allocates 8.0 MB of pixels for a US Letter page at
+ * 150 dpi — six hundred times its input, against any factor anyone would write
+ * down. That allocation does not scale with the file, so it belongs in
+ * `reserveBytes` rather than in a factor that has to be wrong for one of the two
+ * cases.
  */
 export interface EngineMemory {
   /** Peak bytes held per byte of the input the engine has open. At least 1. */

@@ -188,7 +188,7 @@ describe('MEMORY', () => {
       pdfjs: { factor: 4, holds: 'one-at-a-time', reserveBytes: 32 * MB },
       webcodecs: { factor: 2.5, holds: 'one-at-a-time', reserveBytes: 0 },
       ffmpeg: { factor: 4.5, holds: 'one-at-a-time', reserveBytes: 0 },
-      zip: { factor: 2.5, holds: 'all-at-once', reserveBytes: 0 },
+      zip: { factor: 3, holds: 'all-at-once', reserveBytes: 0 },
       libarchive: { factor: 3, holds: 'one-at-a-time', reserveBytes: 0 },
     })
   })

@@ -54,7 +54,7 @@ export async function createRunner(): Promise<EngineRunner> {
 
 - [ ] Create `lib/engines/<id>.ts` — export `descriptor` and `createRunner`
 - [ ] Add the new id to the `EngineId` union (`lib/router/types.ts`)
-- [ ] Add an expansion factor to `EXPANSION` in `lib/router/budget.ts` (**measure it, don't guess**)
+- [ ] Add a memory model to `MEMORY` in `lib/router/budget.ts` (**measure it, don't guess** — `docs/router/memory-budget-measurement.md` is the harness). Say whether the engine holds every file of a job at once or one at a time, and put anything it allocates that the input size does not predict into `reserveBytes`
 - [ ] Register `descriptor` in `lib/engines/registry.ts`
 - [ ] Slot `priority` between existing values
 - [ ] Add a dynamic-import branch in `lib/worker/conversion.worker.ts`

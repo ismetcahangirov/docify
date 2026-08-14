@@ -17,8 +17,8 @@ file. Measured, not assumed — merging 30 scans and merging the same 30 plus 30
 PDFs peak within 3 MB of each other, so the cost tracks the total and not the count.
 
 **Resolution-bound.** pdf.js sizes a canvas from the requested DPI, so a 13 kB document
-allocates 8.4 MB of RGBA at 150 dpi and pdf.js itself costs 18-37 MB to open anything at
-all. No input-relative factor fits both that and a 78 MB scan. `reserveBytes` is the affine
+allocates 8.0 MB of RGBA at 150 dpi and pdf.js itself costs 17.8-34.4 MB to open anything
+at all. No input-relative factor fits both that and a 78 MB scan. `reserveBytes` is the affine
 term for exactly this, taken off the device budget before the factor is applied.
 
 Why the table stayed keyed by `EngineId` in `budget.ts` rather than moving onto
@@ -28,15 +28,15 @@ the day that engine ships.
 
 **What the model still cannot see, and deliberately does not pretend to.** A decoded bitmap
 is `width x height x 4` however well the source compressed. Twelve flat-coloured PNGs
-totalling 750 kB peak at 192 MB through pdf-lib — 262x. The router is handed byte counts
+totalling 750 kB peak at 189 MB through pdf-lib — 258x. The router is handed byte counts
 and cannot know a pixel count, so this bound has to live in the engine, beside the bytes it
 is decoding, the way `canvasSize()` already does in `pdf-render-plan.ts`. The same hole is
 open for `canvas`, `vips`, `heif`, and for `pdf-split`, which holds one `PDFDocument` per
-page until the archive is written.
+page until the archive is written. Tracked as issue #160.
 
 The corpus, the harness and every number are in `docs/router/memory-budget-measurement.md`;
-re-run it rather than trusting the table. `canvas`, `vips` and `heif` were **not**
-re-measured — they need a browser harness driving
+re-run it rather than trusting the table. `canvas`, `vips`, `heif`, `webcodecs`, `ffmpeg` and `libarchive` were **not**
+measured — they need a browser harness driving
 `performance.measureUserAgentSpecificMemory()` on an isolated page.
 
 Related: [[router-gates-before-budget]], [[no-server-side-processing]]

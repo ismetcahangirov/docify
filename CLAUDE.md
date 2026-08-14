@@ -136,7 +136,7 @@ One file, one responsibility. Split any module that grows past ~300 lines.
 Read the `docify-engine` skill. In short:
 1. Create `lib/engines/<name>.ts` implementing `EngineDescriptor`
 2. Set correct `loadCost` and `priority` in `registry.ts`
-3. Add the expansion factor to `EXPANSION` in `lib/router/budget.ts`
+3. Add the memory model to `MEMORY` in `lib/router/budget.ts` — measure it with `docs/router/memory-budget-measurement.md`
 4. Add new selection cases to the router test matrix
 5. Load the runner through `dynamic import()`
 

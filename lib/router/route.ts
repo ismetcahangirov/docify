@@ -96,10 +96,17 @@ export function route(task: ConversionTask, input: RouteInput, caps: Capabilitie
   const candidates = enginesFor(task, caps)
   if (candidates.length === 0) return unsupportedPair(task)
 
-  const viable = candidates.filter((engine) => missingCapability(engine, task, caps) === null)
-  if (viable.length === 0)
+  // Destructured rather than length-checked so that `tooLarge` can require a
+  // non-empty list in its own signature: it has to name an engine's ceiling, and
+  // there is no sentence to write when there is no engine.
+  const [firstViable, ...restViable] = candidates.filter(
+    (engine) => missingCapability(engine, task, caps) === null,
+  )
+  if (firstViable === undefined) {
     return codecUnavailable(task, missingCapabilities(candidates, task, caps))
+  }
 
+  const viable = [firstViable, ...restViable] as const
   const affordable = viable.filter((engine) => fitsInBudget(engine.id, job, caps))
   if (affordable.length === 0) return tooLarge(task, job, caps, viable)
 

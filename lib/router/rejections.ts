@@ -15,7 +15,7 @@
 
 import type { EngineDescriptor } from '@/lib/engines/types'
 
-import { MEMORY, heldBytes, maxInputBytes } from './budget'
+import { MEMORY, heldBytes, maxInputBytes, peakBytes } from './budget'
 import { formatBytes, formatName } from './copy'
 import type { Capabilities, ConversionTask, JobInput, MemoryScope, RouteRejection } from './types'
 
@@ -23,12 +23,22 @@ import type { Capabilities, ConversionTask, JobInput, MemoryScope, RouteRejectio
  * Nothing here can be budgeted: no files at all, or one among them with no
  * bytes in it.
  *
- * A multi-file job says how many were given, because "this file is empty" in
- * front of a list of ninety-nine good documents and one bad one tells the user
- * nothing about which to look at.
+ * Three sentences rather than one, because the three situations have three
+ * different next steps. "This file is empty" in front of a list of ninety-nine
+ * good documents and one bad one tells the user nothing about which to look at,
+ * and in front of no files at all it is simply untrue.
  */
 export function emptyInput(job: JobInput): RouteRejection {
-  if (job.fileCount <= 1) {
+  if (job.fileCount <= 0) {
+    return {
+      ok: false,
+      code: 'EMPTY_INPUT',
+      message: 'No files were given, so there is nothing to convert.',
+      suggestion: 'Choose at least one file — drop it on the page, or use the file picker.',
+    }
+  }
+
+  if (job.fileCount === 1) {
     return {
       ok: false,
       code: 'EMPTY_INPUT',
@@ -42,7 +52,7 @@ export function emptyInput(job: JobInput): RouteRejection {
     code: 'EMPTY_INPUT',
     message: `One of these ${job.fileCount} files is empty, or its size could not be read, so the job cannot be measured.`,
     suggestion:
-      'Remove the empty file from the list and try again — every other file is fine as it is.',
+      'Remove the empty file from the list — every other file is fine as it is, and the job runs once it has gone.',
   }
 }
 
@@ -81,6 +91,11 @@ export function codecUnavailable(task: ConversionTask, missing: readonly string[
  * hungrier engine's ceiling would understate it. Only engines that passed the
  * capability gate are considered, so the number is one this device can honour.
  *
+ * "Roomiest" is decided by what each engine would cost *for this job* rather
+ * than by comparing their ceilings, because two engines' ceilings can be
+ * ceilings on different quantities — one on the job's total and one on its
+ * largest file — and those two numbers do not order against each other.
+ *
  * What the limit is a limit *on* comes from that engine's own memory model. An
  * engine that opens every file at once is refusing the job's total, and saying
  * "the largest file this device can convert is 292 MB" to somebody whose files
@@ -89,15 +104,19 @@ export function codecUnavailable(task: ConversionTask, missing: readonly string[
  * The code differs by platform because the fix does. On a desktop the job is
  * the problem and can be broken up; on a phone the ceiling is the browser's own
  * per-tab limit, and no amount of splitting raises it.
+ *
+ * `candidates` must not be empty: it is the list `route()` has just found to be
+ * non-empty and unaffordable, and a rejection with no engine behind it has no
+ * number to quote.
  */
 export function tooLarge(
   task: ConversionTask,
   job: JobInput,
   caps: Capabilities,
-  candidates: readonly EngineDescriptor[],
+  candidates: readonly [EngineDescriptor, ...EngineDescriptor[]],
 ): RouteRejection {
   const roomiest = candidates.reduce((a, b) =>
-    maxInputBytes(a.id, caps) >= maxInputBytes(b.id, caps) ? a : b,
+    peakBytes(MEMORY[a.id], job) <= peakBytes(MEMORY[b.id], job) ? a : b,
   )
   const memory = MEMORY[roomiest.id]
   const limit = maxInputBytes(roomiest.id, caps)
@@ -130,7 +149,7 @@ function subject(job: JobInput, holds: MemoryScope, over: string): string {
 /** The limit, phrased as a ceiling on whatever the engine actually holds. */
 function ceiling(task: ConversionTask, job: JobInput, holds: MemoryScope, limit: string): string {
   if (job.fileCount > 1 && holds === 'all-at-once') {
-    return `The most ${formatName(task.from)} this device can handle in one job is ${limit} across every file.`
+    return `In one job this device can handle ${limit} of ${formatName(task.from)} across every file.`
   }
 
   return `The largest ${formatName(task.from)} file this device can convert safely is ${limit}.`
