@@ -1,0 +1,288 @@
+// @vitest-environment node
+//
+// pdf-lib is plain JavaScript and this operation touches no browser API beyond
+// `Blob`, so the tests run without a DOM — and every assertion below is made
+// against a document parsed back out of the bytes the engine produced, rather
+// than against a spy on the calls it made.
+
+import { decodePDFRawStream, PDFArray, PDFDocument, PDFRawStream } from 'pdf-lib'
+import { describe, expect, it } from 'vitest'
+
+import { imagesToPdf, POINTS_PER_PIXEL } from '@/lib/engines/pdf-from-images'
+import type { PdfLayoutOptions } from '@/lib/engines/pdf-options'
+import { createRunner } from '@/lib/engines/pdflib'
+import type { EngineInput } from '@/lib/engines/types'
+import type { ConversionTask } from '@/lib/router/types'
+
+import { jpegBytes, pngBytes } from './synthetic-images'
+
+const A4 = { width: 595.28, height: 841.89 }
+const task: ConversionTask = { from: 'png', to: 'pdf', op: 'convert' }
+const nothing = () => {}
+
+const png = (width: number, height: number, name = 'photo.png') =>
+  new File([pngBytes(width, height)], name)
+
+const jpeg = (width: number, height: number, name = 'photo.jpg') =>
+  new File([jpegBytes(width, height)], name)
+
+function input(files: readonly Blob[], layout?: PdfLayoutOptions): EngineInput {
+  return { task, files, pdf: layout === undefined ? undefined : { layout } }
+}
+
+const build = (files: readonly Blob[], layout?: PdfLayoutOptions) =>
+  imagesToPdf(input(files, layout), new AbortController().signal, nothing)
+
+describe('the pixels-to-points assumption', () => {
+  it('maps one image pixel to one PDF point, which is 72 dpi', () => {
+    // PDF user space is defined as 1/72 inch, so this is the identity mapping:
+    // no resampling on the way in, and a 72 dpi render on the way back out
+    // returns the original pixel grid. Changing this number changes the
+    // physical size of every document the engine has ever produced.
+    expect(POINTS_PER_PIXEL).toBe(1)
+  })
+})
+
+describe('images to PDF', () => {
+  it('makes one page per image, in the order the user gave them', async () => {
+    const pages = await placements(await build([png(120, 80), png(200, 50), jpeg(60, 300)]))
+
+    expect(pages.map((page) => page.page)).toEqual([
+      { width: 120, height: 80 },
+      { width: 200, height: 50 },
+      { width: 60, height: 300 },
+    ])
+  })
+
+  it('gives a fitted page the image own dimensions, with nothing around it', async () => {
+    const [page] = await placements(await build([png(120, 80)]))
+
+    expect(page.page).toEqual({ width: 120, height: 80 })
+    expect(page.image).toEqual({ x: 0, y: 0, width: 120, height: 80 })
+  })
+
+  it('defaults to fitting, so an album keeps every photo at its own size', async () => {
+    const [page] = await placements(await build([png(120, 80)], { margin: 0 }))
+
+    expect(page.page).toEqual({ width: 120, height: 80 })
+  })
+
+  it('scales an oversized image onto a named page without distorting it', async () => {
+    const [page] = await placements(await build([png(1200, 800)], { pageSize: 'a4' }))
+
+    expect(page.page.width).toBeCloseTo(A4.width, 1)
+    expect(page.page.height).toBeCloseTo(A4.height, 1)
+    // 1200 × 800 is 3:2, and it stays 3:2 — the scale is one number, not two.
+    expect(page.image.width / page.image.height).toBeCloseTo(1200 / 800, 5)
+    // Constrained by the width, so it touches both side edges and is centred
+    // vertically in what is left.
+    expect(page.image.width).toBeCloseTo(A4.width, 1)
+    expect(page.image.x).toBeCloseTo(0, 5)
+    expect(page.image.y).toBeCloseTo((A4.height - page.image.height) / 2, 5)
+  })
+
+  it('swaps the page in landscape and leaves the image undistorted', async () => {
+    const [page] = await placements(
+      await build([png(800, 1200)], { pageSize: 'a4', orientation: 'landscape' }),
+    )
+
+    expect(page.page.width).toBeCloseTo(A4.height, 1)
+    expect(page.page.height).toBeCloseTo(A4.width, 1)
+    expect(page.image.width / page.image.height).toBeCloseTo(800 / 1200, 5)
+    expect(page.image.height).toBeCloseTo(A4.width, 1)
+  })
+
+  it('offers every named size the options type promises', async () => {
+    const sizes = ['a3', 'a4', 'a5', 'letter', 'legal'] as const
+    const widths: number[] = []
+
+    for (const pageSize of sizes) {
+      const [page] = await placements(await build([png(20, 20)], { pageSize }))
+      widths.push(Math.round(page.page.width))
+    }
+
+    expect(widths).toEqual([842, 595, 420, 612, 612])
+  })
+
+  it('never enlarges a small image, so no page is filled with invented detail', async () => {
+    // Upscaling a 60 px thumbnail to A4 would be a 10× blur presented as a
+    // document. Centring it at its natural size is the honest answer.
+    const [page] = await placements(await build([png(60, 40)], { pageSize: 'a4' }))
+
+    expect(page.image.width).toBeCloseTo(60, 5)
+    expect(page.image.height).toBeCloseTo(40, 5)
+    expect(page.image.x).toBeCloseTo((A4.width - 60) / 2, 1)
+    expect(page.image.y).toBeCloseTo((A4.height - 40) / 2, 1)
+  })
+
+  it('insets the image by the margin on a named page', async () => {
+    const [page] = await placements(await build([png(1200, 800)], { pageSize: 'a4', margin: 50 }))
+
+    expect(page.image.x).toBeCloseTo(50, 5)
+    expect(page.image.width).toBeCloseTo(A4.width - 100, 1)
+    expect(page.image.width / page.image.height).toBeCloseTo(1200 / 800, 5)
+  })
+
+  it('grows a fitted page to make room for the margin rather than cropping', async () => {
+    const [page] = await placements(await build([png(120, 80)], { margin: 20 }))
+
+    expect(page.page).toEqual({ width: 160, height: 120 })
+    expect(page.image).toEqual({ x: 20, y: 20, width: 120, height: 80 })
+  })
+
+  it('refuses a margin that leaves no page left, and says what would fit', async () => {
+    await expect(build([png(120, 80)], { pageSize: 'a5', margin: 400 })).rejects.toThrow(
+      /400 pt margin[\s\S]*below 209 pt/,
+    )
+  })
+
+  it('refuses a margin that is not a distance', async () => {
+    await expect(build([png(120, 80)], { margin: -10 })).rejects.toThrow(/-10 pt is not a distance/)
+  })
+
+  it('reads the bytes rather than the declared format', async () => {
+    // `supports()` gates on `task.from`, which comes from the file extension, so
+    // a JPEG named ".png" reaches this engine claiming to be a PNG. Believing
+    // the label would hand it to the PNG decoder and fail on a valid image.
+    const [page] = await placements(await build([jpeg(200, 100, 'mislabelled.png')]))
+
+    expect(page.page).toEqual({ width: 200, height: 100 })
+  })
+
+  it('names the file it cannot embed and says what to do with it', async () => {
+    const notAnImage = new File([new Uint8Array(64).fill(0x49)], 'scan.tiff')
+
+    await expect(build([png(10, 10), notAnImage])).rejects.toThrow(
+      /"scan\.tiff" is not a JPEG or a PNG[\s\S]*convert it to PNG/,
+    )
+  })
+
+  it('falls back to the position when the file has no name to quote', async () => {
+    const notAnImage = new Blob([new Uint8Array(64).fill(0x49)])
+
+    await expect(build([png(10, 10), notAnImage])).rejects.toThrow(/Image 2 is not a JPEG/)
+  })
+
+  it('needs at least one image', async () => {
+    await expect(build([])).rejects.toThrow(/at least one image/)
+  })
+
+  it('labels the output as a PDF', async () => {
+    const out = await build([png(10, 10)])
+
+    expect(out.type).toBe('application/pdf')
+    expect(out.size).toBeGreaterThan(0)
+  })
+
+  it('reports progress across the images and finishes at 1', async () => {
+    const seen: number[] = []
+
+    await imagesToPdf(
+      input([png(10, 10), png(10, 10), png(10, 10)]),
+      new AbortController().signal,
+      (progress) => seen.push(progress),
+    )
+
+    expect(seen).toEqual([0, 1 / 3, 2 / 3, 1])
+  })
+
+  it('refuses a job that was cancelled before it started', async () => {
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(
+      imagesToPdf(input([png(10, 10)]), controller.signal, nothing),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('stops between images when the signal fires mid-run', async () => {
+    const controller = new AbortController()
+    const seen: number[] = []
+
+    await expect(
+      imagesToPdf(input([png(10, 10), png(10, 10), png(10, 10)]), controller.signal, (progress) => {
+        seen.push(progress)
+        if (progress > 0) controller.abort()
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+
+    // Stopped at the second image, and never claimed to have finished.
+    expect(seen).toEqual([0, 1 / 3])
+  })
+})
+
+describe('the pdflib engine wiring', () => {
+  it('reaches this operation for a convert task, and only through a dynamic import', async () => {
+    // The assertion that matters is that the runner resolves at all: the engine
+    // dispatches on `task.op` through `await import()`, so a wrong specifier or
+    // a renamed export fails here rather than in production, and the import
+    // stays out of the initial bundle (CLAUDE.md §2.3).
+    const out = await createRunner().run(
+      input([png(10, 10)]),
+      new AbortController().signal,
+      nothing,
+    )
+
+    expect(out.type).toBe('application/pdf')
+  })
+})
+
+/** Where the image ended up on each page, in PDF points. */
+interface Placement {
+  page: { width: number; height: number }
+  image: { x: number; y: number; width: number; height: number }
+}
+
+type Matrix = readonly [number, number, number, number, number, number]
+
+const CONCAT_MATRIX = /(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) cm/g
+
+/**
+ * Parses the produced PDF and reports, per page, the page box and the rectangle
+ * the image occupies.
+ *
+ * pdf-lib draws an image by concatenating a translate and a scale onto the
+ * current transformation matrix and painting the unit square, so composing every
+ * `cm` in the page's content stream gives back exactly the rectangle that was
+ * asked for. Reading it out of the serialised document rather than spying on
+ * `drawImage` is the difference between testing the file and testing the code.
+ */
+async function placements(blob: Blob): Promise<Placement[]> {
+  const doc = await PDFDocument.load(new Uint8Array(await blob.arrayBuffer()))
+
+  return doc.getPages().map((page) => {
+    // A page's /Contents is a single stream or an array of them, and pdf-lib
+    // splits ours in two — one for the page setup it writes itself, one for the
+    // drawing. Concatenating is what the PDF spec says a reader must do.
+    const contents = page.node.Contents()
+    const refs = contents instanceof PDFArray ? contents.asArray() : [contents]
+    const content = refs
+      .map((ref) => {
+        const stream = doc.context.lookup(ref)
+        if (!(stream instanceof PDFRawStream)) throw new Error('expected a content stream')
+        return new TextDecoder('latin1').decode(decodePDFRawStream(stream).decode())
+      })
+      .join('\n')
+    const [width, , , height, x, y] = compose(content)
+
+    return { page: page.getSize(), image: { x, y, width, height } }
+  })
+}
+
+function compose(content: string): Matrix {
+  let composed: Matrix = [1, 0, 0, 1, 0, 0]
+
+  for (const match of content.matchAll(CONCAT_MATRIX)) {
+    const [a, b, c, d, e, f] = match.slice(1).map(Number)
+    composed = [
+      a * composed[0] + b * composed[2],
+      a * composed[1] + b * composed[3],
+      c * composed[0] + d * composed[2],
+      c * composed[1] + d * composed[3],
+      e * composed[0] + f * composed[2] + composed[4],
+      e * composed[1] + f * composed[3] + composed[5],
+    ]
+  }
+
+  return composed
+}

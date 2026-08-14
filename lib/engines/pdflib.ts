@@ -127,7 +127,7 @@ async function loadOperation(task: ConversionTask): Promise<PdfOperation> {
     case 'rotate':
       throw notImplemented(task.op, 40)
     case 'convert':
-      throw notImplemented('images to PDF', 42)
+      return (await import('./pdf-from-images')).imagesToPdf
     default:
       // Reached only if `supports()` and this switch disagree, which is a
       // routing bug rather than anything the user did.
