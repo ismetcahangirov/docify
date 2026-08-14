@@ -1,6 +1,6 @@
 ---
 name: parallel-agent-coordination
-description: Four hazards when several agents work one repo at once — shared scratchpad, stale conditional rules, lockfile conflicts, merge order
+description: Hazards when several agents work one repo at once — shared scratchpad, stale conditional rules, lockfile conflicts, merge order, and scaffolding the shared surface first
 type: process
 date: 2026-08-13
 ---
@@ -57,4 +57,34 @@ directive was the answer — the value was respelled as a CSS keyword and the ru
 stayed absolute. An escape hatch added the first time a rule is inconvenient is
 the hatch everyone uses afterwards.
 
-Related: [[pr-open-checklist]], [[no-ai-attribution-in-git]], [[libheif-is-primary-broken]]
+**6. When N tasks share one artefact, build the artefact first — as its own
+issue.** EPIC 5's five tasks were four operations of one `pdflib` engine plus one
+`pdfjs` engine. Dispatched straight from the issue list, all four would have
+authored `lib/engines/pdflib.ts`, an options type and a ZIP writer, and every
+merge after the first would have been hand-resolved. Landing the shell first
+(#147/#148 — both descriptors with their full `supports()` matrix, the operation
+dispatch, the page-range grammar, the ZIP writer, and every dependency) reduced
+the shared surface to *one `case` arm per issue*. Five branches then merged in
+arrival order with **zero conflicts**, which is not luck: it is what is left when
+the contested files are already on `main`.
+
+Two things made that work beyond the scaffold itself. Dependencies went in with
+the shell, so no branch touched `pnpm-lock.yaml` — hazard 3 disappears rather
+than being managed. And each agent was told, by name, which files were not
+theirs, with the instruction to report a wanted change rather than make it. Three
+of the five came back with a shared-file change they had wanted and not made
+(a duplicated `PDFDocument.load` guard, two `EXPANSION` factors that do not model
+what their engine actually holds), which is how a coordinator finds out about
+a design gap instead of finding out about a merge conflict.
+
+**7. A scaffold that claims work it cannot do must fail loudly, and the last
+branch cleans it up.** The shell's dispatch threw `cannot run the "split"
+operation yet — issue #39 implements it` rather than returning an empty document,
+because an empty PDF downloads as a *successful* conversion. The placeholder and
+its test then behaved exactly like hazard 2's conditional cleanup: each landing
+issue moved the "not implemented" assertion to another arm, and the last one
+found no arm left, deleted the helper and rewrote the test. That worked because
+the condition was written into the code as a comment addressed to whoever landed
+next — not left implicit.
+
+Related: [[pr-open-checklist]], [[no-ai-attribution-in-git]], [[libheif-is-primary-broken]], [[cancel-needs-a-macrotask-yield]]
