@@ -87,15 +87,14 @@ describe('the pdflib runner', () => {
   const input = (task: ConversionTask) => ({ task, files: [new Blob(['%PDF-1.7'])] })
   const nothing = () => {}
 
-  it('names the operation and its issue when it has not been implemented yet', async () => {
-    // A scaffold that answered with an empty PDF would look like a successful
-    // conversion. Until an operation lands, the only honest result is a throw
-    // that says which one is missing. Whichever operation this names is simply
-    // one that has not landed yet, so the issue that implements it moves this
-    // assertion to another arm rather than deleting it.
+  it('dispatches merge to the module that implements it', async () => {
+    // The last arm to land, and with it the placeholder that stood in for every
+    // unimplemented operation: there is no longer one to assert against. A
+    // single-file job is the cheapest thing only the merger can refuse, so the
+    // throw proves the dispatch reached it.
     await expect(
       createRunner().run(input(pdfToPdf('merge')), new AbortController().signal, nothing),
-    ).rejects.toThrow(/merge/)
+    ).rejects.toThrow(/at least 2 PDFs/i)
   })
 
   it('dispatches organize and rotate to the same module', async () => {

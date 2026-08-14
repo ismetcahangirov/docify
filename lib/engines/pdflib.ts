@@ -106,16 +106,15 @@ export function createRunner(): EngineRunner {
 /**
  * Resolves the module that serves `task.op`.
  *
- * Each `case` is owned by one issue and replaced by exactly one `await import()`
- * when that issue lands. This is the one file the parallel EPIC 5 branches do
- * still share, and deliberately the smallest possible version of it: a one-line
- * edit per issue, in a `case` no other issue touches, which a three-way merge
- * resolves on its own. Anything larger — a shared helper, a restyled dispatch,
- * a new parameter — has to be agreed rather than merged, so it does not belong
- * here. The specifier stays a literal
- * string in each branch for the same reason it does in `lib/worker/api.ts`: a
- * computed import defeats the bundler's static analysis and collapses every
- * operation into one chunk.
+ * Each `case` was owned by one issue and replaced by exactly one `await
+ * import()` when that issue landed — a one-line edit per issue, in a `case` no
+ * other issue touched, which is what let the five parallel EPIC 5 branches share
+ * this file without ever conflicting in it. Every arm has now landed, and the
+ * placeholder they threw until they did went with the last of them.
+ *
+ * The specifier stays a literal string in each arm for the same reason it does
+ * in `lib/worker/api.ts`: a computed import defeats the bundler's static
+ * analysis and collapses every operation into one chunk.
  */
 async function loadOperation(task: ConversionTask): Promise<PdfOperation> {
   switch (task.op) {
@@ -135,19 +134,6 @@ async function loadOperation(task: ConversionTask): Promise<PdfOperation> {
         `The pdf-lib engine was handed the "${task.op}" operation, which it never claims.`,
       )
   }
-}
-
-/**
- * The placeholder every unimplemented operation throws.
- *
- * An engine that returned an empty document instead would look like a
- * successful conversion and hand the user a broken file; naming the operation
- * and its issue makes the gap unmistakable in a log and in the UI.
- */
-function notImplemented(operation: string, issue: number): Error {
-  return new Error(
-    `The pdf-lib engine cannot run the "${operation}" operation yet — issue #${issue} implements it.`,
-  )
 }
 
 function throwIfAborted(signal: AbortSignal): void {
