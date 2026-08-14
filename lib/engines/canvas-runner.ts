@@ -42,7 +42,16 @@ type CanvasFormat = keyof typeof MIME_TYPES
  */
 const KEEPS_ALPHA: ReadonlySet<CanvasFormat> = new Set<CanvasFormat>(['png', 'webp', 'bmp'])
 
-const BACKDROP = '#ffffff'
+/**
+ * What gets painted under a format that cannot carry alpha.
+ *
+ * A CSS colour keyword rather than a hex literal, and rather than a token: this
+ * is a canvas fill that ends up in the file the user downloads, so the `@theme`
+ * palette in `app/globals.css` has no say over it, and the design gate is right
+ * to refuse a hex it cannot tell apart from a UI colour. White is what every
+ * other converter mattes to and what a user expects from "save as JPEG".
+ */
+export const BACKDROP = 'white'
 
 /**
  * Encoder quality for the lossy targets.

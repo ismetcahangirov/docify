@@ -10,7 +10,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import type { CanvasEnvironment } from '@/lib/engines/canvas-runner'
-import { createCanvasRunner } from '@/lib/engines/canvas-runner'
+import { BACKDROP, createCanvasRunner } from '@/lib/engines/canvas-runner'
 import type { EngineInput } from '@/lib/engines/types'
 import type { ConversionTask, FormatId } from '@/lib/router/types'
 
@@ -189,7 +189,9 @@ describe('the canvas runner — a straightforward conversion', () => {
     )
 
     // The fill has to happen *before* the draw, or it erases the image.
-    expect(canvas.operations).toEqual(['fill #ffffff 0,0,2,2', 'draw 0,0'])
+    // Read from the constant rather than repeated: a literal here drifts the
+    // moment the matte colour is spelled differently.
+    expect(canvas.operations).toEqual([`fill ${BACKDROP} 0,0,2,2`, 'draw 0,0'])
   })
 
   it('leaves the canvas transparent for a target that keeps alpha', async () => {
