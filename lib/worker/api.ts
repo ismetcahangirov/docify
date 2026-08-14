@@ -123,6 +123,8 @@ async function loadEngineRunner(engine: EngineId): Promise<EngineRunner> {
   if (engine === 'canvas') return (await import('@/lib/engines/canvas')).createRunner()
   if (engine === 'heif') return (await import('@/lib/engines/heif')).createRunner()
   if (engine === 'vips') return (await import('@/lib/engines/vips')).createRunner()
+  if (engine === 'pdflib') return (await import('@/lib/engines/pdflib')).createRunner()
+  if (engine === 'pdfjs') return (await import('@/lib/engines/pdfjs')).createRunner()
 
   throw new Error(
     `No runner is registered for engine "${engine}" yet. ` +

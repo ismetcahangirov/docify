@@ -44,6 +44,26 @@ describe('ENGINES', () => {
     }
   })
 
+  it('carries the pdflib engine at the priority the plan gives it', () => {
+    expect(getEngine('pdflib')?.priority).toBe(20)
+  })
+
+  it('carries the pdfjs engine at the priority the plan gives it', () => {
+    expect(getEngine('pdfjs')?.priority).toBe(30)
+  })
+
+  it('sends a PDF edit to pdf-lib and a PDF render to pdf.js', () => {
+    // The one place the two document engines could collide. They are told apart
+    // by direction, not by priority, so a `supports()` that grew a case would
+    // be caught here rather than by the user downloading the wrong engine.
+    expect(enginesFor({ from: 'pdf', to: 'pdf', op: 'merge' }, desktop).map((e) => e.id)).toEqual([
+      'pdflib',
+    ])
+    expect(enginesFor({ from: 'pdf', to: 'jpg', op: 'convert' }, desktop).map((e) => e.id)).toEqual(
+      ['pdfjs'],
+    )
+  })
+
   it('carries the heif engine at the priority the plan gives it', () => {
     expect(getEngine('heif')?.priority).toBe(35)
   })
