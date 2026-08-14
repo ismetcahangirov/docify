@@ -1,6 +1,6 @@
 ---
 name: parallel-agent-coordination
-description: Hazards when several agents work one repo at once — shared scratchpad, stale conditional rules, lockfile conflicts, merge order, and scaffolding the shared surface first
+description: Hazards when several agents work one repo at once — shared scratchpad, stale conditional rules, lockfile conflicts, merge order, scaffolding the shared surface first, the comments a rename leaves behind, resuming interrupted agents, and verifying the merged tree
 type: process
 date: 2026-08-13
 ---
@@ -111,4 +111,33 @@ three did here (#160, #164, #165, plus #166 and #167 from reviews). Those report
 are the deliverable of the boundary, and they are worthless if the coordinator
 reads them as closing remarks instead of filing them.
 
-Related: [[pr-open-checklist]], [[no-ai-attribution-in-git]], [[libheif-is-primary-broken]], [[cancel-needs-a-macrotask-yield]], [[budget-is-affine-and-scoped]]
+**9. An interrupted agent is not a lost agent — but a resumed one has a stale
+`main`.** Running #160, #164, #165, #166 and #167, the parent process exited with
+three still working. Their worktrees and transcripts survived on disk, and all
+three finished after being resumed from transcript. What made that safe was not
+the resume, it was the briefing: each was told what had landed on `main` in the
+meantime and what those PRs changed. #166 mattered most — it tests the encrypted
+branch of `openPdf`, and #164 had rewritten that guard underneath it while it was
+stopped. Resumed without that, its test could have gone green for a reason that
+had stopped being true. Treat a resume as a new dispatch: restate the world.
+
+**10. The merged tree is the only tree no CI judged — and the coordinator's
+local build is not evidence about it.** Hazard 5 said a new gate must be run
+against what it will police. The general form: five PRs each passed CI against a
+`main` that lacked the other four, so the combination was verified by nobody
+until it existed. Run the suite on the merge commit.
+
+Do it from CI's vantage, not the local one. The local `pnpm build` failed here
+with a `WasmHash._updateWithBuffer` TypeError deep inside webpack, deterministic
+across two runs, and the tempting read was hazard 5 coming true. It was a stale
+`.next` from before the run: removing it built clean, and CI — which always
+builds from a fresh checkout — was green on the merge commit throughout. A
+coordinator's working tree accumulates state five agents never had.
+
+**11. `MEMORY.md` is generated from entry frontmatter, so editing it directly
+does not stick.** #169 extended this entry's description in the index only. The
+next hook run regenerated the index from `description:` in the entry file and the
+extension silently vanished — it was still missing when this run started. Edit
+the entry; let the index follow.
+
+Related: [[pr-open-checklist]], [[no-ai-attribution-in-git]], [[libheif-is-primary-broken]], [[cancel-needs-a-macrotask-yield]], [[budget-is-affine-and-scoped]], [[abort-is-matched-by-name]], [[raster-ceilings-are-two-and-scoped]]
