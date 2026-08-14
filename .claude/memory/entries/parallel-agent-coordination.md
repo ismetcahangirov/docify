@@ -37,4 +37,24 @@ after the branches it would collide with. Correspondingly, tell that agent not t
 run the repo-wide sweep as part of its PR: adding the tooling and sweeping with it
 are two changes, and only the first is safe while other branches are open.
 
-Related: [[pr-open-checklist]], [[no-ai-attribution-in-git]]
+**5. A new gate is green on its own branch and says nothing about `main`.** #139
+added the design-lint gate on a branch cut before #138 landed the Canvas engine,
+so its CI judged a tree that did not contain `canvas-runner.ts`. Both PRs passed;
+`main` went red the moment they met, and every branch rebasing onto it inherited
+the failure. Nothing in the pipeline could have caught it — the gate had never
+been run against the code it now judges.
+
+This is hazard 2 turned inside out. There the rule was evaluated too early
+against a condition; here the *rule itself* arrived after the code it governs.
+The fix is the same shape: before merging a PR that adds any repo-wide check —
+a linter, a budget, a schema validator — rebase it onto current `main` and run it
+there. Not on the branch. On what it will actually police.
+
+Corollary worth keeping: when the new gate then flags existing code, the first
+question is whether the gate or the code is wrong. `#ffffff` in an image engine
+is a canvas fill, not a UI colour, so neither an exclusion nor a suppression
+directive was the answer — the value was respelled as a CSS keyword and the rule
+stayed absolute. An escape hatch added the first time a rule is inconvenient is
+the hatch everyone uses afterwards.
+
+Related: [[pr-open-checklist]], [[no-ai-attribution-in-git]], [[libheif-is-primary-broken]]
