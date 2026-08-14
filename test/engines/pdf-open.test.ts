@@ -2,8 +2,9 @@
 //
 // The guard under test is the one thing every pdf-lib operation has to get
 // right before it can do anything at all, so it is tested here once — on the
-// two failure shapes that matter — rather than three times over from inside
-// merge, split and organize.
+// failure shapes that matter: encrypted, unparseable, and the cancellation it
+// must not mistake for either — rather than three times over from inside merge,
+// split and organize.
 
 import { PDFDocument } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
@@ -177,5 +178,20 @@ describe('opening a document for a job that is being cancelled', () => {
     })
 
     await expect(failure).rejects.toBe(cancelled)
+  })
+
+  it('holds the exemption to that one name', async () => {
+    // The pair above would stay green if the check were loosened to anything
+    // matching /abort/i. It must not be: pdf.js calls its cancellation
+    // `AbortException`, and a guard that waves through every error with "abort"
+    // in the name would hand pdf-lib's raw words to the user the first time one
+    // of those names collided — the CLAUDE.md §2.5 failure this helper prevents.
+    const impostor = Object.assign(new Error('the operation was aborted'), {
+      name: 'AbortException',
+    })
+
+    await expect(
+      openPdf(await fixture(1), { read: () => Promise.reject(impostor), encrypted, damaged }),
+    ).rejects.toThrow(/could not be read as a PDF: the operation was aborted/)
   })
 })
