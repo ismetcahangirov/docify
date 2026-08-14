@@ -63,16 +63,17 @@ export interface PdfAssetUrls {
 export function pdfjsAssetUrls(
   base: string = globalThis.location?.origin ?? '',
 ): Required<PdfAssetUrls> {
-  // An empty base means this module is being evaluated somewhere it has no
-  // business being — during server rendering, or in a test without a location.
-  // `'null'` is an opaque origin serialised: a sandboxed iframe, or a document
-  // loaded from a data: or blob: URL. Neither can resolve a same-origin path,
-  // and `new URL()` would throw about an invalid base, which points nowhere
-  // useful.
+  // Exactly two bases cannot resolve a same-origin path, and `location.origin`
+  // yields nothing else: `''` is no location at all — server rendering, or a
+  // test without one — and `'null'` is an opaque origin serialised, which is
+  // what a sandboxed iframe, a data: or srcdoc document, and a file:// page
+  // report. `new URL()` rejects both with `Invalid URL`, which points nowhere
+  // useful, so both are named here instead.
   if (base === '' || base === 'null') {
     throw new Error(
-      'pdf.js can only be loaded in the browser: no origin is available to resolve ' +
-        `${PDFJS_ASSET_PATH} against.`,
+      'pdf.js is served from this origin, and there is none to resolve ' +
+        `${PDFJS_ASSET_PATH} against: server rendering has no location, and a sandboxed ` +
+        'iframe, a data: document or a file:// page has an opaque origin.',
     )
   }
 

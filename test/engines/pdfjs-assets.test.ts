@@ -45,6 +45,20 @@ import {
 
 const ORIGIN = 'https://docify.app'
 
+/**
+ * What the guard refuses a base with — returned rather than matched, so two
+ * refusals can be compared for being the same message and not merely both loud.
+ */
+const rejectionFor = (base: string): string => {
+  try {
+    pdfjsAssetUrls(base)
+  } catch (error) {
+    return (error as Error).message
+  }
+
+  throw new Error(`pdfjsAssetUrls(${JSON.stringify(base)}) resolved a base it cannot resolve`)
+}
+
 /** What pdf.js hands back for a font once its operator list is built. */
 interface LoadedFont {
   /** pdf.js' own flag: true when it had to invent a face rather than load one. */
@@ -143,16 +157,17 @@ describe('where pdf.js fetches its optional data from', () => {
     for (const url of Object.values(pdfjsAssetUrls(ORIGIN))) expect(url.endsWith('/')).toBe(true)
   })
 
-  it('says where to look when there is no origin at all', () => {
-    expect(() => pdfjsAssetUrls('')).toThrow(/browser/i)
+  it('names the tree it could not resolve when there is no origin at all', () => {
+    // Server rendering, or a test without a location. `new URL()` would throw
+    // about an invalid base, which points nowhere useful.
+    expect(rejectionFor('')).toContain(PDFJS_ASSET_PATH)
   })
 
   it('says the same when the origin is opaque, which serialises to "null"', () => {
-    // A sandboxed iframe, or a document loaded from a data: or blob: URL. The
-    // string is not empty, so an emptiness check waves it through and
-    // `new URL(path, 'null')` throws `Invalid URL` — the failure the guard exists
-    // to replace.
-    expect(() => pdfjsAssetUrls('null')).toThrow(/browser/i)
+    // A sandboxed iframe, a data: document, a file:// page. The string is not
+    // empty, so an emptiness check waves it through and `new URL(path, 'null')`
+    // throws `Invalid URL` — the failure this guard exists to replace.
+    expect(rejectionFor('null')).toBe(rejectionFor(''))
   })
 })
 
