@@ -87,4 +87,28 @@ found no arm left, deleted the helper and rewrote the test. That worked because
 the condition was written into the code as a comment addressed to whoever landed
 next — not left implicit.
 
-Related: [[pr-open-checklist]], [[no-ai-attribution-in-git]], [[libheif-is-primary-broken]], [[cancel-needs-a-macrotask-yield]]
+**8. When one branch renames what another branch's comments describe, the
+comments belong to neither PR — and the coordinator owns them.** #154, #155 and
+#156 ran in parallel and merged with zero conflicts. #155 replaced `EXPANSION`
+with `MEMORY` and gave `route()` a multi-file input; #156 owned the three pdf-lib
+operation files, whose header comments described the old table and asserted
+"`route()` … has no multi-file caller yet". Neither agent could fix them: #155
+was told those files were not its own and correctly reported the problem instead
+of reaching into them, and #156 finished before the change that falsified them
+existed. Both were right, and `main` still ended up carrying three false
+comments.
+
+This is hazard 2 again — a cleanup with a condition and no owner — but it does
+not announce itself, because nothing breaks. A compiler catches a renamed symbol;
+it does not catch a renamed symbol inside a comment. The fix is not a rule for
+the agents, it is a step for whoever merges last: after the final branch lands,
+grep `main` for the identifiers the run removed. It took one `grep -rn EXPANSION
+lib/` to find all three (#162).
+
+The corollary is that ownership boundaries produce a *report*, not silence. Three
+of five agents in EPIC 5 came back with a wanted-but-not-made change; three of
+three did here (#160, #164, #165, plus #166 and #167 from reviews). Those reports
+are the deliverable of the boundary, and they are worthless if the coordinator
+reads them as closing remarks instead of filing them.
+
+Related: [[pr-open-checklist]], [[no-ai-attribution-in-git]], [[libheif-is-primary-broken]], [[cancel-needs-a-macrotask-yield]], [[budget-is-affine-and-scoped]]

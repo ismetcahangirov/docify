@@ -25,12 +25,13 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## process
 
-- [parallel-agent-coordination](entries/parallel-agent-coordination.md) — Hazards when several agents work one repo at once — shared scratchpad, stale conditional rules, lockfile conflicts, merge order, and scaffolding the shared surface first
+- [parallel-agent-coordination](entries/parallel-agent-coordination.md) — Hazards when several agents work one repo at once — shared scratchpad, stale conditional rules, lockfile conflicts, merge order, scaffolding the shared surface first, and the comments a rename leaves behind that belong to no PR
 - [pr-open-checklist](entries/pr-open-checklist.md) — Opening a PR is four steps, not one — code review, PR labels, issue status label, then the PR itself
 
 ## session
 
 - [session-2026-08-14-3d8eb6eb](entries/session-2026-08-14-3d8eb6eb.md) — Session on 2026-08-14: engines, agent (47 file ops)
+- [session-2026-08-14-4d6b83f8](entries/session-2026-08-14-4d6b83f8.md) — Session on 2026-08-14: engines, agent (158 file ops)
 - [session-2026-08-13-5265dc09](entries/session-2026-08-13-5265dc09.md) — Session on 2026-08-13: agent, ui, engines, router (263 file ops)
 - [session-2026-08-13-7f48e4c1](entries/session-2026-08-13-7f48e4c1.md) — Session on 2026-08-13: agent, router, engines, ci (91 file ops)
 - [session-2026-08-13-9665567a](entries/session-2026-08-13-9665567a.md) — Session on 2026-08-13: agent, ui, engines (104 file ops)
