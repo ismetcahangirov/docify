@@ -22,7 +22,7 @@ import { join } from 'node:path'
 
 import { PDFDocument, StandardFonts } from 'pdf-lib'
 import { OPS } from 'pdfjs-dist/legacy/build/pdf.mjs'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import {
   type PdfAssetUrls,
@@ -36,7 +36,9 @@ import {
 import { loadPdfDocument } from '@/lib/engines/pdfjs-runtime'
 import {
   PDFJS_ASSET_DIRS,
+  PDFJS_REQUIRED_FILES,
   PDFJS_WASM_FILES,
+  pdfjsAssetFiles,
   pdfjsPackageDir,
   vendorPdfjs,
 } from '@/scripts/vendor-pdfjs/vendor.mjs'
@@ -76,8 +78,9 @@ async function standard14Fixture(): Promise<Uint8Array> {
 /**
  * Serves the vendored tree from disk, recording every path pdf.js asks for.
  *
- * A request for anything outside {@link PDFJS_ASSET_PATH} fails loudly: this is
- * the test that would notice a CDN creeping back in.
+ * The recording is the point. pdf.js swallows a failed asset fetch and carries
+ * on, so a request that went somewhere else would not fail here on its own —
+ * what catches that is asserting on what was asked for afterwards.
  */
 function serveVendoredAssets(directory: string): string[] {
   const requested: string[] = []
@@ -158,6 +161,15 @@ describe('the vendored tree', () => {
     }
   })
 
+  it('watches a real file in each directory, so an empty one cannot pass', () => {
+    // Three of the four are copied whole. The canary is what turns "pdfjs-dist
+    // moved its data" into a failed build rather than a silent 0 MB copy — and
+    // it only works while the file it names is one the package still ships.
+    for (const [dir, file] of Object.entries(PDFJS_REQUIRED_FILES)) {
+      expect(pdfjsAssetFiles(dir)).toContain(file)
+    }
+  })
+
   it('leaves out the payloads no Docify conversion reaches', () => {
     // PDF-embedded JavaScript is never executed here, and the no-WASM fallbacks
     // are 600 kB of code for engines that cannot run this app at all.
@@ -174,32 +186,43 @@ describe('the vendored tree', () => {
 })
 
 describe('a standard-14 font, on a document built here', () => {
-  let vendored: string
+  const vendored = mkdtempSync(join(tmpdir(), 'docify-pdfjs-'))
 
-  const vendorToTemp = (): string => {
-    vendored = mkdtempSync(join(tmpdir(), 'docify-pdfjs-'))
+  beforeAll(() => {
     vendorPdfjs(vendored)
+  })
 
-    return vendored
-  }
-
-  afterEach(() => {
-    if (vendored) rmSync(vendored, { recursive: true, force: true })
+  afterAll(() => {
+    rmSync(vendored, { recursive: true, force: true })
   })
 
   it('draws the real face, fetched from our own origin', async () => {
-    const requested = serveVendoredAssets(vendorToTemp())
+    const requested = serveVendoredAssets(vendored)
     const font = await firstFontOf(await standard14Fixture(), pdfjsAssetUrls(ORIGIN))
 
     expect(font.missingFile).toBe(false)
     expect(font.name).toBe('Helvetica')
     expect(requested).toContain('/vendor/pdfjs/standard_fonts/LiberationSans-Regular.ttf')
+    expect(requested.every((path) => path.startsWith(PDFJS_ASSET_PATH))).toBe(true)
+  })
+
+  it('finds the tree on its own, from nothing but the origin', async () => {
+    // What production does: `pdf-render.ts` calls `loadPdfDocument` with the
+    // document and nothing else, and the default has to reach the same files.
+    vi.stubGlobal('location', { origin: ORIGIN })
+
+    const requested = serveVendoredAssets(vendored)
+    const font = await firstFontOf(await standard14Fixture())
+
+    expect(font.missingFile).toBe(false)
+    expect(requested).toContain('/vendor/pdfjs/standard_fonts/LiberationSans-Regular.ttf')
   })
 
   it('falls back to a substitute when the fonts are not served', async () => {
-    // The control. Without it, the assertion above could pass for a document
-    // pdf.js never needed a font file to draw.
-    const requested = serveVendoredAssets(vendorToTemp())
+    // The control. Without it, the assertions above could pass for a document
+    // pdf.js never needed a font file to draw. The tree is on disk throughout;
+    // what changes is only whether pdf.js was told where it is.
+    const requested = serveVendoredAssets(vendored)
     const font = await firstFontOf(await standard14Fixture(), {})
 
     expect(font.missingFile).toBe(true)

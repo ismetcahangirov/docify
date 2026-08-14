@@ -22,7 +22,7 @@
  * no side effects.
  */
 
-import { copyFileSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,10 +30,27 @@ import { fileURLToPath } from 'node:url'
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 /**
- * The directories that are copied, matching the four URLs
- * `lib/engines/pdfjs-runtime.ts` hands to pdf.js.
+ * One file that must come out of each copied directory.
+ *
+ * Three of the four are copied whole, so an empty or relocated directory would
+ * otherwise vendor nothing, report success and leave the app rendering the
+ * wrong thing — the exact failure this script exists to prevent. Naming a file
+ * per directory turns that into a build error.
+ *
+ * @type {Record<string, string>}
  */
-export const PDFJS_ASSET_DIRS = ['cmaps', 'standard_fonts', 'iccs', 'wasm']
+export const PDFJS_REQUIRED_FILES = {
+  cmaps: 'Adobe-Japan1-UCS2.bcmap',
+  standard_fonts: 'LiberationSans-Regular.ttf',
+  iccs: 'CGATS001Compat-v2-micro.icc',
+  wasm: 'openjpeg.wasm',
+}
+
+/**
+ * The directories that are copied, matching the four URLs
+ * `lib/engines/pdfjs-assets.ts` hands to pdf.js.
+ */
+export const PDFJS_ASSET_DIRS = Object.keys(PDFJS_REQUIRED_FILES)
 
 /**
  * The `wasm/` directory, pinned rather than copied whole.
@@ -41,8 +58,11 @@ export const PDFJS_ASSET_DIRS = ['cmaps', 'standard_fonts', 'iccs', 'wasm']
  * Three decoders and their licences. What is left behind is `quickjs-eval.*`,
  * which only runs JavaScript embedded in a PDF — a feature this app does not
  * enable and would not want to — and the `*_nowasm_fallback.js` pair, 600 kB of
- * hand-compiled JavaScript for engines without WebAssembly, which cannot run
- * anything else in Docify either.
+ * hand-compiled JavaScript that pdf.js imports when a `.wasm` fails to fetch or
+ * instantiate. That path is deliberately left unreachable: every browser that
+ * can run a Docify conversion has WebAssembly, so reaching it means something
+ * else is already broken, and the cost of the miss is one undecoded image and a
+ * warning rather than a failed page.
  */
 export const PDFJS_WASM_FILES = [
   'jbig2.wasm',
@@ -65,7 +85,9 @@ export const PDFJS_VENDOR_DIR = join(repoRoot, 'public', 'vendor', 'pdfjs')
  * Resolved through the package's entry point rather than by joining
  * `node_modules`: pnpm links packages out of a content-addressed store, so no
  * amount of path arithmetic finds the real directory. The entry point is
- * `build/pdf.mjs`, and the data trees are that directory's siblings.
+ * `build/pdf.mjs`, and the data trees are that directory's siblings — shared by
+ * the legacy build `lib/engines/pdfjs-runtime.ts` actually imports, which keeps
+ * its own copy of the library alone.
  *
  * @returns {string}
  */
@@ -104,10 +126,21 @@ export function vendorPdfjs(destination = PDFJS_VENDOR_DIR) {
   const source = pdfjsPackageDir()
   let bytes = 0
 
+  // Emptied rather than written over: an upgrade that renames a cMap would
+  // otherwise leave the old one being served forever, and the whole claim here
+  // is that `public/vendor/` mirrors the lockfile.
+  rmSync(destination, { recursive: true, force: true })
+
   for (const dir of PDFJS_ASSET_DIRS) {
+    const files = pdfjsAssetFiles(dir)
+
+    if (!files.includes(PDFJS_REQUIRED_FILES[dir])) {
+      throw new Error(`${dir}/${PDFJS_REQUIRED_FILES[dir]} is missing from ${source}`)
+    }
+
     mkdirSync(join(destination, dir), { recursive: true })
 
-    for (const file of pdfjsAssetFiles(dir)) {
+    for (const file of files) {
       const from = join(source, dir, file)
 
       copyFileSync(from, join(destination, dir, file))

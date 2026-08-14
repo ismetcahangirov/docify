@@ -24,7 +24,15 @@ export const PDFJS_ASSET_PATH = '/vendor/pdfjs/'
 export const PDFJS_CMAP_PATH = `${PDFJS_ASSET_PATH}cmaps/`
 /** The standard 14 fonts, as Liberation and Foxit substitutes for the originals. */
 export const PDFJS_STANDARD_FONT_PATH = `${PDFJS_ASSET_PATH}standard_fonts/`
-/** The CMYK profile pdf.js converts `/DeviceCMYK` through. */
+/**
+ * The CMYK profile pdf.js converts `/DeviceCMYK` through.
+ *
+ * Fetched with a *synchronous* `XMLHttpRequest`, along with the qcms engine that
+ * uses it — pdf.js has no other option there, and it is legal only off the main
+ * thread, which is where this runs. It happens at most once per worker, on the
+ * first document that names an ICC colour space, and for those two requests the
+ * worker cannot answer a cancel.
+ */
 export const PDFJS_ICC_PATH = `${PDFJS_ASSET_PATH}iccs/`
 /** JPEG 2000, JBIG2 and the qcms colour engine. */
 export const PDFJS_WASM_PATH = `${PDFJS_ASSET_PATH}wasm/`
