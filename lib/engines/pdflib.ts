@@ -120,7 +120,7 @@ export function createRunner(): EngineRunner {
 async function loadOperation(task: ConversionTask): Promise<PdfOperation> {
   switch (task.op) {
     case 'merge':
-      throw notImplemented('merge', 38)
+      return (await import('./pdf-merge')).mergePdfs
     case 'split':
       return (await import('./pdf-split')).splitPdf
     case 'organize':
