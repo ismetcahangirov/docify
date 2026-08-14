@@ -110,19 +110,22 @@ export function createConversionApi(loadRunner: RunnerLoader = loadEngineRunner)
  * The real loader.
  *
  * Every branch is an `await import('@/lib/engines/<id>')` and never a static
- * import — one static import here drops a 32 MB WASM binary into the worker
- * chunk and breaks CLAUDE.md §2.3. `test/worker/static-import-graph.test.ts`
- * enforces that against the source.
+ * import — one static import here drops a multi-megabyte WASM binary into the
+ * worker chunk and breaks CLAUDE.md §2.3. `test/worker/static-import-graph.test.ts`
+ * holds that line.
+ *
+ * The specifier stays a literal string in each branch. A computed
+ * `import(\`@/lib/engines/${engine}\`)` would read as tidier and cost the whole
+ * invariant: a bundler that cannot see the target statically either bundles
+ * every engine into one chunk or emits none of them.
  */
 async function loadEngineRunner(engine: EngineId): Promise<EngineRunner> {
-  if (engine === 'canvas') {
-    const { createRunner } = await import('@/lib/engines/canvas')
-    return createRunner()
-  }
+  if (engine === 'canvas') return (await import('@/lib/engines/canvas')).createRunner()
+  if (engine === 'heif') return (await import('@/lib/engines/heif')).createRunner()
 
   throw new Error(
     `No runner is registered for engine "${engine}" yet. ` +
-      'The remaining engines arrive over EPICs 4–6.',
+      'The remaining engines arrive over EPICs 4 to 6.',
   )
 }
 

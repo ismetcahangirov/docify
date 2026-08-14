@@ -15,9 +15,9 @@
  * Runners are reached exclusively through `dynamic import()` inside the
  * conversion worker, and only after the router has picked the engine.
  *
- * A task no registered engine claims is rejected as `UNSUPPORTED_PAIR`, which is
- * also what the list answered for everything while it was still empty. (An empty
- * file is caught one step earlier, as `EMPTY_INPUT`.)
+ * A pair no registered engine claims is not a special case: with no candidates,
+ * the router rejects the task with `UNSUPPORTED_PAIR`. (An empty file is caught
+ * one step earlier, as `EMPTY_INPUT`.)
  *
  * ## Registering a new engine
  *
@@ -37,6 +37,7 @@
  */
 
 import { descriptor as canvas } from '@/lib/engines/canvas'
+import { descriptor as heif } from '@/lib/engines/heif'
 import type { EngineDescriptor } from '@/lib/engines/types'
 import type { Capabilities, ConversionTask, EngineId } from '@/lib/router/types'
 
@@ -44,7 +45,7 @@ import type { Capabilities, ConversionTask, EngineId } from '@/lib/router/types'
  * Every known engine, in registration order. Frozen so that an in-place sort by
  * one consumer cannot be felt by the router, the worker or the UI.
  */
-export const ENGINES: readonly EngineDescriptor[] = Object.freeze([canvas])
+export const ENGINES: readonly EngineDescriptor[] = Object.freeze([canvas, heif])
 
 /**
  * Orders two engines by how much we want to run them: `priority` ascending

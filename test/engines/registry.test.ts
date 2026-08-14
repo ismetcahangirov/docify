@@ -44,6 +44,10 @@ describe('ENGINES', () => {
     }
   })
 
+  it('carries the heif engine at the priority the plan gives it', () => {
+    expect(getEngine('heif')?.priority).toBe(35)
+  })
+
   it('is frozen, so one consumer cannot reorder the list another is reading', () => {
     expect(Object.isFrozen(ENGINES)).toBe(true)
   })
@@ -93,6 +97,7 @@ describe('byPreference', () => {
 describe('enginesFor', () => {
   it('finds no candidate for a task no registered engine claims', () => {
     expect(enginesFor({ from: 'rar', to: 'mp4', op: 'convert' }, desktop)).toEqual([])
+    expect(enginesFor({ from: 'mp4', to: 'webm', op: 'convert' }, desktop)).toEqual([])
   })
 
   it('returns them in preference order, best candidate first', () => {

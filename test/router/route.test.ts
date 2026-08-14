@@ -9,6 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { descriptor as realHeif } from '@/lib/engines/heif'
 import * as registry from '@/lib/engines/registry'
 import type { EngineDescriptor } from '@/lib/engines/types'
 import { LARGE_DOWNLOAD_BYTES, route } from '@/lib/router/route'
@@ -488,6 +489,63 @@ describe('route — warnings', () => {
     )
 
     expect(warning?.message).toContain('31 MB')
+  })
+})
+
+describe('route — the heif engine, as it is actually registered', () => {
+  // The suite above drives the router with fakes on purpose, so that a new
+  // engine cannot break it. This block is the counterpart required by
+  // CLAUDE.md §5.4: the real descriptor, in the two directions that matter.
+
+  it('is chosen for heic→jpg on a desktop, ahead of every heavier alternative', () => {
+    register(realHeif, vips(), ffmpeg())
+
+    const result = chosen(route(heicToJpg, 3 * MB, desktop))
+
+    expect(result.engine).toBe('heif')
+    expect(result.loadCost).toBe(realHeif.loadCost)
+    expect(warningCodes(result)).not.toContain('LARGE_DOWNLOAD')
+  })
+
+  it('is chosen for heic→png too, which is the other half of the acceptance criteria', () => {
+    register(realHeif, ffmpeg())
+
+    expect(chosen(route({ from: 'heic', to: 'png', op: 'convert' }, 3 * MB, desktop)).engine).toBe(
+      'heif',
+    )
+  })
+
+  it('loses to canvas on a pair it has no business claiming', () => {
+    register(canvas(), realHeif)
+
+    expect(chosen(route(jpgToPng, 2 * MB, desktop)).engine).toBe('canvas')
+  })
+
+  it('is not chosen when it is the only engine and the pair is not a HEIC decode', () => {
+    register(realHeif)
+
+    expect(refused(route(jpgToPng, 2 * MB, desktop)).code).toBe('UNSUPPORTED_PAIR')
+    expect(refused(route({ from: 'heic', to: 'avif', op: 'convert' }, 2 * MB, desktop)).code).toBe(
+      'UNSUPPORTED_PAIR',
+    )
+  })
+
+  it('is not chosen on a browser without OffscreenCanvas, which is how it writes its output', () => {
+    register(realHeif)
+
+    expect(refused(route(heicToJpg, 2 * MB, { ...desktop, offscreenCanvas: false })).code).toBe(
+      'UNSUPPORTED_PAIR',
+    )
+  })
+
+  it('is not chosen for a file larger than its 5x expansion allows on an iPhone', () => {
+    register(realHeif)
+
+    // 90 MB iOS budget / 5 = 18 MB of HEIC input.
+    const result = refused(route(heicToJpg, 30 * MB, ios))
+
+    expect(result.code).toBe('DEVICE_TOO_WEAK')
+    expect(result.message).toContain('18 MB')
   })
 })
 
