@@ -80,7 +80,7 @@ signal.addEventListener('abort', () => ffmpeg.terminate())
 ```
 
 ### Progress
-`onProgress(0..1)` must fire at least every 250 ms. Engines that cannot report progress (e.g. `pdflib` merge) emit `-1` for indeterminate mode.
+`onProgress(0..1)` must fire at least every 250 ms. `-1` means indeterminate, and is only honest when the engine genuinely has no fraction to report — a single synchronous WASM call, for instance. Anything that processes N of something knows a fraction: `pdflib` merge reports one file of N, and drives a timer through the final serialise so the 250 ms rule holds in the phase that has no count.
 
 ### Memory hygiene
 ```ts
