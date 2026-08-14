@@ -26,8 +26,12 @@
  *
  * 1. Create `lib/engines/<id>.ts` exporting `descriptor` and `createRunner`.
  * 2. Add the id to the `EngineId` union in `lib/router/types.ts`.
- * 3. Measure the engine's peak memory use and add its factor to `EXPANSION`
- *    in `lib/router/budget.ts` — guessing here costs the user their tab.
+ * 3. Measure the engine's peak memory use and add its model to `MEMORY` in
+ *    `lib/router/budget.ts` — guessing here costs the user their tab. Say
+ *    whether it holds every file of a job at once or one at a time, and put
+ *    anything it allocates that the input size does not predict — a canvas
+ *    sized by DPI, a parser baseline — in `reserveBytes` rather than inflating
+ *    the factor. `docs/router/memory-budget-measurement.md` is the harness.
  * 4. Import the descriptor here and add it to `ENGINES`.
  * 5. Slot `priority` *between* existing values; never renumber the others.
  * 6. Add the dynamic-import branch in `lib/worker/conversion.worker.ts`.

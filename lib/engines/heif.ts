@@ -14,6 +14,10 @@
  * statically by the registry and therefore by every page; `createRunner`
  * reaches libheif through `./heif-decode`, whose `await import()` is where the
  * bundler cuts the chunk (CLAUDE.md §2.3).
+ *
+ * `MEMORY.heif` in `lib/router/budget.ts` is `holds: 'one-at-a-time'`: a photo
+ * library dropped on the converter is decoded image by image, so what has to
+ * fit is the largest of them rather than the whole camera roll.
  */
 
 import type { BitmapEncoder } from './bitmap'

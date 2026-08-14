@@ -191,7 +191,7 @@ function open(module: VipsModule, bytes: Uint8Array, options: ImageOptions | und
   if (!wantsResize(options)) {
     // Sequential access lets libvips stream the image in scanline regions rather
     // than materialise it, which is what the router's 4× expansion factor
-    // assumes (`EXPANSION.vips` in `lib/router/budget.ts`).
+    // assumes (`MEMORY.vips` in `lib/router/budget.ts`).
     return module.Image.newFromBuffer(bytes, '', { access: 'sequential' })
   }
 

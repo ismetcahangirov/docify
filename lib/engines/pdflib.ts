@@ -16,8 +16,14 @@
  * Nothing. pdf-lib is plain JavaScript: no WASM, no SIMD, no
  * `SharedArrayBuffer`, no canvas. `supports()` therefore reads the task alone,
  * and a five-year-old phone on an un-isolated document still merges PDFs. The
- * only ceiling is the memory budget, and `EXPANSION.pdflib` in
+ * only ceiling is the memory budget, and `MEMORY.pdflib` in
  * `lib/router/budget.ts` is what enforces it.
+ *
+ * That entry is `holds: 'all-at-once'`, which is the property this engine is
+ * unusual for: a merge copies every source into one object graph, so a job's
+ * cost is what its files add up to rather than what its largest one costs. The
+ * router budgets the total accordingly, and the file-count ceiling in
+ * `./pdf-merge` guards the runaway case rather than the memory.
  *
  * ## How the operations are wired
  *
