@@ -64,7 +64,8 @@ export interface PdfOpenOptions<T> {
 
 /**
  * Parses `bytes`, performs the caller's first structural read, and turns any
- * failure in either into a sentence the user can act on.
+ * failure in either into a sentence the user can act on — except a
+ * cancellation, which is not a failure of the document and passes through.
  */
 export async function openPdf<T>(bytes: Uint8Array, options: PdfOpenOptions<T>): Promise<T> {
   try {
@@ -76,6 +77,19 @@ export async function openPdf<T>(bytes: Uint8Array, options: PdfOpenOptions<T>):
     // guard and reaches the user as pdf-lib's own words.
     return await options.read(await PDFDocument.load(bytes, options.load))
   } catch (reason) {
+    // A cancel is not a verdict on the file. The read is the caller's, so a
+    // read that checks its signal throws from inside this guard, and the
+    // sentence below would answer a cancelled job with "your file is damaged".
+    //
+    // Not, today, in the user's face: `lib/worker/api.ts` re-reports anything
+    // thrown while its signal is aborted as a `ConversionCancelledError`, so
+    // the wrong wording is caught one layer up. What that net does not restore
+    // is the abort itself — rewrapped, it survives only as a cause nested
+    // inside a damage report, which is what anyone debugging a cancel reads
+    // first. And the net only covers the worker path: a direct caller of an
+    // operation, every unit test among them, gets the damage report verbatim.
+    if (isAbort(reason)) throw reason
+
     const detail = reason instanceof Error ? reason.message : String(reason)
 
     // The type is the reliable signal and the text is the fallback: pdf-lib
@@ -87,4 +101,25 @@ export async function openPdf<T>(bytes: Uint8Array, options: PdfOpenOptions<T>):
 
     throw new Error(options.damaged(detail))
   }
+}
+
+/**
+ * Whether a failure is a cancellation rather than something about the document.
+ *
+ * The name is the check and the type deliberately is not, which is the house
+ * rule `lib/worker/errors.ts` states outright: match on `name`, never with
+ * `instanceof`. Both halves of that matter here. `instanceof DOMException` is
+ * runtime-dependent — the engines all throw one, but whether it even counts as
+ * an `Error` varies, and jsdom is the runtime where it does not. And an abort
+ * arrives as a plain `Error` named `AbortError` wherever it has crossed the
+ * worker boundary, because Comlink cannot carry a `DOMException` back.
+ *
+ * Narrow on purpose: pdf.js names its cancellation `AbortException` and is not
+ * matched, so a future `read` that renders rather than parses would need this
+ * revisited rather than silently exempted.
+ */
+function isAbort(reason: unknown): boolean {
+  return typeof reason === 'object' && reason !== null && 'name' in reason
+    ? reason.name === 'AbortError'
+    : false
 }

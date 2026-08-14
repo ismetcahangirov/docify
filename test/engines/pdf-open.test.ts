@@ -2,8 +2,9 @@
 //
 // The guard under test is the one thing every pdf-lib operation has to get
 // right before it can do anything at all, so it is tested here once — on the
-// two failure shapes that matter — rather than three times over from inside
-// merge, split and organize.
+// failure shapes that matter: encrypted, unparseable, and the cancellation it
+// must not mistake for either — rather than three times over from inside merge,
+// split and organize.
 
 import { PDFDocument } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
@@ -137,5 +138,60 @@ describe('opening a document that cannot be read', () => {
         damaged,
       }),
     ).rejects.toThrow(/no stack, no message/)
+  })
+})
+
+describe('opening a document for a job that is being cancelled', () => {
+  it('lets the AbortError a read throws through untouched', async () => {
+    // A read that checks its signal is the whole reason this matters: the guard
+    // wraps the caller's callback, so without an exemption a cancel would come
+    // back to the user as "this file is damaged" and be debugged as an engine
+    // fault rather than a guard one.
+    const cancelled = new DOMException('The conversion was cancelled.', 'AbortError')
+
+    const failure = openPdf(await fixture(1), {
+      read: () => {
+        throw cancelled
+      },
+      encrypted,
+      damaged,
+    })
+
+    // Identity, not shape: rewrapping would preserve the name and still lose the
+    // cause chain the worker attaches when it reports the cancellation.
+    await expect(failure).rejects.toBe(cancelled)
+  })
+
+  it('recognises an abort by name rather than by type', async () => {
+    // `lib/worker/errors.ts` throws a plain `Error` subclass named `AbortError`
+    // because a `DOMException` does not survive the worker boundary. Matching on
+    // `instanceof DOMException` here would translate that one into the damaged
+    // wording, which is the same bug wearing the other shape.
+    const cancelled = Object.assign(new Error('The conversion was cancelled.'), {
+      name: 'AbortError',
+    })
+
+    const failure = openPdf(await fixture(1), {
+      read: () => Promise.reject(cancelled),
+      encrypted,
+      damaged,
+    })
+
+    await expect(failure).rejects.toBe(cancelled)
+  })
+
+  it('holds the exemption to that one name', async () => {
+    // The pair above would stay green if the check were loosened to anything
+    // matching /abort/i. It must not be: pdf.js calls its cancellation
+    // `AbortException`, and a guard that waves through every error with "abort"
+    // in the name would hand pdf-lib's raw words to the user the first time one
+    // of those names collided — the CLAUDE.md §2.5 failure this helper prevents.
+    const impostor = Object.assign(new Error('the operation was aborted'), {
+      name: 'AbortException',
+    })
+
+    await expect(
+      openPdf(await fixture(1), { read: () => Promise.reject(impostor), encrypted, damaged }),
+    ).rejects.toThrow(/could not be read as a PDF: the operation was aborted/)
   })
 })
