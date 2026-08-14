@@ -12,13 +12,17 @@ import {
   DESKTOP_BUDGET_CAP_BYTES,
   DESKTOP_BUDGET_FLOOR_BYTES,
   DESKTOP_MEMORY_SHARE,
-  EXPANSION,
   IOS_BUDGET_BYTES,
+  MEMORY,
   budgetBytes,
   fitsInBudget,
+  heldBytes,
+  maxHeldBytes,
   maxInputBytes,
+  peakBytes,
 } from '@/lib/router/budget'
-import type { Capabilities, EngineId } from '@/lib/router/types'
+import { jobInput } from '@/lib/router/job'
+import type { Capabilities, EngineId, EngineMemory } from '@/lib/router/types'
 
 const MB = 1024 * 1024
 const GB = 1024 * MB
@@ -57,7 +61,7 @@ const android: Capabilities = {
 }
 
 /**
- * The nine engines, listed independently of `EXPANSION` so the completeness
+ * The nine engines, listed independently of `MEMORY` so the completeness
  * assertion below compares two sources rather than the table against itself.
  */
 const ALL_ENGINES = [
@@ -166,48 +170,133 @@ describe('budgetBytes', () => {
   })
 })
 
-describe('EXPANSION', () => {
+describe('MEMORY', () => {
   it('covers every EngineId', () => {
     // Compile-time half: the list is exactly EngineId, so it cannot drift.
     expectTypeOf<(typeof ALL_ENGINES)[number]>().toEqualTypeOf<EngineId>()
 
-    // Runtime half: the table has a factor for each of them and nothing else.
-    expect(Object.keys(EXPANSION).sort()).toEqual([...ALL_ENGINES].sort())
+    // Runtime half: the table has a model for each of them and nothing else.
+    expect(Object.keys(MEMORY).sort()).toEqual([...ALL_ENGINES].sort())
   })
 
-  it('pins every measured factor, so none can drift without a deliberate change', () => {
-    expect(EXPANSION).toEqual({
-      canvas: 6,
-      vips: 4,
-      heif: 5,
-      pdflib: 3,
-      pdfjs: 4,
-      webcodecs: 2.5,
-      ffmpeg: 4.5,
-      zip: 2.5,
-      libarchive: 3,
+  it('pins every measured model, so none can drift without a deliberate change', () => {
+    expect(MEMORY).toEqual({
+      canvas: { factor: 6, holds: 'one-at-a-time', reserveBytes: 0 },
+      vips: { factor: 4, holds: 'one-at-a-time', reserveBytes: 0 },
+      heif: { factor: 5, holds: 'one-at-a-time', reserveBytes: 0 },
+      pdflib: { factor: 4, holds: 'all-at-once', reserveBytes: 32 * MB },
+      pdfjs: { factor: 4, holds: 'one-at-a-time', reserveBytes: 32 * MB },
+      webcodecs: { factor: 2.5, holds: 'one-at-a-time', reserveBytes: 0 },
+      ffmpeg: { factor: 4.5, holds: 'one-at-a-time', reserveBytes: 0 },
+      zip: { factor: 2.5, holds: 'all-at-once', reserveBytes: 0 },
+      libarchive: { factor: 3, holds: 'one-at-a-time', reserveBytes: 0 },
     })
   })
 
-  it('assigns every engine a factor of at least 1', () => {
+  it('assigns every engine a factor of at least 1 and a non-negative reserve', () => {
     for (const engine of ALL_ENGINES) {
-      expect(EXPANSION[engine]).toBeGreaterThanOrEqual(1)
-      expect(Number.isFinite(EXPANSION[engine])).toBe(true)
+      expect(MEMORY[engine].factor).toBeGreaterThanOrEqual(1)
+      expect(Number.isFinite(MEMORY[engine].factor)).toBe(true)
+      expect(MEMORY[engine].reserveBytes).toBeGreaterThanOrEqual(0)
+      expect(Number.isInteger(MEMORY[engine].reserveBytes)).toBe(true)
     }
+  })
+
+  it('keeps every reserve well under the smallest platform budget', () => {
+    // A reserve at or above the smallest budget makes the engine unroutable on
+    // that platform *and* makes the rejection quote a ceiling of zero bytes,
+    // which is a sentence with no action in it. Half of the iOS budget leaves
+    // an engine with a real allowance on the weakest device we support.
+    for (const engine of ALL_ENGINES) {
+      expect(MEMORY[engine].reserveBytes).toBeLessThan(IOS_BUDGET_BYTES / 2)
+    }
+  })
+
+  it('holds every file at once only where the engine really opens them together', () => {
+    // Merge builds one object graph out of every source, and a ZIP is written
+    // from every member; everything else works through one file at a time.
+    const together = ALL_ENGINES.filter((engine) => MEMORY[engine].holds === 'all-at-once')
+
+    expect(together).toEqual(['pdflib', 'zip'])
   })
 
   it('makes the streaming engines cheaper than the buffering ones', () => {
     // WebCodecs streams frames; ffmpeg.wasm holds input, output and scratch in MEMFS.
-    expect(EXPANSION.webcodecs).toBeLessThan(EXPANSION.ffmpeg)
+    expect(MEMORY.webcodecs.factor).toBeLessThan(MEMORY.ffmpeg.factor)
     // A decoded RGBA bitmap dwarfs the encoded bytes it came from.
-    expect(EXPANSION.canvas).toBeGreaterThan(EXPANSION.vips)
+    expect(MEMORY.canvas.factor).toBeGreaterThan(MEMORY.vips.factor)
+  })
+
+  it('gives a reserve only to the engines that allocate by something other than input size', () => {
+    // pdf.js sizes its canvas from the requested DPI and pdf-lib's object graph
+    // costs the same on a 13 kB document as the library itself does. Every
+    // other engine's peak is described by the input alone.
+    const reserved = ALL_ENGINES.filter((engine) => MEMORY[engine].reserveBytes > 0)
+
+    expect(reserved).toEqual(['pdflib', 'pdfjs'])
   })
 
   it('rejects an engine that is not in the union', () => {
     // @ts-expect-error 'imagemagick' is not an EngineId
-    const factor = EXPANSION.imagemagick
+    const model = MEMORY.imagemagick
 
-    expect(factor).toBeUndefined()
+    expect(model).toBeUndefined()
+  })
+})
+
+describe('heldBytes', () => {
+  const job = jobInput([5 * MB, MB, 3 * MB])
+
+  it('adds every file up for an engine that opens them together', () => {
+    expect(heldBytes({ factor: 4, holds: 'all-at-once', reserveBytes: 0 }, job)).toBe(9 * MB)
+  })
+
+  it('takes only the largest for an engine that works through them one by one', () => {
+    expect(heldBytes({ factor: 4, holds: 'one-at-a-time', reserveBytes: 0 }, job)).toBe(5 * MB)
+  })
+
+  it('answers the same for both models on a single-file job', () => {
+    const one = jobInput(4 * MB)
+
+    expect(heldBytes({ factor: 4, holds: 'all-at-once', reserveBytes: 0 }, one)).toBe(4 * MB)
+    expect(heldBytes({ factor: 4, holds: 'one-at-a-time', reserveBytes: 0 }, one)).toBe(4 * MB)
+  })
+})
+
+describe('peakBytes', () => {
+  it('is the proportional term plus the reserve', () => {
+    const model: EngineMemory = { factor: 4, holds: 'all-at-once', reserveBytes: 32 * MB }
+
+    expect(peakBytes(model, jobInput([10 * MB, 10 * MB]))).toBe(112 * MB)
+  })
+
+  it('is the reserve alone for an engine that holds nothing proportional', () => {
+    const model: EngineMemory = { factor: 1, holds: 'one-at-a-time', reserveBytes: 8 * MB }
+
+    expect(peakBytes(model, jobInput([]))).toBe(8 * MB)
+  })
+
+  it('rises with the file count only when the engine holds them all', () => {
+    const together: EngineMemory = { factor: 2, holds: 'all-at-once', reserveBytes: 0 }
+    const oneByOne: EngineMemory = { factor: 2, holds: 'one-at-a-time', reserveBytes: 0 }
+    const hundred = jobInput(Array.from({ length: 100 }, () => MB))
+
+    expect(peakBytes(together, hundred)).toBe(200 * MB)
+    expect(peakBytes(oneByOne, hundred)).toBe(2 * MB)
+  })
+})
+
+describe('maxHeldBytes', () => {
+  it('spends the budget that the reserve leaves', () => {
+    expect(maxHeldBytes({ factor: 4, holds: 'all-at-once', reserveBytes: 32 * MB }, 132 * MB)).toBe(
+      25 * MB,
+    )
+  })
+
+  it('never answers below zero, however large the reserve is', () => {
+    expect(
+      maxHeldBytes({ factor: 4, holds: 'one-at-a-time', reserveBytes: 200 * MB }, 90 * MB),
+    ).toBe(0)
   })
 })
 
@@ -217,6 +306,13 @@ describe('maxInputBytes', () => {
     expect(maxInputBytes('ffmpeg', ios)).toBe(20 * MB)
     // 140 MB / 2.5 = 56 MB of WebCodecs input on Android.
     expect(maxInputBytes('webcodecs', android)).toBe(56 * MB)
+  })
+
+  it('takes the reserve off the top before dividing', () => {
+    // (1200 − 32) / 4 = 292 MB of PDF, across every file of a merge.
+    expect(maxInputBytes('pdflib', desktop)).toBe(292 * MB)
+    // (90 − 32) / 4 = 14.5 MB on an iPhone.
+    expect(maxInputBytes('pdfjs', ios)).toBe(14.5 * MB)
   })
 
   it('returns whole bytes', () => {
@@ -239,16 +335,31 @@ describe('fitsInBudget', () => {
   it('accepts a file exactly on the limit and rejects the next byte', () => {
     const limit = maxInputBytes('ffmpeg', ios)
 
-    expect(fitsInBudget('ffmpeg', limit, ios)).toBe(true)
-    expect(fitsInBudget('ffmpeg', limit + 1, ios)).toBe(false)
+    expect(fitsInBudget('ffmpeg', jobInput(limit), ios)).toBe(true)
+    expect(fitsInBudget('ffmpeg', jobInput(limit + 1), ios)).toBe(false)
   })
 
   it('accepts a 50 MB video on desktop WebCodecs but refuses 200 MB on iOS ffmpeg', () => {
-    expect(fitsInBudget('webcodecs', 50 * MB, desktop)).toBe(true)
-    expect(fitsInBudget('ffmpeg', 200 * MB, ios)).toBe(false)
+    expect(fitsInBudget('webcodecs', jobInput(50 * MB), desktop)).toBe(true)
+    expect(fitsInBudget('ffmpeg', jobInput(200 * MB), ios)).toBe(false)
+  })
+
+  it('adds a merge up rather than looking at one file at a time', () => {
+    // A hundred 50 MB scans is the case the file-count ceiling in pdf-merge
+    // cannot see: every file is comfortably small and the job is 4.9 GB.
+    const hundredScans = jobInput(Array.from({ length: 100 }, () => 50 * MB))
+
+    expect(fitsInBudget('pdflib', jobInput(50 * MB), desktop)).toBe(true)
+    expect(fitsInBudget('pdflib', hundredScans, desktop)).toBe(false)
+  })
+
+  it('lets a one-at-a-time engine take a long list of small files', () => {
+    const hundredPhotos = jobInput(Array.from({ length: 100 }, () => 8 * MB))
+
+    expect(fitsInBudget('canvas', hundredPhotos, desktop)).toBe(true)
   })
 
   it("treats an empty input as fitting — EMPTY_INPUT is the router's call, not the budget's", () => {
-    expect(fitsInBudget('canvas', 0, desktop)).toBe(true)
+    expect(fitsInBudget('canvas', jobInput(0), desktop)).toBe(true)
   })
 })

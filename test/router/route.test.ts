@@ -10,6 +10,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { descriptor as realHeif } from '@/lib/engines/heif'
+import { descriptor as realPdfjs } from '@/lib/engines/pdfjs'
+import { descriptor as realPdflib } from '@/lib/engines/pdflib'
 import * as registry from '@/lib/engines/registry'
 import type { EngineDescriptor } from '@/lib/engines/types'
 import { descriptor as vipsEngine } from '@/lib/engines/vips'
@@ -547,6 +549,130 @@ describe('route — the heif engine, as it is actually registered', () => {
 
     expect(result.code).toBe('DEVICE_TOO_WEAK')
     expect(result.message).toContain('18 MB')
+  })
+})
+
+describe('route — jobs made of more than one file', () => {
+  const merge: ConversionTask = { from: 'pdf', to: 'pdf', op: 'merge' }
+  const pdflib = () => fake('pdflib', { label: 'pdf-lib', priority: 20, supports: () => true })
+
+  it('budgets a merge by the total, not by the largest file', () => {
+    register(pdflib())
+
+    // Each file is far inside pdflib's 292 MB desktop ceiling; together they
+    // are 4.9 GB. This is the case `MAX_MERGE_FILES` cannot see, because it
+    // counts files rather than bytes.
+    const hundredScans = Array.from({ length: 100 }, () => 50 * MB)
+
+    expect(chosen(route(merge, 50 * MB, desktop)).engine).toBe('pdflib')
+    expect(refused(route(merge, hundredScans, desktop)).code).toBe('FILE_TOO_LARGE')
+  })
+
+  it('quotes the total and the ceiling back, with the file count', () => {
+    register(pdflib())
+
+    const result = refused(
+      route(
+        merge,
+        Array.from({ length: 100 }, () => 50 * MB),
+        desktop,
+      ),
+    )
+
+    expect(result.message).toContain('100 files')
+    expect(result.message).toContain('4.9 GB')
+    // (1200 MB desktop budget − 32 MB reserve) / 4 = 292 MB across the job.
+    expect(result.message).toContain('292 MB')
+    expect(result.suggestion.length).toBeGreaterThan(10)
+  })
+
+  it('budgets a one-at-a-time engine by its largest file, however many there are', () => {
+    register(canvas())
+
+    // 300 files of 100 MB: 30 GB in total, and every one of them convertible,
+    // because a canvas job holds one bitmap at a time.
+    const many = Array.from({ length: 300 }, () => 100 * MB)
+
+    expect(chosen(route(jpgToPng, many, desktop)).engine).toBe('canvas')
+    // …and the single file over the 200 MB ceiling is still refused.
+    expect(refused(route(jpgToPng, [10 * MB, 300 * MB], desktop)).code).toBe('FILE_TOO_LARGE')
+  })
+
+  it('names the largest file rather than the total when the engine takes them one by one', () => {
+    register(canvas())
+
+    const result = refused(route(jpgToPng, [10 * MB, 300 * MB], desktop))
+
+    expect(result.message).toContain('300 MB')
+    expect(result.message).not.toContain('310 MB')
+  })
+
+  it('treats a single-element list exactly like the bare number', () => {
+    register(canvas(), heif(), vips(), ffmpeg())
+
+    expect(route(heicToJpg, [3 * MB], desktop)).toEqual(route(heicToJpg, 3 * MB, desktop))
+  })
+
+  it('refuses a job with no files, and one that contains an empty file', () => {
+    register(pdflib())
+
+    expect(refused(route(merge, [], desktop)).code).toBe('EMPTY_INPUT')
+    expect(refused(route(merge, [2 * MB, 0, 2 * MB], desktop)).code).toBe('EMPTY_INPUT')
+  })
+
+  it('says how many files it was given when it refuses an empty one', () => {
+    register(pdflib())
+
+    const result = refused(route(merge, [2 * MB, 0, 2 * MB], desktop))
+
+    expect(result.message).toContain('3 files')
+    expect(result.suggestion.length).toBeGreaterThan(10)
+  })
+
+  it('does not mutate the list of sizes it is handed', () => {
+    register(canvas())
+    const sizes = [3 * MB, MB, 2 * MB]
+
+    route(jpgToPng, sizes, desktop)
+
+    expect(sizes).toEqual([3 * MB, MB, 2 * MB])
+  })
+})
+
+describe('route — the PDF engines against the measured model', () => {
+  const merge: ConversionTask = { from: 'pdf', to: 'pdf', op: 'merge' }
+  const pdfToJpg: ConversionTask = { from: 'pdf', to: 'jpg', op: 'convert' }
+
+  it('merges twenty ordinary documents and refuses twenty large scans', () => {
+    register(realPdflib)
+
+    const reports = Array.from({ length: 20 }, () => 4 * MB)
+    const scans = Array.from({ length: 20 }, () => 40 * MB)
+
+    expect(chosen(route(merge, reports, desktop)).engine).toBe('pdflib')
+    expect(refused(route(merge, scans, desktop)).code).toBe('FILE_TOO_LARGE')
+  })
+
+  it('leaves a phone enough of its budget to merge two ordinary PDFs', () => {
+    register(realPdflib)
+
+    // (90 MB − 32 MB) / 4 = 14.5 MB across the whole job on an iPhone.
+    expect(chosen(route(merge, [6 * MB, 6 * MB], ios)).engine).toBe('pdflib')
+    expect(refused(route(merge, [6 * MB, 12 * MB], ios)).code).toBe('DEVICE_TOO_WEAK')
+  })
+
+  it('reserves the render canvas before it spends the budget on the document', () => {
+    register(realPdfjs)
+
+    // The 32 MB reserve is the page canvas and the parse baseline, neither of
+    // which the PDF's own size predicts, so it comes off the top: 292 MB of
+    // document on a desktop rather than the 300 MB a bare 4× factor would give.
+    expect(chosen(route(pdfToJpg, 292 * MB, desktop)).engine).toBe('pdfjs')
+
+    const result = refused(route(pdfToJpg, 300 * MB, desktop))
+
+    expect(result.code).toBe('FILE_TOO_LARGE')
+    expect(result.message).toContain('292 MB')
   })
 })
 

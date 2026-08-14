@@ -17,7 +17,9 @@
  *   already sorted by `byPreference`; this module only ever *filters* that list
  *   and takes its head. Re-sorting here would fork the priority table.
  * - **Rejections explain themselves** (CLAUDE.md §2.5): every `ok: false`
- *   branch quotes real numbers and names something the user can go and do.
+ *   branch quotes real numbers and names something the user can go and do. The
+ *   copy itself lives in `./rejections`, so that this module stays about the
+ *   decision and that one about the explanation.
  *
  * Sizes are binary: "MB" in user-facing copy means 1 048 576 bytes.
  */
@@ -25,19 +27,20 @@
 import { enginesFor } from '@/lib/engines/registry'
 import type { EngineDescriptor } from '@/lib/engines/types'
 
-import { fitsInBudget, maxInputBytes } from './budget'
+import { fitsInBudget } from './budget'
+import { formatBytes, formatName } from './copy'
+import { isMeasurable, jobInput } from './job'
+import { codecUnavailable, emptyInput, tooLarge, unsupportedPair } from './rejections'
 import type {
   Capabilities,
   ConversionTask,
   FormatId,
-  RouteRejection,
+  RouteInput,
   RouteResult,
   Warning,
 } from './types'
 
-const KB = 1024
-const MB = 1024 * KB
-const GB = 1024 * MB
+const MB = 1024 * 1024
 
 /**
  * Download size above which the engine binary is worth warning about.
@@ -79,19 +82,26 @@ function isLossy(format: FormatId): boolean {
  *    the router promise a limit and then refuse the file that meets it.
  * 4. Memory budget — nothing that cannot fit in RAM survives.
  * 5. The head of what is left wins.
+ *
+ * `input` is one size, or one size per file for a job made of several. The
+ * distinction matters at step 4 and nowhere else: merging a hundred documents
+ * holds all hundred at once, while converting a hundred images holds one of
+ * them at a time, and only the engine's own model knows which it is.
  */
-export function route(task: ConversionTask, inputBytes: number, caps: Capabilities): RouteResult {
-  if (!Number.isFinite(inputBytes) || inputBytes <= 0) return emptyInput()
+export function route(task: ConversionTask, input: RouteInput, caps: Capabilities): RouteResult {
+  const job = jobInput(input)
+  if (!isMeasurable(job)) return emptyInput(job)
 
   // Already sorted by `byPreference`; every step below preserves that order.
   const candidates = enginesFor(task, caps)
   if (candidates.length === 0) return unsupportedPair(task)
 
   const viable = candidates.filter((engine) => missingCapability(engine, task, caps) === null)
-  if (viable.length === 0) return codecUnavailable(task, candidates, caps)
+  if (viable.length === 0)
+    return codecUnavailable(task, missingCapabilities(candidates, task, caps))
 
-  const affordable = viable.filter((engine) => fitsInBudget(engine.id, inputBytes, caps))
-  if (affordable.length === 0) return tooLarge(task, inputBytes, caps, viable)
+  const affordable = viable.filter((engine) => fitsInBudget(engine.id, job, caps))
+  if (affordable.length === 0) return tooLarge(task, job, caps, viable)
 
   const chosen = affordable[0]
 
@@ -138,6 +148,23 @@ function missingCapability(
   }
 
   return null
+}
+
+/**
+ * Every distinct API named by {@link missingCapability} across `candidates`,
+ * de-duplicated and in candidate order.
+ *
+ * Two engines can be blocked by the same missing API, and a rejection that
+ * says "needs OffscreenCanvas and OffscreenCanvas" reads like a bug.
+ */
+function missingCapabilities(
+  candidates: readonly EngineDescriptor[],
+  task: ConversionTask,
+  caps: Capabilities,
+): string[] {
+  const named = candidates.map((engine) => missingCapability(engine, task, caps))
+
+  return [...new Set(named.filter((api): api is string => api !== null))]
 }
 
 /**
@@ -199,102 +226,9 @@ function warningsFor(
   if (isLossy(task.from) && isLossy(task.to)) {
     warnings.push({
       code: 'QUALITY_LOSS',
-      message: `${name(task.from)} and ${name(task.to)} are both lossy formats, so re-encoding gives up a little quality.`,
+      message: `${formatName(task.from)} and ${formatName(task.to)} are both lossy formats, so re-encoding gives up a little quality.`,
     })
   }
 
   return warnings
-}
-
-function emptyInput(): RouteRejection {
-  return {
-    ok: false,
-    code: 'EMPTY_INPUT',
-    message: 'There are no bytes to convert — this file is empty, or its size could not be read.',
-    suggestion: 'Pick a different file, or re-export it from the app that created it.',
-  }
-}
-
-function unsupportedPair(task: ConversionTask): RouteRejection {
-  return {
-    ok: false,
-    code: 'UNSUPPORTED_PAIR',
-    message: `Converting ${name(task.from)} to ${name(task.to)} is not something this browser can do here.`,
-    suggestion: `Choose a different output format for your ${name(task.from)} file, or open this page in an up-to-date Chrome or Edge, where more engines are available.`,
-  }
-}
-
-/**
- * The job fits on this device, but every engine that could run it needs a
- * browser API this device does not expose. Distinct from `UNSUPPORTED_PAIR`,
- * which means the conversion is not implemented at all: this one succeeds
- * elsewhere, so the suggestion names the APIs that are actually missing rather
- * than a fixed one.
- */
-function codecUnavailable(
-  task: ConversionTask,
-  candidates: readonly EngineDescriptor[],
-  caps: Capabilities,
-): RouteRejection {
-  const missing = [
-    ...new Set(candidates.map((engine) => missingCapability(engine, task, caps) ?? '')),
-  ].filter(Boolean)
-  const named = missing.length > 0 ? missing.join(' and ') : 'a browser API'
-
-  return {
-    ok: false,
-    code: 'CODEC_UNAVAILABLE',
-    message: `Converting ${name(task.from)} to ${name(task.to)} needs ${named}, which this browser does not provide.`,
-    suggestion: `Open this page in an up-to-date Chrome or Edge, which provides ${named}.`,
-  }
-}
-
-/**
- * No engine can hold this file inside the device's memory budget.
- *
- * The limit quoted is the *roomiest* candidate's, not the preferred one's: the
- * user is being told the largest file that could work here, so quoting a
- * hungrier engine's ceiling would understate it. Only engines that passed the
- * capability gate are considered, so the number is one this device can honour.
- *
- * The code differs by platform because the fix does. On a desktop the file is
- * the problem and can be split; on a phone the ceiling is the browser's own
- * per-tab limit, and no amount of splitting raises it.
- */
-function tooLarge(
-  task: ConversionTask,
-  inputBytes: number,
-  caps: Capabilities,
-  candidates: readonly EngineDescriptor[],
-): RouteRejection {
-  const roomiest = candidates.reduce((a, b) =>
-    maxInputBytes(a.id, caps) >= maxInputBytes(b.id, caps) ? a : b,
-  )
-  const limit = maxInputBytes(roomiest.id, caps)
-  const onDesktop = caps.platform === 'desktop'
-
-  return {
-    ok: false,
-    code: onDesktop ? 'FILE_TOO_LARGE' : 'DEVICE_TOO_WEAK',
-    message: `This file is ${formatBytes(inputBytes)}. The largest ${name(task.from)} file this device can convert safely is ${formatBytes(limit)}.`,
-    suggestion: onDesktop
-      ? 'Split the file into smaller parts, or shrink it before converting — everything runs in this tab, so the memory limit is the tab and not the machine.'
-      : 'Open this page on a desktop computer: a mobile browser caps each tab well below the memory this file needs.',
-  }
-}
-
-/** `'mp4'` → `'MP4'`, for user-facing copy. */
-function name(format: FormatId): string {
-  return format.toUpperCase()
-}
-
-/**
- * Byte counts as a person would read them. One decimal place only in the GB
- * range, where rounding whole would hide the difference between a file slightly
- * over the limit and one nowhere near it.
- */
-function formatBytes(bytes: number): string {
-  if (bytes >= GB) return `${(bytes / GB).toFixed(1)} GB`
-  if (bytes >= MB) return `${Math.round(bytes / MB)} MB`
-  return `${Math.round(bytes / KB)} KB`
 }

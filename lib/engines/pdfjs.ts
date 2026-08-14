@@ -22,6 +22,15 @@
  * `pdfjs-dist` is fetched through `await import()` inside the operation module,
  * never here. This file is statically imported by the registry and must stay
  * free of anything heavy (CLAUDE.md §2.3).
+ *
+ * ## What its memory depends on
+ *
+ * Not the input size, mostly. A page canvas is sized by the requested DPI, so a
+ * 1.4 kB vector document and a 50 MB scan allocate the same 8.4 MB of RGBA for a
+ * US Letter page at the default 150 dpi. `MEMORY.pdfjs` in
+ * `lib/router/budget.ts` says so with a `reserveBytes` term that the router
+ * takes off the device budget before it looks at the file at all; the DPI and
+ * canvas-pixel ceilings in `./pdf-render-plan` are what keep that term true.
  */
 
 import type { Capabilities, ConversionTask, FormatId } from '@/lib/router/types'

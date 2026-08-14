@@ -12,7 +12,7 @@
  * measuring on real devices.
  */
 
-import type { Capabilities, EngineId } from './types'
+import type { Capabilities, EngineId, EngineMemory, JobInput } from './types'
 
 const MB = 1024 * 1024
 const BYTES_PER_GB = 1024 * MB
@@ -71,35 +71,67 @@ export const DESKTOP_BUDGET_CAP_BYTES = 1200 * MB
 export const DESKTOP_BUDGET_FLOOR_BYTES = ANDROID_BUDGET_BYTES
 
 /**
- * Peak memory an engine holds, as a multiple of the encoded input size.
+ * How much memory each engine holds, as `factor × heldBytes + reserveBytes`.
  *
- * `Record<EngineId, number>` is deliberate: adding an `EngineId` without a
- * factor here is a compile error, and a factor for an engine that does not
- * exist is one too. Determine a new engine's value by measurement — a guess
- * that is too low is an out-of-memory crash on someone's phone.
+ * `Record<EngineId, EngineMemory>` is deliberate: adding an `EngineId` without a
+ * model here is a compile error, and a model for an engine that does not exist
+ * is one too. That is also why the table lives here rather than on
+ * `EngineDescriptor` — four of the nine ids have no descriptor yet, and a
+ * descriptor field would turn "nobody wrote a model for the ZIP engine" from a
+ * failed build into a silent default on the day it ships.
+ *
+ * Determine a new engine's numbers by measurement — a guess that is too low is
+ * an out-of-memory crash on someone's phone.
+ * `docs/router/memory-budget-measurement.md` is the harness the pdf-lib and
+ * pdf.js rows below came out of, and the instructions for repeating it.
  */
-export const EXPANSION: Record<EngineId, number> = {
+export const MEMORY: Record<EngineId, EngineMemory> = {
   /** A decoded RGBA bitmap is many times its encoded source, and the canvas
-   *  keeps the source, the bitmap and the re-encoded output alive at once. */
-  canvas: 6,
+   *  keeps the source, the bitmap and the re-encoded output alive at once.
+   *  One image is decoded at a time, so a batch costs what its biggest member
+   *  costs rather than what the batch adds up to. */
+  canvas: { factor: 6, holds: 'one-at-a-time', reserveBytes: 0 },
   /** libvips works in scanline regions rather than whole images, so it holds
    *  much less than a canvas for the same pixel count. */
-  vips: 4,
+  vips: { factor: 4, holds: 'one-at-a-time', reserveBytes: 0 },
   /** HEIC decoding materialises the full tiled image plus the RGB output. */
-  heif: 5,
-  /** pdf-lib mutates a parsed document tree and serialises a fresh copy. */
-  pdflib: 3,
-  /** pdf.js additionally rasterises pages to canvases while rendering. */
-  pdfjs: 4,
+  heif: { factor: 5, holds: 'one-at-a-time', reserveBytes: 0 },
+  /**
+   * Measured at 4× on the corpus in `docs/router/memory-budget-measurement.md`:
+   * a merge peaks near 2.9× its inputs and a split near 4.0×, both counting the
+   * `Blob` copy the browser makes of the serialised result.
+   *
+   * `all-at-once` because every source ends up in one object graph: the pages
+   * copied out of each document stay live until the merge is written, so a
+   * hundred 50 MB scans cost their total and not their largest. The 32 MB
+   * reserve is what pdf-lib costs before the input is even considered — a
+   * hundred small documents peaked at 28 MB on 1.3 MB of input, and splitting a
+   * 200-page report at 51 MB on 0.3 MB.
+   */
+  pdflib: { factor: 4, holds: 'all-at-once', reserveBytes: 32 * MB },
+  /**
+   * The resolution-bound engine. Parsing and rendering a document measured at
+   * 2× its bytes, and the pages it writes out are held until the archive is
+   * packed, which puts the whole job near 4×.
+   *
+   * The reserve is the part no factor can express. A page canvas is sized by
+   * the requested DPI and not by the file: at the default 150 dpi a US Letter
+   * page is 1275 × 1650 × 4 = 8.4 MB of RGBA, whether it came from a 1.4 kB
+   * vector document or a 50 MB scan. 32 MB covers that canvas, the encoded copy
+   * taken off it, and the 13–34 MB pdf.js itself costs to open a document at
+   * all.
+   */
+  pdfjs: { factor: 4, holds: 'one-at-a-time', reserveBytes: 32 * MB },
   /** Streams frames through the hardware codec; never holds the whole file. */
-  webcodecs: 2.5,
+  webcodecs: { factor: 2.5, holds: 'one-at-a-time', reserveBytes: 0 },
   /** Input, output and scratch buffers all live in MEMFS simultaneously —
    *  the hungriest engine we ship, which is why it is also the last resort. */
-  ffmpeg: 4.5,
-  /** fflate streams entries, but the deflate window and one member are live. */
-  zip: 2.5,
+  ffmpeg: { factor: 4.5, holds: 'one-at-a-time', reserveBytes: 0 },
+  /** fflate streams entries, but the archive is built in memory from all of
+   *  them, so an archive job costs what its members add up to. */
+  zip: { factor: 2.5, holds: 'all-at-once', reserveBytes: 0 },
   /** libarchive buffers a whole entry plus the compressed source. */
-  libarchive: 3,
+  libarchive: { factor: 3, holds: 'one-at-a-time', reserveBytes: 0 },
 }
 
 /**
@@ -150,21 +182,52 @@ function budgetForUnhandledPlatform(platform: never): number {
 }
 
 /**
- * Largest input, in bytes, that `engine` can process on this device.
+ * The bytes of `job` that `memory` says are live at the same time.
  *
- * This is the number the router filters candidate engines with, and the number
- * a `FILE_TOO_LARGE` / `DEVICE_TOO_WEAK` rejection quotes back to the user.
+ * The whole job for an engine that opens every file together, the largest file
+ * for one that works through them in turn. A single-file job answers the same
+ * either way, which is why the distinction went unnoticed until merge shipped.
  */
-export function maxInputBytes(engine: EngineId, caps: Capabilities): number {
-  return Math.floor(budgetBytes(caps) / EXPANSION[engine])
+export function heldBytes(memory: EngineMemory, job: JobInput): number {
+  return memory.holds === 'all-at-once' ? job.totalBytes : job.largestBytes
+}
+
+/** Peak memory `job` will cost under `memory`, in bytes. */
+export function peakBytes(memory: EngineMemory, job: JobInput): number {
+  return memory.factor * heldBytes(memory, job) + memory.reserveBytes
 }
 
 /**
- * Whether an input of `inputBytes` can be processed by `engine` on this device.
+ * The most an engine with this model may hold inside `budget`.
  *
- * Inclusive: a file exactly on the limit fits. An empty input also "fits" —
+ * The reserve comes off the top before the factor is applied: an engine that
+ * allocates 32 MB whatever it is given has 32 MB less to spend on the file.
+ * Never negative — a reserve larger than the whole budget means the engine
+ * cannot run here at all, which is `0` rather than a negative ceiling nobody
+ * can compare against.
+ */
+export function maxHeldBytes(memory: EngineMemory, budget: number): number {
+  return Math.max(0, Math.floor((budget - memory.reserveBytes) / memory.factor))
+}
+
+/**
+ * Largest input, in bytes, that `engine` can process on this device.
+ *
+ * This is the number a `FILE_TOO_LARGE` / `DEVICE_TOO_WEAK` rejection quotes
+ * back to the user. What it is a ceiling *on* depends on the engine's
+ * {@link EngineMemory.holds}: the total across every file for `all-at-once`,
+ * the largest single file for `one-at-a-time`.
+ */
+export function maxInputBytes(engine: EngineId, caps: Capabilities): number {
+  return maxHeldBytes(MEMORY[engine], budgetBytes(caps))
+}
+
+/**
+ * Whether `job` can be processed by `engine` on this device.
+ *
+ * Inclusive: a job exactly on the limit fits. An empty input also "fits" —
  * rejecting that is the router's `EMPTY_INPUT` check, not the budget's job.
  */
-export function fitsInBudget(engine: EngineId, inputBytes: number, caps: Capabilities): boolean {
-  return inputBytes <= maxInputBytes(engine, caps)
+export function fitsInBudget(engine: EngineId, job: JobInput, caps: Capabilities): boolean {
+  return peakBytes(MEMORY[engine], job) <= budgetBytes(caps)
 }

@@ -25,6 +25,16 @@
  *   so EXIF, ICC profiles and any lossless JPEG transform are gone. The router's
  *   `QUALITY_LOSS` warning covers the pairs where that shows.
  *
+ * ## What its memory depends on
+ *
+ * `MEMORY.canvas` in `lib/router/budget.ts` is `holds: 'one-at-a-time'`: a batch
+ * of images is decoded one after another, so the budget is the largest of them
+ * and not their total. The 6× factor is the honest part of the model and the
+ * incomplete one — a decoded bitmap is `width × height × 4` regardless of how
+ * well the source compressed, so the factor holds for photographs and
+ * understates a flat-coloured PNG badly. See the "what the model still cannot
+ * see" section of `docs/router/memory-budget-measurement.md`.
+ *
  * ## The two halves
  *
  * This file is the half `registry.ts` imports statically, so it must stay a

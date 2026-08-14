@@ -65,6 +65,73 @@ export interface ConversionTask {
   op: Operation
 }
 
+/**
+ * The sizes `route()` accepts: one number for a single file, or one number per
+ * file for a job made of several.
+ *
+ * A bare number rather than a one-element array for the common case, because
+ * most conversions are one file and `route(task, file.size, caps)` should not
+ * have to be wrapped. The two are interchangeable — `jobInput` normalises them
+ * to the same {@link JobInput}.
+ */
+export type RouteInput = number | readonly number[]
+
+/**
+ * The input side of a job, reduced to the four numbers the budget reasons about.
+ *
+ * Both extremes are kept because engines differ in which one binds them. An
+ * engine that opens every file at once is bound by `totalBytes`; one that works
+ * through them in turn is bound by `largestBytes`; and `smallestBytes` is how a
+ * zero-byte file hiding in a hundred-file merge is caught before anything is
+ * downloaded.
+ */
+export interface JobInput {
+  /** Sum of every file's size, in bytes. */
+  totalBytes: number
+  /** The largest single file, in bytes. Zero when there are no files. */
+  largestBytes: number
+  /** The smallest single file, in bytes. Zero when there are no files. */
+  smallestBytes: number
+  /** How many files the job names. */
+  fileCount: number
+}
+
+/**
+ * Which of a job's bytes an engine has live at the same time.
+ *
+ * - `all-at-once` — every input is open together, so the job's *total* is what
+ *   costs: merging builds one object graph out of all of them, and a ZIP is
+ *   written from every member.
+ * - `one-at-a-time` — files are processed in turn and each is released before
+ *   the next, so only the *largest* one has to fit.
+ */
+export type MemoryScope = 'all-at-once' | 'one-at-a-time'
+
+/**
+ * How an engine's peak memory relates to the job it is handed.
+ *
+ * `peak = factor × heldBytes + reserveBytes`
+ *
+ * The affine shape exists because a single multiple of the input cannot
+ * describe every engine. pdf.js sizes its canvas from the requested DPI, so a
+ * 1 367-byte vector PDF still allocates 8.4 MB of pixels — six thousand times
+ * its input, against any factor anyone would write down. That allocation does
+ * not scale with the file, so it belongs in `reserveBytes` rather than in a
+ * factor that has to be wrong for one of the two cases.
+ */
+export interface EngineMemory {
+  /** Peak bytes held per byte of the input the engine has open. At least 1. */
+  factor: number
+  /** Which of a multi-file job's bytes the factor applies to. */
+  holds: MemoryScope
+  /**
+   * Bytes the engine allocates that the input size does not predict: an output
+   * buffer sized by resolution, or a parser baseline a tiny document pays in
+   * full. Taken off the top of the device budget before the factor is applied.
+   */
+  reserveBytes: number
+}
+
 /** Every processing backend the router can choose between. */
 export type EngineId =
   'canvas' | 'vips' | 'heif' | 'pdflib' | 'pdfjs' | 'webcodecs' | 'ffmpeg' | 'zip' | 'libarchive'
