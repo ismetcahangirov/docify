@@ -90,10 +90,21 @@ describe('the pdflib runner', () => {
   it('names the operation and its issue when it has not been implemented yet', async () => {
     // A scaffold that answered with an empty PDF would look like a successful
     // conversion. Until an operation lands, the only honest result is a throw
-    // that says which one is missing.
+    // that says which one is missing. Whichever operation this names is simply
+    // one that has not landed yet, so the issue that implements it moves this
+    // assertion to another arm rather than deleting it.
+    await expect(
+      createRunner().run(input(pdfToPdf('organize')), new AbortController().signal, nothing),
+    ).rejects.toThrow(/organize/)
+  })
+
+  it('dispatches split to the module that implements it', async () => {
+    // The eight-byte stub above is not a readable document, so a throw is the
+    // only possible outcome — what matters is that it comes from the splitter
+    // rather than from the placeholder this arm used to hold.
     await expect(
       createRunner().run(input(pdfToPdf('split')), new AbortController().signal, nothing),
-    ).rejects.toThrow(/split/)
+    ).rejects.toThrow(/could not be read as a PDF/i)
   })
 
   it('refuses an operation this engine never claimed', async () => {
