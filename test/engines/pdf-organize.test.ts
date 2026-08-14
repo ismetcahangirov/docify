@@ -270,6 +270,37 @@ describe('what organising refuses', () => {
       organizePages(input([await source(), await source()]), live(), nothing),
     ).rejects.toThrow(/2 files/)
   })
+
+  it('says a file is not a readable PDF instead of leaking the parser message', async () => {
+    // `PDFDocument.load` is lenient: bytes with no usable catalog resolve, and
+    // the failure lands on the first structural read as a bare "Cannot read
+    // properties of undefined (reading 'Pages')", which explains nothing.
+    await expect(organizePages(input([new Blob(['%PDF-1.7'])]), live(), nothing)).rejects.toThrow(
+      /could not be read as a PDF/i,
+    )
+  })
+
+  it('says so when the document is password-protected', async () => {
+    // Written out by hand because pdf-lib can read encryption but not write it,
+    // and splicing `/Encrypt` into a generated file would corrupt the compressed
+    // streams around it. This is the one case where "could not be read as a PDF"
+    // would send the user hunting for a corrupt download instead of a password.
+    const locked = new Blob([
+      [
+        '%PDF-1.7',
+        '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj',
+        '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj',
+        '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] >>\nendobj',
+        '4 0 obj\n<< /Filter /Standard /V 1 /R 2 /O <00> /U <00> /P -1 >>\nendobj',
+        'trailer\n<< /Size 5 /Root 1 0 R /Encrypt 4 0 R >>',
+        '%%EOF',
+      ].join('\n'),
+    ])
+
+    await expect(organizePages(input([locked]), live(), nothing)).rejects.toThrow(
+      /password-protected/i,
+    )
+  })
 })
 
 describe('progress and cancellation', () => {

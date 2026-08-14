@@ -94,8 +94,19 @@ describe('the pdflib runner', () => {
     // one that has not landed yet, so the issue that implements it moves this
     // assertion to another arm rather than deleting it.
     await expect(
-      createRunner().run(input(pdfToPdf('organize')), new AbortController().signal, nothing),
-    ).rejects.toThrow(/organize/)
+      createRunner().run(input(pdfToPdf('merge')), new AbortController().signal, nothing),
+    ).rejects.toThrow(/merge/)
+  })
+
+  it('dispatches organize and rotate to the same module', async () => {
+    // Both arms land on one implementation, so the operation label cannot become
+    // a hidden input. As above, the stub is unreadable and the throw is the
+    // organiser's rather than the placeholder's.
+    for (const op of ['organize', 'rotate'] as const) {
+      await expect(
+        createRunner().run(input(pdfToPdf(op)), new AbortController().signal, nothing),
+      ).rejects.toThrow(/could not be read as a PDF/i)
+    }
   })
 
   it('dispatches split to the module that implements it', async () => {

@@ -44,18 +44,15 @@ export const organizePages: PdfOperation = async (input, signal, onProgress) => 
   throwIfAborted(signal)
 
   const file = onlyFile(input)
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  throwIfAborted(signal)
 
   // Parsing is one opaque pdf-lib call with no callback to hang a percentage on,
   // so indeterminate is the honest opening state. Real ticks start once there is
   // a page count to divide by.
   onProgress(-1)
 
-  const source = await PDFDocument.load(bytes, { updateMetadata: false })
+  const { source, pageCount } = await open(file)
   throwIfAborted(signal)
 
-  const pageCount = source.getPageCount()
   const plan = planOrganize(input.pdf?.organize ?? {}, pageCount)
 
   const document =
@@ -74,6 +71,43 @@ export const organizePages: PdfOperation = async (input, signal, onProgress) => 
   // allocated by pdf-lib and never shared, so narrowing the declaration beats
   // copying tens of megabytes to satisfy it.
   return new Blob([saved as Uint8Array<ArrayBuffer>], { type: 'application/pdf' })
+}
+
+/**
+ * The parsed document and its page count.
+ *
+ * The count is read inside the guard rather than by the caller because
+ * `PDFDocument.load` is lenient: handed bytes with no usable catalog it resolves
+ * happily and defers the failure to the first structural read, which surfaces as
+ * a bare `Cannot read properties of undefined`. Touching the page tree here is
+ * what makes "can this file be opened at all" an answered question.
+ *
+ * `updateMetadata: false` because most of this operation edits the loaded
+ * document in place: pdf-lib would otherwise stamp its own producer and
+ * modification date onto a file the user only asked to turn a page of.
+ */
+async function open(file: Blob): Promise<{ source: PDFDocument; pageCount: number }> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+
+  try {
+    const source = await PDFDocument.load(bytes, { updateMetadata: false })
+
+    return { source, pageCount: source.getPageCount() }
+  } catch (reason) {
+    const detail = reason instanceof Error ? reason.message : String(reason)
+
+    if (/encrypt/i.test(detail)) {
+      throw new Error(
+        'This PDF is password-protected, so its pages cannot be rearranged. Remove ' +
+          'the password where the file was created, then organise the unprotected copy.',
+      )
+    }
+
+    // The parser message is kept, after a sentence that says what it is about:
+    // "Expected instance of PDFDict" alone tells the user nothing, but it is
+    // what distinguishes a truncated download from a file that is not a PDF.
+    throw new Error(`This file could not be read as a PDF: ${detail}`)
+  }
 }
 
 /**
