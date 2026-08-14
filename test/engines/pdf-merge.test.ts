@@ -84,8 +84,8 @@ describe('merging PDFs', () => {
 
 describe('rejecting a merge that cannot work', () => {
   it('says how many files it got when there are too few to merge', async () => {
-    await expect(run([await pdf([100])])).rejects.toThrow(/at least two.*only 1 file/is)
-    await expect(run([])).rejects.toThrow(/at least two/i)
+    await expect(run([await pdf([100])])).rejects.toThrow(/at least 2 PDFs.*only 1 file/is)
+    await expect(run([])).rejects.toThrow(/at least 2 PDFs.*no files/is)
   })
 
   it('quotes the limit and the count when there are too many files', async () => {
@@ -170,6 +170,25 @@ describe('reporting progress', () => {
     // it runs would freeze a full bar in front of the user.
     expect(seen.slice(0, -1).every((progress) => progress < 1)).toBe(true)
   })
+
+  it('keeps reporting while the merged document is being written out', async () => {
+    // Writing a thousand merged pages takes long enough that a bar left at the
+    // last copy tick would sit still for most of a second. `ProgressCallback` in
+    // lib/engines/types.ts asks for a tick at least every 250 ms, and this is
+    // the only phase of a merge with no page count to derive one from.
+    const hundredPages = Array.from({ length: 100 }, (_, page) => 100 + page)
+    const files = await Promise.all(Array.from({ length: 10 }, () => pdf(hundredPages)))
+    const gaps: number[] = []
+    let previous = Date.now()
+
+    await run(files, new AbortController().signal, () => {
+      gaps.push(Date.now() - previous)
+      previous = Date.now()
+    })
+    gaps.push(Date.now() - previous)
+
+    expect(Math.max(...gaps)).toBeLessThan(250)
+  })
 })
 
 describe('cancelling a merge', () => {
@@ -194,19 +213,40 @@ describe('cancelling a merge', () => {
     const controller = new AbortController()
     const seen: number[] = []
 
-    // A timer, not a resolved promise: the worker learns about a cancellation
-    // from a `cancel(jobId)` *message*, and a loop that only awaits microtasks
-    // never lets the message loop run — so `signal.aborted` would stay false for
-    // the whole merge. See the cancellation notes in lib/worker/types.ts.
-    setTimeout(() => controller.abort(), 0)
+    await expect(
+      run(files, controller.signal, (progress) => {
+        seen.push(progress)
+        // After the first file has been copied rather than before it: an abort
+        // raised up front would say nothing about the loop.
+        if (seen.length === 2) controller.abort()
+      }),
+    ).rejects.toThrow(/cancel/i)
 
-    await expect(run(files, controller.signal, (progress) => seen.push(progress))).rejects.toThrow(
-      /cancel/i,
+    // The opening zero and one completed file, and then nothing more.
+    expect(seen).toHaveLength(2)
+  })
+
+  it('lets a cancellation that arrives as a message land mid-merge', async () => {
+    const files = await Promise.all(
+      Array.from({ length: 8 }, (_, index) => pdf([100 + index * 10])),
     )
+    const controller = new AbortController()
+    const seen: number[] = []
 
-    expect(seen.length).toBeGreaterThan(0)
-    expect(seen.at(-1)).not.toBe(1)
+    await expect(
+      run(files, controller.signal, (progress) => {
+        seen.push(progress)
+        // A timer rather than a direct call, because that is how a real
+        // cancellation arrives: the worker is told to stop by a `cancel(jobId)`
+        // *message*, and a loop that only ever awaits microtasks never lets the
+        // message loop run — `signal.aborted` would stay false for the whole
+        // merge. See the cancellation notes in lib/worker/types.ts.
+        if (seen.length === 2) setTimeout(() => controller.abort(), 0)
+      }),
+    ).rejects.toThrow(/cancel/i)
+
     expect(seen.length).toBeLessThan(files.length)
+    expect(seen.at(-1)).not.toBe(1)
   })
 })
 

@@ -16,13 +16,22 @@
  *
  * ## Memory
  *
- * `EXPANSION.pdflib` in `lib/router/budget.ts` promises the router that this
- * engine peaks at three times its input, and a hundred documents is where that
- * promise gets tested. Two habits keep it: source files are read one at a time
- * rather than buffered up front, and each parsed document goes out of scope as
- * soon as its pages have been copied. Peak is then the merged document plus the
- * one source being read plus the serialised output — under 3× — instead of
- * every source alive at once, which 100 files would push far past it.
+ * `EXPANSION.pdflib` in `lib/router/budget.ts` budgets three times the input,
+ * and a hundred documents is where that gets tested. What this module can
+ * guarantee is the part it controls: sources are read one at a time rather than
+ * buffered up front, and each parsed document is unreachable again as soon as
+ * its pages have been copied, so the hundred never coexist. What is still live
+ * at the peak — the merged object graph, the serialised output, and the Blob's
+ * copy of it — has not been measured against the 3× factor on a real corpus.
+ * The file count below is the only ceiling merge enforces today.
+ *
+ * ## What does not survive the copy
+ *
+ * `copyPages` brings each page and the annotations drawn on it, but not the
+ * document-level `AcroForm`. A filled-in form therefore arrives looking right
+ * and behaving as flat artwork, with no fields and no values behind it. Merging
+ * form documents means merging the field tree too, name collisions and all,
+ * which is a feature of its own rather than a line in this one.
  */
 
 import { EncryptedPDFError, PDFDocument, type PDFPage } from 'pdf-lib'
@@ -33,10 +42,12 @@ import type { EngineInput, ProgressCallback } from './types'
 /**
  * The most documents one merge accepts.
  *
- * Not a pdf-lib limit — it is the number issue #38 promises, and the point past
- * which the merged object graph stops fitting the memory budget on a phone. A
- * job that names 300 files is a person who wants batches, and telling them so
- * beats an out-of-memory tab kill 200 files in.
+ * The number issue #38 promises, and — since `route()` budgets one scalar input
+ * size and has no multi-file caller yet — the only ceiling merge has. It counts
+ * files rather than bytes, so it guards the runaway case (someone who selected
+ * a directory) rather than memory: a hundred 50 MB scans will still exhaust a
+ * phone. A job naming 300 files is a person who wants batches, and telling them
+ * so beats an out-of-memory tab kill 200 files in.
  */
 export const MAX_MERGE_FILES = 100
 
@@ -52,6 +63,15 @@ const MIN_MERGE_FILES = 2
  * length of it looks like a hang.
  */
 const COPY_SHARE = 0.9
+
+/** Reporting interval for the serialisation phase, inside the 250 ms rule. */
+const SAVE_TICK_MS = 200
+
+/**
+ * How quickly the serialisation estimate approaches the end of its band. Chosen
+ * so a merge that writes for a few seconds spends most of them visibly moving.
+ */
+const SAVE_PACE_MS = 3000
 
 /**
  * How far into a file the PDF header may sit.
@@ -90,7 +110,7 @@ export const mergePdfs: PdfOperation = async (
   }
 
   throwIfAborted(signal)
-  const bytes = await merged.save()
+  const bytes = await serialise(merged, onProgress)
 
   // A merge that finished after the user cancelled must still deliver nothing:
   // `lib/worker/types.ts` guarantees a cancelled job never produces output.
@@ -99,10 +119,37 @@ export const mergePdfs: PdfOperation = async (
 
   // `save()` is typed as a `Uint8Array` over any buffer kind, which `BlobPart`
   // no longer accepts now that TypeScript separates shared from non-shared
-  // buffers. pdf-lib allocates a plain `ArrayBuffer`, so this narrows rather
-  // than converts — and narrowing beats copying through `new Uint8Array(bytes)`,
-  // which would duplicate the whole merged document at its peak.
+  // buffers. pdf-lib allocates a plain `ArrayBuffer`, so the assertion states a
+  // fact rather than converting one; `new Uint8Array(bytes)` would say the same
+  // thing by copying the whole merged document first.
   return new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' })
+}
+
+/**
+ * Writes the merged document out, keeping the bar alive while it happens.
+ *
+ * This is the one phase with no fraction to report: pdf-lib offers no hook into
+ * `save`, and what it walks is an object graph whose size has little to do with
+ * the page count already reported. On a hundred merged documents it is seconds
+ * of silence, which is exactly what the 250 ms rule in `./types` forbids.
+ *
+ * It does yield between object batches, though — which is what makes a timer
+ * possible at all — so the reserved band is driven by elapsed time, approaching
+ * its end without ever arriving. Only the finished file gets to report 1.
+ */
+async function serialise(merged: PDFDocument, onProgress: ProgressCallback): Promise<Uint8Array> {
+  const started = Date.now()
+  const ticker = setInterval(() => {
+    const elapsed = (Date.now() - started) / SAVE_PACE_MS
+
+    onProgress(COPY_SHARE + (1 - COPY_SHARE) * (1 - Math.exp(-elapsed)))
+  }, SAVE_TICK_MS)
+
+  try {
+    return await merged.save()
+  } finally {
+    clearInterval(ticker)
+  }
 }
 
 /**
@@ -118,7 +165,8 @@ async function assertMergeable(files: readonly Blob[], signal: AbortSignal): Pro
     const given = files.length === 0 ? 'no files were given' : 'only 1 file was given'
 
     throw new Error(
-      `Merging needs at least two PDFs, but ${given}. Add another PDF to the list and try again.`,
+      `Merging needs at least ${MIN_MERGE_FILES} PDFs, but ${given}. ` +
+        `Add another PDF to the list and try again.`,
     )
   }
 
@@ -218,10 +266,10 @@ async function copyPagesFrom(
  */
 function describe(files: readonly Blob[], index: number): string {
   const position = `file ${index + 1} of ${files.length}`
-  const name = (files[index] as { name?: unknown }).name
+  const file = files[index]
 
-  return typeof name === 'string' && name.length > 0
-    ? `"${name}" (${position})`
+  return file instanceof File && file.name.length > 0
+    ? `"${file.name}" (${position})`
     : position.charAt(0).toUpperCase() + position.slice(1)
 }
 
