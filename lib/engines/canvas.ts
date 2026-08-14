@@ -32,8 +32,10 @@
  * and not their total. The 6× factor is the honest part of the model and the
  * incomplete one — a decoded bitmap is `width × height × 4` regardless of how
  * well the source compressed, so the factor holds for photographs and
- * understates a flat-coloured PNG badly. See the "what the model still cannot
- * see" section of `docs/router/memory-budget-measurement.md`.
+ * understates a flat-coloured PNG badly. What the factor cannot say, the runner
+ * refuses: `./raster-limits` bounds the decoded pixels, once on the file's
+ * header and once on the bitmap the browser produced, both before the matching
+ * allocation. `docs/router/memory-budget-measurement.md` has the measurement.
  *
  * ## The two halves
  *

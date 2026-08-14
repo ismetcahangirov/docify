@@ -174,6 +174,38 @@ describe('decodeHeif, against a fake libheif', () => {
       decodeHeif(fakeModule([fakeImage({ width: 0, height: 4 })]), fixture),
     ).rejects.toThrow(/dimensions/i)
   })
+
+  it('refuses an image with more pixels than the device can decode', async () => {
+    // libheif reports the dimensions before anything is allocated, so this is
+    // the cheapest possible place to stop: the `Uint8ClampedArray` on the next
+    // line would be 1.6 GB, and asking a phone for that is a blank tab rather
+    // than an exception anyone can catch.
+    await expect(
+      decodeHeif(
+        fakeModule([fakeImage({ width: 20_000, height: 20_000 })]),
+        fixture,
+        '"beach.heic"',
+      ),
+    ).rejects.toThrow(/"beach\.heic" is 20000 × 20000 pixels[\s\S]*Resize it below/)
+  })
+
+  it('refers to the image generically when the caller has no name for it', async () => {
+    await expect(
+      decodeHeif(fakeModule([fakeImage({ width: 20_000, height: 20_000 })]), fixture),
+    ).rejects.toThrow(/This image is 20000 × 20000 pixels/)
+  })
+
+  it('releases every image when the pixel ceiling refuses the job', async () => {
+    const freed: string[] = []
+
+    await expect(
+      decodeHeif(
+        fakeModule([fakeImage({ width: 20_000, height: 20_000, freed, name: 'a' })]),
+        fixture,
+      ),
+    ).rejects.toThrow()
+    expect(freed).toEqual(['a'])
+  })
 })
 
 describe('decodeHeif, against the real libheif build', () => {

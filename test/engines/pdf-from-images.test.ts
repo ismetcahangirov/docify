@@ -166,7 +166,61 @@ describe('images to PDF', () => {
   it('needs at least one image', async () => {
     await expect(build([])).rejects.toThrow(/at least one image/)
   })
+})
 
+describe('the decoded-pixel ceiling', () => {
+  /**
+   * A PNG whose IHDR claims `width × height` while its IDAT holds ten by ten.
+   *
+   * The mismatch is the assertion: pdf-lib would decode this and either fail or
+   * allocate the full bitmap, so an error that quotes the *claimed* dimensions
+   * can only have come from a guard that read the header and stopped there —
+   * which is what "before any bitmap is allocated" means.
+   */
+  function oversizedPng(width: number, height: number, name: string): File {
+    const bytes = pngBytes(10, 10)
+    const fields = new DataView(bytes.buffer)
+
+    fields.setUint32(16, width)
+    fields.setUint32(20, height)
+
+    return new File([bytes], name)
+  }
+
+  it('refuses one image whose pixels cannot fit, before it is decoded', async () => {
+    await expect(build([oversizedPng(20_000, 20_000, 'poster.png')])).rejects.toThrow(
+      /"poster\.png" is 20000 × 20000 pixels[\s\S]*megapixels[\s\S]*Resize it below/,
+    )
+  })
+
+  it('counts the images already embedded, not just the one in hand', async () => {
+    // Every PNG stays decoded until `save()` deflates it, so the bound is the
+    // running total. The message says so — "brings this job to" rather than the
+    // single-image wording — which is the observable difference between the two
+    // branches, and the case the router structurally cannot see: these files
+    // weigh a few hundred bytes between them.
+    await expect(build([png(10, 10), oversizedPng(4000, 4000, 'shot-2.png')])).rejects.toThrow(
+      /"shot-2\.png" is 4000 × 4000 pixels and brings this job to 16\.0 megapixels[\s\S]*fewer images/,
+    )
+  })
+
+  it('charges a JPEG nothing, because pdf-lib never decodes one', async () => {
+    // `embedJpg` reads SOF0 and copies the bytes into a `DCTDecode` stream, so a
+    // 400 megapixel JPEG costs its bytes and not its pixels. Charging it pixels
+    // would refuse a camera panorama that converts in a few megabytes.
+    const [page] = await placements(await build([jpeg(20_000, 20_000)]))
+
+    expect(page.page).toEqual({ width: 20_000, height: 20_000 })
+  })
+
+  it('lets an ordinary page-sized image through untouched', async () => {
+    const [page] = await placements(await build([png(1240, 1754)]))
+
+    expect(page.page).toEqual({ width: 1240, height: 1754 })
+  })
+})
+
+describe('the produced file', () => {
   it('labels the output as a PDF', async () => {
     const out = await build([png(10, 10)])
 

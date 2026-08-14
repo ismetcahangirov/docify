@@ -24,6 +24,7 @@ import type { BitmapEncoder } from './bitmap'
 import { encodeBitmap } from './bitmap'
 import type { HeifLoader, HeifModule } from './heif-decode'
 import { decodeHeif, loadHeif } from './heif-decode'
+import { imageLabel } from './raster-limits'
 import type { EngineDescriptor, EngineInput, EngineRunner, ProgressCallback } from './types'
 import type { Capabilities, ConversionTask, FormatId } from '@/lib/router/types'
 
@@ -112,7 +113,7 @@ async function run(
   const bytes = new Uint8Array(await file.arrayBuffer())
   signal.throwIfAborted()
 
-  const bitmap = await decodeHeif(libheif, bytes)
+  const bitmap = await decodeHeif(libheif, bytes, imageLabel(file))
   onProgress(DECODE_SHARE)
 
   // The decode above cannot be interrupted from outside — it is one synchronous

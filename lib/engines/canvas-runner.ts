@@ -22,6 +22,12 @@
 import type { FormatId } from '@/lib/router/types'
 
 import { encodeBmp } from './bmp'
+import {
+  assertDecodedPixelsFit,
+  BITMAP_DECODED_BYTES_PER_PIXEL,
+  imageLabel,
+  rasterSize,
+} from './raster-limits'
 import type { EngineInput, EngineRunner, ProgressCallback } from './types'
 
 /** The formats a browser canvas can both read and write. */
@@ -104,6 +110,7 @@ export function createCanvasRunner(
 
       const target = targetFormat(input.task.to)
       const source = singleFile(input)
+      await refuseOversizedSource(source)
       onProgress(0)
 
       let bitmap: ImageBitmap | null = null
@@ -112,6 +119,16 @@ export function createCanvasRunner(
         bitmap = await environment.decode(source)
         throwIfAborted(signal)
         onProgress(DECODED)
+
+        // Again, on what the decoder actually produced. The header sniff above
+        // reads PNG and JPEG; a browser also decodes WebP, BMP, AVIF and, on
+        // Apple hardware, HEIC, and the canvas about to be allocated is another
+        // `width × height × 4` on top of the bitmap that is already live.
+        assertDecodedPixelsFit({
+          label: imageLabel(source),
+          size: bitmap,
+          bytesPerPixel: BITMAP_DECODED_BYTES_PER_PIXEL,
+        })
 
         const canvas = environment.createCanvas(bitmap.width, bitmap.height)
         draw(canvas, bitmap, target)
@@ -181,6 +198,61 @@ function targetFormat(format: FormatId): CanvasFormat {
   if (format in MIME_TYPES) return format as CanvasFormat
 
   throw new Error(`The canvas engine cannot write ${format.toUpperCase()} files.`)
+}
+
+/**
+ * How much of a file has to be read to find its dimensions.
+ *
+ * A PNG's IHDR is the first chunk and lands inside 24 bytes. A JPEG's SOF0 sits
+ * behind whatever APP segments the camera wrote — Exif, a thumbnail, an ICC
+ * profile split across a dozen APP2 markers — and 64 kB clears all of those with
+ * room to spare. Reading a slice rather than the whole file matters: `source`
+ * can be a 200 MB image, and copying it here to look at its header would be a
+ * second copy of the very thing this guard exists to bound.
+ */
+const HEADER_SLICE_BYTES = 65_536
+
+/**
+ * Refuses a source whose pixels cannot fit, before it is handed to a decoder.
+ *
+ * The best moment to stop is the one before `createImageBitmap` allocates
+ * `width × height × 4`, because an out-of-memory inside a browser decoder is not
+ * a catchable error on the platforms this protects.
+ *
+ * This is the *early* half of the guard, and it is allowed to abstain: a WebP,
+ * a BMP or a source whose first bytes cannot be read is simply not refused here.
+ * The check on the decoded bitmap in `run` is the one that always happens, one
+ * allocation later. Abstaining is why the read below is fallible and the
+ * assertion after it is not.
+ */
+async function refuseOversizedSource(source: Blob): Promise<void> {
+  const head = await headerOf(source)
+  const size = head === null ? null : rasterSize(head)
+  if (size === null) return
+
+  assertDecodedPixelsFit({
+    label: imageLabel(source),
+    size,
+    bytesPerPixel: BITMAP_DECODED_BYTES_PER_PIXEL,
+  })
+}
+
+/**
+ * The first {@link HEADER_SLICE_BYTES} of `source`, or `null` if it will not
+ * give them up.
+ *
+ * `Blob.slice` is universal in a browser and in a worker, but `EngineInput` only
+ * promises a `Blob`, and a value that has crossed a structured clone in a host
+ * with partial `Blob` support arrives as data without methods. That is a source
+ * this cannot sniff, not a job it should refuse — so it answers `null` and lets
+ * the decoder be the one to complain.
+ */
+async function headerOf(source: Blob): Promise<Uint8Array | null> {
+  try {
+    return new Uint8Array(await source.slice(0, HEADER_SLICE_BYTES).arrayBuffer())
+  } catch {
+    return null
+  }
 }
 
 function singleFile(input: EngineInput): Blob {
