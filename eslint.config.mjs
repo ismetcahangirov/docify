@@ -16,6 +16,10 @@ const eslintConfig = [
       'build/**',
       'coverage/**',
       'next-env.d.ts',
+      // Third-party WASM engines copied out of node_modules by `pnpm vendor`.
+      // Emscripten output, served verbatim: linting it is meaningless and
+      // formatting it would change bytes the runtime depends on.
+      'public/vendor/**',
       // Agent infrastructure, not application code: the hook scripts under
       // `.claude/hooks/` and the notes under `.claude/memory/` are written and
       // rewritten by the hooks themselves, under their own conventions. They

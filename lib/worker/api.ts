@@ -122,6 +122,7 @@ export function createConversionApi(loadRunner: RunnerLoader = loadEngineRunner)
 async function loadEngineRunner(engine: EngineId): Promise<EngineRunner> {
   if (engine === 'canvas') return (await import('@/lib/engines/canvas')).createRunner()
   if (engine === 'heif') return (await import('@/lib/engines/heif')).createRunner()
+  if (engine === 'vips') return (await import('@/lib/engines/vips')).createRunner()
 
   throw new Error(
     `No runner is registered for engine "${engine}" yet. ` +

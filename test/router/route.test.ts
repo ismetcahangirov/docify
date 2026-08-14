@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { descriptor as realHeif } from '@/lib/engines/heif'
 import * as registry from '@/lib/engines/registry'
 import type { EngineDescriptor } from '@/lib/engines/types'
+import { descriptor as vipsEngine } from '@/lib/engines/vips'
 import { LARGE_DOWNLOAD_BYTES, route } from '@/lib/router/route'
 import type {
   Capabilities,
@@ -676,5 +677,72 @@ describe('route — the canvas engine as it actually ships (issue #30)', () => {
 
     expect(result.code).toBe('FILE_TOO_LARGE')
     expect(result.message).toContain('200 MB')
+  })
+})
+
+describe('route — the real wasm-vips descriptor', () => {
+  const gifToWebp: ConversionTask = { from: 'gif', to: 'webp', op: 'convert' }
+  const jpgToAvif: ConversionTask = { from: 'jpg', to: 'avif', op: 'convert' }
+
+  it('is chosen for TIFF, AVIF and GIF on an isolated desktop document', () => {
+    register(vipsEngine)
+
+    expect(chosen(route(tiffToPng, 4 * MB, desktop)).engine).toBe('vips')
+    expect(chosen(route(jpgToAvif, 4 * MB, desktop)).engine).toBe('vips')
+    expect(chosen(route(gifToWebp, 4 * MB, desktop)).engine).toBe('vips')
+  })
+
+  it('is not chosen when the document is not cross-origin isolated', () => {
+    // The vendored build is compiled with pthreads: its WebAssembly memory is
+    // `shared`, so without SharedArrayBuffer it cannot even be instantiated.
+    // COOP/COEP are sent on /convert/* and /tools/* only, and a soft navigation
+    // from a marketing page carries the un-isolated state across — so this is
+    // the state a real visitor can land in.
+    register(vipsEngine)
+
+    const result = refused(route(tiffToPng, 4 * MB, { ...desktop, crossOriginIsolated: false }))
+
+    expect(result.code).toBe('UNSUPPORTED_PAIR')
+    expect(result.suggestion.length).toBeGreaterThan(10)
+  })
+
+  it('is not chosen without WASM SIMD, or for a pair it has no loader for', () => {
+    register(vipsEngine)
+
+    expect(refused(route(tiffToPng, 4 * MB, { ...desktop, wasmSimd: false })).code).toBe(
+      'UNSUPPORTED_PAIR',
+    )
+    expect(refused(route({ from: 'bmp', to: 'png', op: 'convert' }, MB, desktop)).code).toBe(
+      'UNSUPPORTED_PAIR',
+    )
+  })
+
+  it('loses to a cheaper, higher-priority engine on the pairs both can do', () => {
+    // Canvas re-encodes JPEG for free; vips is the fallback, not the default.
+    register(canvas(), vipsEngine)
+
+    expect(chosen(route(jpgToPng, 2 * MB, desktop)).engine).toBe('canvas')
+    // …but it is still the only engine that can write AVIF.
+    expect(chosen(route(jpgToAvif, 2 * MB, desktop)).engine).toBe('vips')
+  })
+
+  it('downloads less than the 8 MB that would warrant a LARGE_DOWNLOAD warning', () => {
+    register(vipsEngine)
+
+    const result = chosen(route(tiffToPng, 2 * MB, desktop))
+
+    expect(result.loadCost).toBe(vipsEngine.loadCost)
+    expect(result.loadCost).toBeLessThan(LARGE_DOWNLOAD_BYTES)
+    expect(warningCodes(result)).not.toContain('LARGE_DOWNLOAD')
+  })
+
+  it('refuses a file past the 4× expansion budget rather than crashing the tab', () => {
+    register(vipsEngine)
+
+    // 1200 MB desktop budget / 4 = 300 MB of vips input.
+    const result = refused(route(tiffToPng, 900 * MB, desktop))
+
+    expect(result.code).toBe('FILE_TOO_LARGE')
+    expect(result.message).toContain('300 MB')
   })
 })

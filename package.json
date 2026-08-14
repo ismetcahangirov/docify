@@ -9,8 +9,9 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "pnpm vendor && next dev",
+    "build": "pnpm vendor && next build",
+    "vendor": "node scripts/vendor-wasm-vips/cli.mjs",
     "start": "next start",
     "lint": "eslint . && pnpm run lint:design",
     "lint:design": "node scripts/design-lint/cli.mjs",
@@ -33,7 +34,8 @@
     "radix-ui": "^1.6.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.6.0",
+    "wasm-vips": "0.0.18"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",
