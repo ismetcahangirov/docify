@@ -107,8 +107,12 @@ export function createRunner(): EngineRunner {
  * Resolves the module that serves `task.op`.
  *
  * Each `case` is owned by one issue and replaced by exactly one `await import()`
- * when that issue lands, which is what lets the five EPIC 5 tasks be built at
- * the same time without meeting in this file. The specifier stays a literal
+ * when that issue lands. This is the one file the parallel EPIC 5 branches do
+ * still share, and deliberately the smallest possible version of it: a one-line
+ * edit per issue, in a `case` no other issue touches, which a three-way merge
+ * resolves on its own. Anything larger — a shared helper, a restyled dispatch,
+ * a new parameter — has to be agreed rather than merged, so it does not belong
+ * here. The specifier stays a literal
  * string in each branch for the same reason it does in `lib/worker/api.ts`: a
  * computed import defeats the bundler's static analysis and collapses every
  * operation into one chunk.

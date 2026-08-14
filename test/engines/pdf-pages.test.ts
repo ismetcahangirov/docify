@@ -29,6 +29,14 @@ describe('parsePageSpans', () => {
     ])
   })
 
+  it('reads a range written with spaces around the hyphen', () => {
+    // The most natural way to type one, and splitting on whitespace first would
+    // turn it into three tokens and reject it.
+    for (const spec of ['1 - 3', '1- 3', '1 -3']) {
+      expect(parsePageSpans(spec, 10)).toEqual([{ from: 1, to: 3 }])
+    }
+  })
+
   it('keeps the order and the overlaps it was given', () => {
     // Split needs this: "3, 1-2, 3" is three output documents, in that order.
     expect(parsePageSpans('3, 1-2, 3', 5)).toEqual([
@@ -44,6 +52,10 @@ describe('parsePageSpans', () => {
 
   it('rejects page zero, because page numbers a user writes start at one', () => {
     expect(() => parsePageSpans('0-3', 9)).toThrow(/start at 1/)
+  })
+
+  it('reports a numeral too large to be a page as exactly that', () => {
+    expect(() => parsePageSpans('9'.repeat(30), 9)).toThrow(/too large/)
   })
 
   it('rejects a descending span instead of quietly emitting nothing', () => {

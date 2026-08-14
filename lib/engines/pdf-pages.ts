@@ -36,6 +36,10 @@ export function parsePageSpans(spec: string, pageCount: number): PageSpan[] {
   if (pageCount < 1) throw new Error('The document has no pages to select from.')
 
   const parts = spec
+    // Space around the hyphen first: "1 - 3" is a natural way to write a range,
+    // and splitting on whitespace before closing it up turns that into three
+    // tokens and a rejection of well-formed input.
+    .replace(/\s*-\s*/g, '-')
     .split(/[,\s]+/)
     .map((part) => part.trim())
     .filter((part) => part.length > 0)
@@ -95,7 +99,14 @@ function parseSpan(part: string, spec: string, pageCount: number): PageSpan {
 function page(value: string, part: string, spec: string, pageCount: number): number {
   const parsed = Number(value)
 
-  if (!Number.isInteger(parsed) || parsed < 1) {
+  // Separated from the range check below so a 30-digit numeral is not reported
+  // as "page numbers start at 1", which is true and useless. `isSafeInteger`
+  // rather than `isInteger`: past 2^53 the parse is already lossy.
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`"${value}" is too large to be a page number.`)
+  }
+
+  if (parsed < 1) {
     throw new Error(`Page numbers start at 1, but "${part}" asks for page ${value}.`)
   }
 
