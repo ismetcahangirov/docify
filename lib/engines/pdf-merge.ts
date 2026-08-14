@@ -16,14 +16,16 @@
  *
  * ## Memory
  *
- * `EXPANSION.pdflib` in `lib/router/budget.ts` budgets three times the input,
- * and a hundred documents is where that gets tested. What this module can
- * guarantee is the part it controls: sources are read one at a time rather than
- * buffered up front, and each parsed document is unreachable again as soon as
- * its pages have been copied, so the hundred never coexist. What is still live
- * at the peak — the merged object graph, the serialised output, and the Blob's
- * copy of it — has not been measured against the 3× factor on a real corpus.
- * The file count below is the only ceiling merge enforces today.
+ * `MEMORY.pdflib` in `lib/router/budget.ts` budgets this engine as
+ * `4 × totalBytes + 32 MB`, and `holds: 'all-at-once'` is what makes the total
+ * rather than the largest file the number that counts — merge is the operation
+ * that motivated the distinction. What this module can guarantee is the part it
+ * controls: sources are read one at a time rather than buffered up front, and
+ * each parsed document is unreachable again as soon as its pages have been
+ * copied, so the hundred never coexist. What is still live at the peak — the
+ * merged object graph, the serialised output, and the Blob's copy of it —
+ * measured 2.91× the inputs; `docs/router/memory-budget-measurement.md` has the
+ * corpus and the runs.
  *
  * ## What does not survive the copy
  *
@@ -43,12 +45,13 @@ import type { EngineInput, ProgressCallback } from './types'
 /**
  * The most documents one merge accepts.
  *
- * The number issue #38 promises, and — since `route()` budgets one scalar input
- * size and has no multi-file caller yet — the only ceiling merge has. It counts
- * files rather than bytes, so it guards the runaway case (someone who selected
- * a directory) rather than memory: a hundred 50 MB scans will still exhaust a
- * phone. A job naming 300 files is a person who wants batches, and telling them
- * so beats an out-of-memory tab kill 200 files in.
+ * The number issue #38 promises. It counts files rather than bytes, and since
+ * #155 gave `route()` the whole list it is no longer the only ceiling: the
+ * memory budget now refuses a hundred 50 MB scans on its own. What this one
+ * still guards is the case the byte budget cannot see as a mistake — a job that
+ * is small enough to fit and long enough to be an accident. A job naming 300
+ * files is a person who wants batches, and telling them so beats grinding
+ * through all 300.
  */
 export const MAX_MERGE_FILES = 100
 
