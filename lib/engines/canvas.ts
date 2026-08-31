@@ -57,20 +57,35 @@ import type { FormatId } from '@/lib/router/types'
 import type { EngineDescriptor, EngineRunner } from './types'
 
 /**
- * The formats a browser can both decode *and* encode without help.
+ * The formats this engine can write.
  *
- * Reading is the wider side: `createImageBitmap` also takes GIF, SVG, AVIF and,
- * on Apple hardware, HEIC. Writing is what closes the set — `convertToBlob`
- * writes PNG, JPEG and WebP, and `./bmp` adds the fourth by hand. A format that
- * can only be read is not usable as a *pair* here, so it waits for an engine
- * that can also write it.
+ * `convertToBlob` writes PNG, JPEG and WebP; `./bmp` adds the fourth by hand.
+ * Reading is the wider side — see {@link CANVAS_READABLE} — so this is the set
+ * that closes a pair.
  */
-export const CANVAS_FORMATS: ReadonlySet<FormatId> = new Set<FormatId>([
+export const CANVAS_WRITABLE: ReadonlySet<FormatId> = new Set<FormatId>([
   'jpg',
   'png',
   'webp',
   'bmp',
 ])
+
+/**
+ * The formats this engine can read.
+ *
+ * Everything it writes, plus SVG. `createImageBitmap` also decodes GIF, AVIF
+ * and, on Apple hardware, HEIC, and those are deliberately absent: a browser
+ * decodes them but nothing here renders them any better than `vips` does, and
+ * claiming a pair means claiming responsibility for its quality.
+ *
+ * SVG is different in kind, which is why it is the one read-only format listed.
+ * It is not a picture with a size but a drawing with a *ratio*, so rasterising
+ * it is a decision about resolution rather than a re-encode — and the browser's
+ * SVG renderer is the only one available without a 3 MB side module libvips does
+ * not ship in this build (`VIPS_READABLE` in `./vips-formats`). See
+ * `./canvas-svg` for what that decision looks like.
+ */
+export const CANVAS_READABLE: ReadonlySet<FormatId> = new Set<FormatId>([...CANVAS_WRITABLE, 'svg'])
 
 export const descriptor: EngineDescriptor = {
   id: 'canvas',
@@ -78,7 +93,7 @@ export const descriptor: EngineDescriptor = {
   loadCost: 0,
   priority: 10,
   supports: (task) =>
-    task.op === 'convert' && CANVAS_FORMATS.has(task.from) && CANVAS_FORMATS.has(task.to),
+    task.op === 'convert' && CANVAS_READABLE.has(task.from) && CANVAS_WRITABLE.has(task.to),
 }
 
 /**

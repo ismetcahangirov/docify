@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { CANVAS_FORMATS, descriptor } from '@/lib/engines/canvas'
+import { CANVAS_READABLE, CANVAS_WRITABLE, descriptor } from '@/lib/engines/canvas'
 import { ENGINES, getEngine } from '@/lib/engines/registry'
 import type { Capabilities, ConversionTask, FormatId, Operation } from '@/lib/router/types'
 
@@ -52,14 +52,25 @@ describe('the canvas descriptor', () => {
   })
 
   it('covers the four formats the browser can both read and write', () => {
-    expect([...CANVAS_FORMATS].sort()).toEqual(['bmp', 'jpg', 'png', 'webp'])
+    expect([...CANVAS_WRITABLE].sort()).toEqual(['bmp', 'jpg', 'png', 'webp'])
+  })
+
+  it('reads those four and SVG, which it can render but never write', () => {
+    expect([...CANVAS_READABLE].sort()).toEqual(['bmp', 'jpg', 'png', 'svg', 'webp'])
   })
 
   it('supports every pair among those four, in both directions', () => {
-    for (const from of CANVAS_FORMATS) {
-      for (const to of CANVAS_FORMATS) {
+    for (const from of CANVAS_WRITABLE) {
+      for (const to of CANVAS_WRITABLE) {
         expect(descriptor.supports(task(from, to), bareDevice)).toBe(true)
       }
+    }
+  })
+
+  it('rasterises SVG into every format it writes, and never back into one', () => {
+    for (const to of CANVAS_WRITABLE) {
+      expect(descriptor.supports(task('svg', to), bareDevice)).toBe(true)
+      expect(descriptor.supports(task(to, 'svg'), bareDevice)).toBe(false)
     }
   })
 

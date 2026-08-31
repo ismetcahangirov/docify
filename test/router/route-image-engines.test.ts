@@ -137,6 +137,23 @@ describe('route — the canvas engine as it actually ships (issue #30)', () => {
     }
   })
 
+  it('rasterises SVG, which is the one format it reads and cannot write', async () => {
+    register(await realCanvas(), vips(), ffmpeg())
+
+    // vips is registered and loses on purpose: the vendored build has no SVG
+    // loader at all (`VIPS_READABLE`), so the browser's own renderer is not
+    // merely cheaper here, it is the only one there is.
+    expect(
+      chosen(route({ from: 'svg', to: 'png', op: 'convert' }, 64 * 1024, desktop)).engine,
+    ).toBe('canvas')
+    expect(
+      chosen(route({ from: 'svg', to: 'jpg', op: 'convert' }, 64 * 1024, desktop)).engine,
+    ).toBe('canvas')
+    expect(refused(route({ from: 'png', to: 'svg', op: 'convert' }, 64 * 1024, desktop)).code).toBe(
+      'UNSUPPORTED_PAIR',
+    )
+  })
+
   it('warns about nothing at all for png → bmp, the flagship zero-download job', async () => {
     register(await realCanvas())
 

@@ -175,6 +175,102 @@ describe('the canvas runner — a straightforward conversion', () => {
     }
   })
 
+  it('rasterises an SVG at the resolution the job asked for', async () => {
+    const { environment, decoded } = harness()
+
+    await createCanvasRunner(environment).run(
+      {
+        task: { from: 'svg', to: 'png', op: 'convert' },
+        files: [new Blob(['<svg width="100" height="50" viewBox="0 0 100 50"/>'])],
+        image: { width: 800 },
+      },
+      new AbortController().signal,
+      noProgress,
+    )
+
+    // The decoder is handed a rewritten drawing, not the original: there is no
+    // width argument on `createImageBitmap`, so the only way to ask for a
+    // resolution is to put it in the file.
+    const sent = await decoded[0].text()
+    expect(sent).toContain('width="800"')
+    expect(sent).toContain('height="400"')
+    expect(decoded[0].type).toBe('image/svg+xml')
+  })
+
+  it('renders an SVG at its own declared size when the job names none', async () => {
+    const { environment, decoded } = harness()
+
+    await createCanvasRunner(environment).run(
+      {
+        task: { from: 'svg', to: 'jpg', op: 'convert' },
+        files: [new Blob(['<svg width="72pt" height="36pt"/>'])],
+      },
+      new AbortController().signal,
+      noProgress,
+    )
+
+    // 72pt is 96 pixels. Matching the browser's own sizing rules is what makes
+    // the file look like the preview the user dragged in.
+    const sent = await decoded[0].text()
+    expect(sent).toContain('width="96"')
+    expect(sent).toContain('height="48"')
+  })
+
+  it('enlarges a drawing without being asked, because scaling a vector invents nothing', async () => {
+    const { environment, decoded } = harness()
+
+    await createCanvasRunner(environment).run(
+      {
+        task: { from: 'svg', to: 'png', op: 'convert' },
+        files: [new Blob(['<svg width="24" height="24"/>'])],
+        image: { width: 1024 },
+      },
+      new AbortController().signal,
+      noProgress,
+    )
+
+    // `enlarge` defaults to false for a photograph, where upscaling invents
+    // detail. A 1024 px render of a 24 px icon is the commonest thing anyone
+    // wants from an SVG converter.
+    expect(await decoded[0].text()).toContain('width="1024"')
+  })
+
+  it('refuses a requested resolution no browser canvas could hold', async () => {
+    const { environment, decoded } = harness()
+
+    await expect(
+      createCanvasRunner(environment).run(
+        {
+          task: { from: 'svg', to: 'png', op: 'convert' },
+          files: [new Blob(['<svg width="24" height="24"/>'])],
+          image: { width: 60_000, height: 60_000 },
+        },
+        new AbortController().signal,
+        noProgress,
+      ),
+    ).rejects.toThrow(/larger than a browser canvas can hold/)
+
+    // Refused before the decoder was handed anything: past the canvas limit the
+    // surface comes back blank rather than throwing, so the user would otherwise
+    // have downloaded an empty image called a success.
+    expect(decoded).toEqual([])
+  })
+
+  it('says so plainly when a .svg turns out not to be a drawing', async () => {
+    const { environment } = harness()
+
+    await expect(
+      createCanvasRunner(environment).run(
+        {
+          task: { from: 'svg', to: 'png', op: 'convert' },
+          files: [new Blob(['<html><body>404 Not Found</body></html>'])],
+        },
+        new AbortController().signal,
+        noProgress,
+      ),
+    ).rejects.toThrow(/not an SVG/)
+  })
+
   it('sizes the canvas from the decoded bitmap, not from the task', async () => {
     const { environment, created } = harness({ width: 640, height: 480 })
 

@@ -12,6 +12,11 @@
  * a canvas, ask the canvas for the target format. Only the third step differs by
  * format, and only BMP takes the hand-written path — see `./bmp`.
  *
+ * SVG joins at the first step rather than forking the pipeline. A drawing has no
+ * intrinsic pixel size, so the resolution has to be chosen and written into the
+ * file before a decoder will honour it; `./canvas-svg` does that and hands back
+ * an ordinary `Blob` this runner decodes like any other.
+ *
  * Both browser APIs arrive as an injected {@link CanvasEnvironment} rather than
  * being read off `globalThis` at the call site. That is what lets the whole
  * choreography — the draw order, the bitmap teardown, every cancellation point —
@@ -23,6 +28,7 @@ import { throwIfAborted } from '@/lib/abort'
 import type { FormatId } from '@/lib/router/types'
 
 import { encodeBmp } from './bmp'
+import { prepareSvg } from './canvas-svg'
 import { type ImageOptions, resolveQuality } from './image-options'
 import { assertBitmapFits, imageLabel } from './raster-limits'
 import { rasterSize } from './raster-size'
@@ -112,16 +118,16 @@ export function createCanvasRunner(
 
       const target = targetFormat(input.task.to)
       const source = singleFile(input)
-      await refuseOversizedSource(source)
-      // The header read above is I/O, short but not free, and it sits between
-      // the caller pressing cancel and anything else noticing.
+      const decodable = await prepareSource(input, source)
+      // The read above is I/O, short but not free, and it sits between the
+      // caller pressing cancel and anything else noticing.
       throwIfAborted(signal)
       onProgress(0)
 
       let bitmap: ImageBitmap | null = null
 
       try {
-        bitmap = await environment.decode(source)
+        bitmap = await environment.decode(decodable)
         throwIfAborted(signal)
         onProgress(DECODED)
 
@@ -209,6 +215,29 @@ function targetFormat(format: FormatId): CanvasFormat {
   if (format in MIME_TYPES) return format as CanvasFormat
 
   throw new Error(`The canvas engine cannot write ${format.toUpperCase()} files.`)
+}
+
+/**
+ * The `Blob` the decoder should actually be handed, and the refusal that goes
+ * with it.
+ *
+ * Two shapes of source, one decode. A raster is passed through untouched after
+ * its declared dimensions are checked; a drawing is rewritten to the resolution
+ * the job asked for, and *that* size is what gets checked — a 24 px icon
+ * rendered at 40 000 px is exactly as impossible as a 40 000 px photograph, and
+ * the source file gives no hint of it.
+ */
+async function prepareSource(input: EngineInput, source: Blob): Promise<Blob> {
+  if (input.task.from !== 'svg') {
+    await refuseOversizedSource(source)
+
+    return source
+  }
+
+  const prepared = await prepareSvg(source, input.image)
+  assertBitmapFits(imageLabel(source), prepared.size)
+
+  return prepared.source
 }
 
 /**
