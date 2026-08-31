@@ -10,12 +10,14 @@
 // adding fixtures at once would collide over the same directory.
 
 import { degrees, PDFDocument, PDFName, StandardFonts } from 'pdf-lib'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { organizePages } from '@/lib/engines/pdf-organize'
 import type { PdfOrganizeOptions } from '@/lib/engines/pdf-options'
 import type { EngineInput } from '@/lib/engines/types'
 import type { Operation } from '@/lib/router/types'
+
+import { rewordEncryptedRefusal } from '../support/pdf-lib'
 
 interface PageSpec {
   /** Doubles as the page's identity: source page `n` is 100 + n points tall. */
@@ -76,6 +78,10 @@ const input = (
 
 const nothing = () => {}
 const live = () => new AbortController().signal
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('organising PDF pages', () => {
   it('keeps every page as it is when no settings are given', async () => {
@@ -296,6 +302,14 @@ describe('what organising refuses', () => {
         '%%EOF',
       ].join('\n'),
     ])
+
+    await expect(organizePages(input([locked]), live(), nothing)).rejects.toThrow(
+      /password-protected/i,
+    )
+
+    // #176: and still, with the word taken out of pdf-lib's refusal — the
+    // trailer is what answers, not the sentence.
+    rewordEncryptedRefusal()
 
     await expect(organizePages(input([locked]), live(), nothing)).rejects.toThrow(
       /password-protected/i,

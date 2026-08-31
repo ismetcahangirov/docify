@@ -12,12 +12,14 @@
 
 import { unzipSync } from 'fflate'
 import { PDFDocument } from 'pdf-lib'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { splitPdf } from '@/lib/engines/pdf-split'
 import type { PdfSplitOptions } from '@/lib/engines/pdf-options'
 import type { EngineInput } from '@/lib/engines/types'
 import type { ConversionTask } from '@/lib/router/types'
+
+import { rewordEncryptedRefusal } from '../support/pdf-lib'
 
 const task: ConversionTask = { from: 'pdf', to: 'pdf', op: 'split' }
 
@@ -58,6 +60,10 @@ async function widthsOf(bytes: Uint8Array | Blob): Promise<number[]> {
 
   return document.getPages().map((page) => Math.round(page.getWidth()))
 }
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('splitting into individual pages', () => {
   it('emits one document per page, in page order', async () => {
@@ -312,8 +318,18 @@ describe('errors that have to explain themselves', () => {
     // cheapest faithful fixture is a real document that declares one.
     document.context.trailerInfo.Encrypt = document.context.obj({})
 
+    const locked = await blobOf(document)
+
     await expect(
-      splitPdf({ task, files: [await blobOf(document)] }, new AbortController().signal, nothing),
+      splitPdf({ task, files: [locked] }, new AbortController().signal, nothing),
+    ).rejects.toThrow(/password/i)
+
+    // #176: and still with the word taken out of pdf-lib's refusal. Split,
+    // merge and organize share `openPdf`, so all three fail or hold together.
+    rewordEncryptedRefusal()
+
+    await expect(
+      splitPdf({ task, files: [locked] }, new AbortController().signal, nothing),
     ).rejects.toThrow(/password/i)
   })
 })
