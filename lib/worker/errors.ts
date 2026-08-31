@@ -13,14 +13,19 @@
  *
  * So the worker converts every abort into this before it replies. It is a plain
  * `Error` subclass, which every runtime serialises the same way, and it keeps
- * `name === 'AbortError'` so the check on the far side stays the idiomatic one.
+ * the abort name so the check on the far side stays the idiomatic one — the
+ * one `isAbort` in `lib/abort.ts` performs.
  * The class itself does not survive the crossing — Comlink rebuilds a generic
  * `Error` carrying the message, name and stack — so callers match on `name`,
- * never with `instanceof`.
+ * never with `instanceof`. `lib/abort.ts` owns that rule and both constants
+ * below; this class exists only to keep the name true across the boundary.
  */
+
+import { ABORT_ERROR_NAME, CANCELLED_MESSAGE } from '@/lib/abort'
+
 export class ConversionCancelledError extends Error {
-  constructor(message = 'The conversion was cancelled.', options?: ErrorOptions) {
+  constructor(message = CANCELLED_MESSAGE, options?: ErrorOptions) {
     super(message, options)
-    this.name = 'AbortError'
+    this.name = ABORT_ERROR_NAME
   }
 }

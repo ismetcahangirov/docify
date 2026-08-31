@@ -33,6 +33,7 @@
  * canvas-pixel ceilings in `./pdf-render-plan` are what keep that term true.
  */
 
+import { throwIfAborted } from '@/lib/abort'
 import type { Capabilities, ConversionTask, FormatId } from '@/lib/router/types'
 
 import type { EngineDescriptor, EngineInput, EngineRunner, ProgressCallback } from './types'
@@ -97,8 +98,4 @@ export function createRunner(): EngineRunner {
       return renderPdfPages(input, signal, onProgress)
     },
   }
-}
-
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) throw new DOMException('The conversion was cancelled.', 'AbortError')
 }

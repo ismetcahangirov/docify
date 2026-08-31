@@ -43,6 +43,7 @@
  * at run time — no bundler ever sees the binary (CLAUDE.md §2.3).
  */
 
+import { throwIfAborted } from '@/lib/abort'
 import type { Capabilities, ConversionTask } from '@/lib/router/types'
 
 import { type ImageOptions, wantsResize } from './image-options'
@@ -229,10 +230,6 @@ function onlyFile(input: EngineInput): Blob {
   }
 
   return input.files[0]
-}
-
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) throw new DOMException('The conversion was cancelled.', 'AbortError')
 }
 
 /** libvips can report slightly over 100, and reports nothing at all on failure. */

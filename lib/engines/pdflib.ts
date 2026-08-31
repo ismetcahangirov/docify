@@ -33,6 +33,7 @@
  * here may end up in the initial bundle (CLAUDE.md §2.3).
  */
 
+import { throwIfAborted } from '@/lib/abort'
 import type { ConversionTask, FormatId, Operation } from '@/lib/router/types'
 
 import type { EngineDescriptor, EngineInput, EngineRunner, ProgressCallback } from './types'
@@ -140,8 +141,4 @@ async function loadOperation(task: ConversionTask): Promise<PdfOperation> {
         `The pdf-lib engine was handed the "${task.op}" operation, which it never claims.`,
       )
   }
-}
-
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) throw new DOMException('The conversion was cancelled.', 'AbortError')
 }

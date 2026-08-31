@@ -25,6 +25,7 @@
  * and neither is what the logic here is about.
  */
 
+import { throwIfAborted } from '@/lib/abort'
 import type { EngineInput, ProgressCallback } from './types'
 import {
   canvasSize,
@@ -236,8 +237,4 @@ function onlyFile(input: EngineInput): Blob {
   }
 
   return input.files[0]
-}
-
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) throw new DOMException('The conversion was cancelled.', 'AbortError')
 }

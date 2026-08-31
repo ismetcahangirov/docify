@@ -19,6 +19,7 @@
  * to the router.
  */
 
+import { throwIfAborted } from '@/lib/abort'
 import type { FormatId } from '@/lib/router/types'
 
 import { encodeBmp } from './bmp'
@@ -255,8 +256,4 @@ function singleFile(input: EngineInput): Blob {
   }
 
   return source
-}
-
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) throw new DOMException('The conversion was cancelled.', 'AbortError')
 }

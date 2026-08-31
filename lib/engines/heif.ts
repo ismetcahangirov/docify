@@ -20,6 +20,7 @@
  * fit is the largest of them rather than the whole camera roll.
  */
 
+import { throwIfAborted } from '@/lib/abort'
 import type { BitmapEncoder } from './bitmap'
 import { encodeBitmap } from './bitmap'
 import type { HeifLoader, HeifModule } from './heif-decode'
@@ -107,11 +108,11 @@ async function run(
   signal: AbortSignal,
   onProgress: ProgressCallback,
 ): Promise<Blob> {
-  signal.throwIfAborted()
+  throwIfAborted(signal)
 
   const file = onlyFile(input)
   const bytes = new Uint8Array(await file.arrayBuffer())
-  signal.throwIfAborted()
+  throwIfAborted(signal)
 
   const bitmap = await decodeHeif(libheif, bytes, imageLabel(file))
   onProgress(DECODE_SHARE)
@@ -119,7 +120,7 @@ async function run(
   // The decode above cannot be interrupted from outside — it is one synchronous
   // call into WASM — so this is the first moment a cancel can be honoured, and
   // encoding anyway would hand back a file the user already said no to.
-  signal.throwIfAborted()
+  throwIfAborted(signal)
 
   const blob = await encode(bitmap, input.task.to)
   onProgress(1)

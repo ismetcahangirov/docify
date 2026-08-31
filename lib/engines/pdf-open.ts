@@ -37,6 +37,8 @@
 
 import { EncryptedPDFError, type LoadOptions, PDFDocument } from 'pdf-lib'
 
+import { isAbort } from '@/lib/abort'
+
 export interface PdfOpenOptions<T> {
   /** Handed straight to `PDFDocument.load`. */
   load?: LoadOptions
@@ -101,25 +103,4 @@ export async function openPdf<T>(bytes: Uint8Array, options: PdfOpenOptions<T>):
 
     throw new Error(options.damaged(detail))
   }
-}
-
-/**
- * Whether a failure is a cancellation rather than something about the document.
- *
- * The name is the check and the type deliberately is not, which is the house
- * rule `lib/worker/errors.ts` states outright: match on `name`, never with
- * `instanceof`. Both halves of that matter here. `instanceof DOMException` is
- * runtime-dependent — the engines all throw one, but whether it even counts as
- * an `Error` varies, and jsdom is the runtime where it does not. And an abort
- * arrives as a plain `Error` named `AbortError` wherever it has crossed the
- * worker boundary, because Comlink cannot carry a `DOMException` back.
- *
- * Narrow on purpose: pdf.js names its cancellation `AbortException` and is not
- * matched, so a future `read` that renders rather than parses would need this
- * revisited rather than silently exempted.
- */
-function isAbort(reason: unknown): boolean {
-  return typeof reason === 'object' && reason !== null && 'name' in reason
-    ? reason.name === 'AbortError'
-    : false
 }

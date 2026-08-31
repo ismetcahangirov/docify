@@ -33,6 +33,7 @@
  * the document-level structures that a deletion would have left dangling anyway.
  */
 
+import { throwIfAborted } from '@/lib/abort'
 import { degrees, PDFDocument, type PDFPage } from 'pdf-lib'
 
 import { openPdf } from './pdf-open'
@@ -235,8 +236,4 @@ function onlyFile(input: EngineInput): Blob {
   }
 
   return input.files[0]
-}
-
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) throw new DOMException('The conversion was cancelled.', 'AbortError')
 }
