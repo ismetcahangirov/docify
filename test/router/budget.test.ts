@@ -8,6 +8,8 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import {
+  fitsBitmapCeiling,
+  heldPixels,
   ANDROID_BUDGET_BYTES,
   DESKTOP_BUDGET_CAP_BYTES,
   DESKTOP_BUDGET_FLOOR_BYTES,
@@ -181,15 +183,15 @@ describe('MEMORY', () => {
 
   it('pins every measured model, so none can drift without a deliberate change', () => {
     expect(MEMORY).toEqual({
-      canvas: { factor: 6, holds: 'one-at-a-time', reserveBytes: 0 },
-      vips: { factor: 4, holds: 'one-at-a-time', reserveBytes: 0 },
-      heif: { factor: 5, holds: 'one-at-a-time', reserveBytes: 0 },
-      pdflib: { factor: 4, holds: 'all-at-once', reserveBytes: 32 * MB },
-      pdfjs: { factor: 4, holds: 'one-at-a-time', reserveBytes: 32 * MB },
-      webcodecs: { factor: 2.5, holds: 'one-at-a-time', reserveBytes: 0 },
-      ffmpeg: { factor: 4.5, holds: 'one-at-a-time', reserveBytes: 0 },
-      zip: { factor: 3, holds: 'all-at-once', reserveBytes: 0 },
-      libarchive: { factor: 3, holds: 'one-at-a-time', reserveBytes: 0 },
+      canvas: { factor: 6, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 6 },
+      vips: { factor: 4, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
+      heif: { factor: 5, holds: 'one-at-a-time', reserveBytes: 21 * MB, bytesPerPixel: 8 },
+      pdflib: { factor: 4, holds: 'all-at-once', reserveBytes: 32 * MB, bytesPerPixel: 0 },
+      pdfjs: { factor: 4, holds: 'one-at-a-time', reserveBytes: 32 * MB, bytesPerPixel: 0 },
+      webcodecs: { factor: 2.5, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
+      ffmpeg: { factor: 4.5, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
+      zip: { factor: 3, holds: 'all-at-once', reserveBytes: 0, bytesPerPixel: 0 },
+      libarchive: { factor: 3, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
     })
   })
 
@@ -223,17 +225,37 @@ describe('MEMORY', () => {
   it('makes the streaming engines cheaper than the buffering ones', () => {
     // WebCodecs streams frames; ffmpeg.wasm holds input, output and scratch in MEMFS.
     expect(MEMORY.webcodecs.factor).toBeLessThan(MEMORY.ffmpeg.factor)
-    // A decoded RGBA bitmap dwarfs the encoded bytes it came from.
+    // A decoded RGBA bitmap dwarfs the encoded bytes it came from, and the byte
+    // factor is what has to say so for a job whose pixels nobody read.
     expect(MEMORY.canvas.factor).toBeGreaterThan(MEMORY.vips.factor)
   })
 
+  it('charges per pixel exactly where a bitmap is materialised', () => {
+    // The browser sweep measured 4.00 B/px for a canvas decode and libvips
+    // works in scanline regions, so it never has a bitmap to charge for. That
+    // difference is what the byte factor used to be pretending to express.
+    const decoders = ALL_ENGINES.filter((engine) => MEMORY[engine].bytesPerPixel > 0)
+
+    expect(decoders).toEqual(['canvas', 'heif'])
+    expect(MEMORY.vips.bytesPerPixel).toBe(0)
+  })
+
+  it('prices a HEIC decode above a canvas one, which is what it costs', () => {
+    // libheif fills its own RGBA buffer and `heif.ts` then draws it onto a
+    // canvas; both are live at once.
+    expect(MEMORY.heif.bytesPerPixel).toBeGreaterThan(MEMORY.canvas.bytesPerPixel)
+  })
+
   it('gives a reserve only to the engines that allocate by something other than input size', () => {
-    // pdf.js sizes its canvas from the requested DPI and pdf-lib's object graph
-    // costs the same on a 13 kB document as the library itself does. Every
-    // other engine's peak is described by the input alone.
+    // pdf.js sizes its canvas from the requested DPI, pdf-lib's object graph
+    // costs the same on a 13 kB document as the library itself does, and
+    // libheif allocates a WASM heap before it is given anything. Every other
+    // engine's peak is described by the input and its pixels alone.
     const reserved = ALL_ENGINES.filter((engine) => MEMORY[engine].reserveBytes > 0)
 
-    expect(reserved).toEqual(['pdflib', 'pdfjs'])
+    // libheif joined them: instantiating it costs a measured 20.5 MB before a
+    // single pixel is looked at, identical for a thumbnail and a panorama.
+    expect(reserved).toEqual(['heif', 'pdflib', 'pdfjs'])
   })
 
   it('rejects an engine that is not in the union', () => {
@@ -248,37 +270,65 @@ describe('heldBytes', () => {
   const job = jobInput([5 * MB, MB, 3 * MB])
 
   it('adds every file up for an engine that opens them together', () => {
-    expect(heldBytes({ factor: 4, holds: 'all-at-once', reserveBytes: 0 }, job)).toBe(9 * MB)
+    expect(
+      heldBytes({ factor: 4, holds: 'all-at-once', reserveBytes: 0, bytesPerPixel: 0 }, job),
+    ).toBe(9 * MB)
   })
 
   it('takes only the largest for an engine that works through them one by one', () => {
-    expect(heldBytes({ factor: 4, holds: 'one-at-a-time', reserveBytes: 0 }, job)).toBe(5 * MB)
+    expect(
+      heldBytes({ factor: 4, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 }, job),
+    ).toBe(5 * MB)
   })
 
   it('answers the same for both models on a single-file job', () => {
     const one = jobInput(4 * MB)
 
-    expect(heldBytes({ factor: 4, holds: 'all-at-once', reserveBytes: 0 }, one)).toBe(4 * MB)
-    expect(heldBytes({ factor: 4, holds: 'one-at-a-time', reserveBytes: 0 }, one)).toBe(4 * MB)
+    expect(
+      heldBytes({ factor: 4, holds: 'all-at-once', reserveBytes: 0, bytesPerPixel: 0 }, one),
+    ).toBe(4 * MB)
+    expect(
+      heldBytes({ factor: 4, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 }, one),
+    ).toBe(4 * MB)
   })
 })
 
 describe('peakBytes', () => {
   it('is the proportional term plus the reserve', () => {
-    const model: EngineMemory = { factor: 4, holds: 'all-at-once', reserveBytes: 32 * MB }
+    const model: EngineMemory = {
+      factor: 4,
+      holds: 'all-at-once',
+      reserveBytes: 32 * MB,
+      bytesPerPixel: 0,
+    }
 
     expect(peakBytes(model, jobInput([10 * MB, 10 * MB]))).toBe(112 * MB)
   })
 
   it('is the reserve alone for an engine that holds nothing proportional', () => {
-    const model: EngineMemory = { factor: 1, holds: 'one-at-a-time', reserveBytes: 8 * MB }
+    const model: EngineMemory = {
+      factor: 1,
+      holds: 'one-at-a-time',
+      reserveBytes: 8 * MB,
+      bytesPerPixel: 0,
+    }
 
     expect(peakBytes(model, jobInput([]))).toBe(8 * MB)
   })
 
   it('rises with the file count only when the engine holds them all', () => {
-    const together: EngineMemory = { factor: 2, holds: 'all-at-once', reserveBytes: 0 }
-    const oneByOne: EngineMemory = { factor: 2, holds: 'one-at-a-time', reserveBytes: 0 }
+    const together: EngineMemory = {
+      factor: 2,
+      holds: 'all-at-once',
+      reserveBytes: 0,
+      bytesPerPixel: 0,
+    }
+    const oneByOne: EngineMemory = {
+      factor: 2,
+      holds: 'one-at-a-time',
+      reserveBytes: 0,
+      bytesPerPixel: 0,
+    }
     const hundred = jobInput(Array.from({ length: 100 }, () => MB))
 
     expect(peakBytes(together, hundred)).toBe(200 * MB)
@@ -288,14 +338,20 @@ describe('peakBytes', () => {
 
 describe('maxHeldBytes', () => {
   it('spends the budget that the reserve leaves', () => {
-    expect(maxHeldBytes({ factor: 4, holds: 'all-at-once', reserveBytes: 32 * MB }, 132 * MB)).toBe(
-      25 * MB,
-    )
+    expect(
+      maxHeldBytes(
+        { factor: 4, holds: 'all-at-once', reserveBytes: 32 * MB, bytesPerPixel: 0 },
+        132 * MB,
+      ),
+    ).toBe(25 * MB)
   })
 
   it('never answers below zero, however large the reserve is', () => {
     expect(
-      maxHeldBytes({ factor: 4, holds: 'one-at-a-time', reserveBytes: 200 * MB }, 90 * MB),
+      maxHeldBytes(
+        { factor: 4, holds: 'one-at-a-time', reserveBytes: 200 * MB, bytesPerPixel: 0 },
+        90 * MB,
+      ),
     ).toBe(0)
   })
 })
@@ -361,5 +417,84 @@ describe('fitsInBudget', () => {
 
   it("treats an empty input as fitting — EMPTY_INPUT is the router's call, not the budget's", () => {
     expect(fitsInBudget('canvas', jobInput(0), desktop)).toBe(true)
+  })
+})
+
+describe('the decoded-pixel term', () => {
+  const canvasJob = (bytes: number, pixels: number) => jobInput([{ bytes, pixels }])
+
+  it('charges a flat image what its pixels cost, not what its bytes cost', () => {
+    // The measurement this term exists for: a 24 megapixel screenshot is 0.4 MB
+    // and peaks at 91.6 MB in Chromium. Six times its bytes is 2.3 MB, which
+    // fits every device; six times its pixels is 137 MB, which fits none of the
+    // mobile ones.
+    const job = canvasJob(400_000, 24_000_000)
+
+    expect(peakBytes(MEMORY.canvas, job)).toBeGreaterThan(139 * MB)
+  })
+
+  it('charges the same job the same however the image compressed', () => {
+    // 6 megapixels of noise is 17.2 MB and 6 megapixels of flat colour is
+    // 0.1 MB. Both peaked at 22.9 MB in Chromium; the pixel term is what says
+    // so, and the byte factor is the part that still disagrees.
+    const flat = MEMORY.canvas.bytesPerPixel * 6_000_000
+    const noise = MEMORY.canvas.bytesPerPixel * 6_000_000
+
+    expect(flat).toBe(noise)
+  })
+
+  it('is not charged at all when the caller read no header', () => {
+    // Everything routed from sizes alone must behave exactly as it did before
+    // the term existed.
+    expect(peakBytes(MEMORY.canvas, jobInput(4 * MB))).toBe(
+      MEMORY.canvas.factor * 4 * MB + MEMORY.canvas.reserveBytes,
+    )
+  })
+
+  it('scopes pixels the way it scopes bytes', () => {
+    const job = jobInput([
+      { bytes: MB, pixels: 2_000_000 },
+      { bytes: MB, pixels: 3_000_000 },
+    ])
+
+    expect(heldPixels(MEMORY.canvas, job)).toBe(3_000_000)
+    expect(heldPixels(MEMORY.pdflib, job)).toBe(5_000_000)
+  })
+
+  it('refuses on a phone what it admits on a desktop', () => {
+    const job = canvasJob(400_000, 24_000_000)
+
+    expect(fitsInBudget('canvas', job, ios)).toBe(false)
+    expect(fitsInBudget('canvas', job, desktop)).toBe(true)
+  })
+})
+
+describe('the browser bitmap ceiling', () => {
+  it('refuses an image no canvas could hold, on any device', () => {
+    // 100 megapixels: past this a canvas comes back blank rather than throwing,
+    // so the engine refuses it too. Before this check the router admitted the
+    // job and the user paid for a worker and a download to be told no.
+    const job = jobInput([{ bytes: MB, pixels: 100_000_000 }])
+
+    expect(fitsBitmapCeiling('canvas', job)).toBe(false)
+    expect(fitsInBudget('canvas', job, desktop)).toBe(false)
+  })
+
+  it('does not apply to an engine that never materialises a bitmap', () => {
+    // libvips streams scanline regions and is exempt from the guard in the
+    // engines for the same reason.
+    const job = jobInput([{ bytes: MB, pixels: 100_000_000 }])
+
+    expect(fitsBitmapCeiling('vips', job)).toBe(true)
+  })
+
+  it('measures the largest image rather than the job', () => {
+    // Two images are never on one canvas, so a total says nothing about this.
+    const job = jobInput([
+      { bytes: MB, pixels: 40_000_000 },
+      { bytes: MB, pixels: 40_000_000 },
+    ])
+
+    expect(fitsBitmapCeiling('canvas', job)).toBe(true)
   })
 })

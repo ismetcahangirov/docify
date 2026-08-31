@@ -74,7 +74,30 @@ export interface ConversionTask {
  * have to be wrapped. The two are interchangeable — `jobInput` normalises them
  * to the same {@link JobInput}.
  */
-export type RouteInput = number | readonly number[]
+export type RouteInput = number | readonly number[] | readonly RouteFile[]
+
+/**
+ * One file as the router sees it: its size, and its decoded pixel count where
+ * the caller could read one.
+ *
+ * `pixels` is what a byte count structurally cannot say. A decoded bitmap costs
+ * `width × height × bytes-per-pixel` however well the file compressed, so a flat
+ * screenshot and a photograph of the same dimensions cost the same memory and
+ * differ a hundredfold in bytes — measured, in
+ * `docs/router/memory-budget-measurement.md`. Omit it for anything that is not
+ * a raster image, and for one whose header has not been read: absent means "no
+ * pixel bound", never "no pixels", so a caller that cannot answer gets exactly
+ * the routing it got before the field existed.
+ *
+ * Reading it is cheap and does not break the router's purity: `rasterSize()` in
+ * `lib/engines/raster-size.ts` takes the dimensions out of the first few dozen
+ * bytes of a header, on the main thread, before `route()` is called.
+ */
+export interface RouteFile {
+  bytes: number
+  /** `width × height` from the image header. */
+  pixels?: number
+}
 
 /**
  * The input side of a job, reduced to the four numbers the budget reasons about.
@@ -94,6 +117,13 @@ export interface JobInput {
   smallestBytes: number
   /** How many files the job names. */
   fileCount: number
+  /**
+   * Decoded pixels across every file, where the caller knew them. Zero means
+   * nothing was said — see {@link RouteFile.pixels}.
+   */
+  totalPixels: number
+  /** Decoded pixels of the single largest image, on the same terms. */
+  largestPixels: number
 }
 
 /**
@@ -131,6 +161,19 @@ export interface EngineMemory {
    * full. Taken off the top of the device budget before the factor is applied.
    */
   reserveBytes: number
+  /**
+   * Bytes held per *decoded pixel*, added to what the byte factor predicts.
+   *
+   * The term that exists because the other two cannot express a decoded bitmap:
+   * it is `width × height × 4` whatever the file compressed to, so no multiple
+   * of the encoded size describes both a screenshot and a photograph. Zero for
+   * an engine that never decodes to a bitmap, and it only ever applies when the
+   * caller supplied {@link RouteFile.pixels}.
+   *
+   * Measured — `docs/router/browser-memory-measure.mjs` for the browser
+   * engines, `memory-measure.mjs` for pdf-lib.
+   */
+  bytesPerPixel: number
 }
 
 /** Every processing backend the router can choose between. */

@@ -90,11 +90,30 @@ describe('route — the heif engine, as it is actually registered', () => {
   it('is not chosen for a file larger than its 5x expansion allows on an iPhone', () => {
     register(realHeif)
 
-    // 90 MB iOS budget / 5 = 18 MB of HEIC input.
+    // (90 MB iOS budget - 21 MB reserve) / 5 = 13.8 MB of HEIC input. The reserve
+    // is libheif's WASM heap, measured at 20.5 MB before a pixel is decoded —
+    // see MEMORY.heif.
     const result = refused(route(heicToJpg, 30 * MB, ios))
 
     expect(result.code).toBe('DEVICE_TOO_WEAK')
-    expect(result.message).toContain('18 MB')
+    expect(result.message).toContain('14 MB')
+  })
+
+  it('refuses a HEIC whose pixels do not fit, however small the file is', () => {
+    register(realHeif)
+
+    // The case a byte count structurally cannot see: 24 megapixels at the 8
+    // bytes a pixel a decode costs is 192 MB, on a device with 90 MB. Two
+    // megabytes of input, so every byte-based check waves it through.
+    const result = refused(route(heicToJpg, [{ bytes: 2 * MB, pixels: 24_000_000 }], ios))
+
+    expect(result.code).toBe('DEVICE_TOO_WEAK')
+  })
+
+  it('still takes the same file where the pixels do fit', () => {
+    register(realHeif)
+
+    expect(route(heicToJpg, [{ bytes: 2 * MB, pixels: 24_000_000 }], desktop).ok).toBe(true)
   })
 })
 
