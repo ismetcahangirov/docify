@@ -23,6 +23,33 @@ export const MAX_QUALITY = 100
  */
 export const DEFAULT_QUALITY = 80
 
+/**
+ * Clockwise degrees. Quarter turns only: they are the ones a photograph
+ * actually needs, they are lossless in libvips, and they leave a rectangle
+ * behind. A free angle would need a background colour for the corners it
+ * exposes and a decision about whether to grow the canvas or clip — neither of
+ * which a format converter should be inventing. Any other value is a bug, not a
+ * rounding job.
+ */
+export type RotationAngle = 0 | 90 | 180 | 270
+
+/** Which way a mirror image is taken. */
+export type FlipAxis = 'horizontal' | 'vertical'
+
+/**
+ * A rectangle to keep, in source pixels, measured from the top-left corner.
+ *
+ * Clamped against the image it cuts rather than trusted — see `clampCrop` in
+ * `./image-geometry`, which also decides what a rectangle covering everything
+ * means.
+ */
+export interface CropRect {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 export interface ImageOptions {
   /**
    * Encoder quality, `1..100`. Ignored by lossless outputs (PNG, and TIFF as we
@@ -35,6 +62,29 @@ export interface ImageOptions {
   width?: number
   /** Target height in pixels. With `width`, the image fits *inside* the box. */
   height?: number
+  /**
+   * Keep the source's proportions when resizing. Defaults to `true`.
+   *
+   * Only a resize can break an aspect ratio, so this is a resize setting and not
+   * a job-wide one: a crop changes the ratio by definition, a quarter turn swaps
+   * it, and a flip preserves it. Turning it off has an effect only when both
+   * {@link width} and {@link height} are given — a single axis has no second
+   * dimension to disagree with — and then the image is stretched to exactly that
+   * size rather than fitted inside it.
+   */
+  lockAspectRatio?: boolean
+  /**
+   * The rectangle to keep. Absent means the whole image.
+   *
+   * Applied before {@link width} and {@link height}, so a resize is measured
+   * against what survived the crop; see `./image-geometry` for the full order
+   * and why it is that order.
+   */
+  crop?: CropRect
+  /** Clockwise rotation, applied after the resize. Absent means none. */
+  rotate?: RotationAngle
+  /** Mirror the image, applied last. Absent means none. */
+  flip?: FlipAxis
   /**
    * Refuse to enlarge past the source's own resolution. Defaults to `true`:
    * upscaling invents detail that was never in the file, and a user who asked

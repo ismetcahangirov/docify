@@ -27,6 +27,10 @@ const task = (from: FormatId, to: FormatId, op: Operation = 'convert'): Conversi
 
 const file = (bytes = [0, 1, 2]) => new Blob([new Uint8Array(bytes)])
 
+/** The `size` mode of every thumbnail open, ignoring the header probes. */
+const thumbnailSizes = (fake: ReturnType<typeof fakeVips>) =>
+  fake.opens.filter((open) => open.kind === 'thumbnailBuffer').map((open) => open.options?.size)
+
 describe('the vips descriptor', () => {
   it('sits at priority 40, behind Canvas and ahead of ffmpeg', () => {
     expect(descriptor.id).toBe('vips')
@@ -56,6 +60,12 @@ describe('the vips descriptor', () => {
     expect(descriptor.supports(task('png', 'png', 'compress'), isolated)).toBe(true)
   })
 
+  it('claims the rest of the geometry family too', () => {
+    expect(descriptor.supports(task('jpg', 'jpg', 'crop'), isolated)).toBe(true)
+    expect(descriptor.supports(task('jpg', 'jpg', 'rotate'), isolated)).toBe(true)
+    expect(descriptor.supports(task('png', 'png', 'flip'), isolated)).toBe(true)
+  })
+
   it('refuses formats the vendored build has no loader for', () => {
     // BMP and ICO need ImageMagick; SVG needs the resvg side module, which is
     // not vendored because Canvas renders SVG natively and for free.
@@ -67,9 +77,11 @@ describe('the vips descriptor', () => {
   })
 
   it('refuses operations it does not implement', () => {
-    expect(descriptor.supports(task('jpg', 'png', 'crop'), isolated)).toBe(false)
-    expect(descriptor.supports(task('jpg', 'png', 'rotate'), isolated)).toBe(false)
+    // The document family belongs to the PDF engines; claiming it here would
+    // route work to a runner that ignores half of it.
     expect(descriptor.supports(task('png', 'png', 'merge'), isolated)).toBe(false)
+    expect(descriptor.supports(task('png', 'png', 'split'), isolated)).toBe(false)
+    expect(descriptor.supports(task('png', 'png', 'protect'), isolated)).toBe(false)
   })
 
   it('stands down on a document that is not cross-origin isolated', () => {
@@ -123,7 +135,7 @@ describe('the vips runner', () => {
       () => {},
     )
 
-    expect(fake.opens[0]).toMatchObject({
+    expect(fake.opens.at(-1)).toMatchObject({
       kind: 'newFromBuffer',
       options: { access: 'sequential' },
     })
@@ -141,7 +153,7 @@ describe('the vips runner', () => {
       () => {},
     )
 
-    expect(fake.opens[0]).toEqual({
+    expect(fake.opens.at(-1)).toEqual({
       kind: 'thumbnailBuffer',
       bytes: expect.any(Uint8Array),
       width: 640,
@@ -158,8 +170,8 @@ describe('the vips runner', () => {
       () => {},
     )
 
-    const open = fake.opens[0]
-    if (open.kind !== 'thumbnailBuffer') throw new Error('expected the resize path')
+    const open = fake.opens.at(-1)
+    if (open?.kind !== 'thumbnailBuffer') throw new Error('expected the resize path')
     expect(open.width).toBeGreaterThan(65_500)
     expect(open.options).toMatchObject({ height: 300 })
   })
@@ -184,7 +196,168 @@ describe('the vips runner', () => {
       () => {},
     )
 
-    expect(fake.opens.map((open) => open.options?.size)).toEqual(['down', 'both'])
+    // Without `enlarge` there is nothing to do: the source is 1200 x 800 and
+    // capping the scale at 1 leaves it exactly as it is, so the job never
+    // reaches a scaler at all. With `enlarge` it does, in libvips' `both` mode.
+    expect(thumbnailSizes(fake)).toEqual(['both'])
+  })
+
+  it('crops in source coordinates, before anything else touches the image', async () => {
+    const fake = fakeVips()
+
+    await createRunner(fake.load).run(
+      {
+        task: task('jpg', 'jpg', 'crop'),
+        files: [file()],
+        image: { crop: { left: 100, top: 50, width: 400, height: 300 } },
+      },
+      new AbortController().signal,
+      () => {},
+    )
+
+    expect(fake.stages).toEqual([
+      { kind: 'extractArea', left: 100, top: 50, width: 400, height: 300 },
+    ])
+  })
+
+  it('scales what survived the crop, not the original', async () => {
+    const fake = fakeVips()
+
+    await createRunner(fake.load).run(
+      {
+        task: task('jpg', 'jpg', 'crop'),
+        files: [file()],
+        image: { crop: { left: 0, top: 0, width: 800, height: 800 }, width: 200 },
+      },
+      new AbortController().signal,
+      () => {},
+    )
+
+    // A 200-wide box against an 800 x 800 crop is a quarter; against the
+    // 1200 x 800 original it would have been a sixth, and would have letterboxed
+    // an image that no longer has that shape.
+    expect(fake.stages).toEqual([
+      { kind: 'extractArea', left: 0, top: 0, width: 800, height: 800 },
+      { kind: 'resize', scale: 0.25, options: { vscale: 0.25 } },
+    ])
+  })
+
+  it('stretches by scaling the two axes apart once the aspect lock is off', async () => {
+    const fake = fakeVips()
+
+    await createRunner(fake.load).run(
+      {
+        task: task('jpg', 'jpg', 'resize'),
+        files: [file()],
+        image: { width: 600, height: 600, lockAspectRatio: false },
+      },
+      new AbortController().signal,
+      () => {},
+    )
+
+    // No crop, so this still goes through the shrink-on-load path — libvips'
+    // own `force` is what "ignore the proportions" compiles to.
+    expect(thumbnailSizes(fake)).toEqual(['force'])
+  })
+
+  it('rotates and flips in that order, after the resize', async () => {
+    const fake = fakeVips()
+
+    await createRunner(fake.load).run(
+      {
+        task: task('jpg', 'jpg', 'rotate'),
+        files: [file()],
+        image: { width: 600, rotate: 90, flip: 'horizontal' },
+      },
+      new AbortController().signal,
+      () => {},
+    )
+
+    expect(fake.stages).toEqual([
+      { kind: 'resize', scale: 0.5, options: { vscale: 0.5 } },
+      { kind: 'rot', angle: 'd90' },
+      { kind: 'flip', direction: 'horizontal' },
+    ])
+  })
+
+  it('opens the whole image only for the operations that read it backwards', async () => {
+    const fake = fakeVips()
+    const runner = createRunner(fake.load)
+    const signal = new AbortController().signal
+
+    await runner.run(
+      {
+        task: task('jpg', 'jpg', 'crop'),
+        files: [file()],
+        image: { crop: { left: 0, top: 0, width: 400, height: 300 } },
+      },
+      signal,
+      () => {},
+    )
+    await runner.run(
+      { task: task('jpg', 'jpg', 'rotate'), files: [file()], image: { rotate: 180 } },
+      signal,
+      () => {},
+    )
+
+    // Cropping reads forwards and keeps the streaming pipeline the 4x factor in
+    // `MEMORY.vips` is priced on. Rotating does not, and pays for it in memory.
+    const accesses = fake.opens.map((open) => open.options?.access)
+    expect(accesses).toEqual(['sequential', 'sequential', 'sequential', 'random'])
+  })
+
+  it('refuses to rotate an image this device could not hold uncompressed', async () => {
+    const fake = fakeVips()
+    // 20 000 x 20 000 is 400 megapixels: 3.2 GB at eight bytes a pixel, from a
+    // file the router waved through on its byte count alone.
+    fake.size = { width: 20_000, height: 20_000 }
+
+    await expect(
+      createRunner(fake.load).run(
+        {
+          task: task('jpg', 'jpg', 'rotate'),
+          files: [file()],
+          image: { rotate: 90 },
+          budgetBytes: 90 * 1024 * 1024,
+        },
+        new AbortController().signal,
+        () => {},
+      ),
+    ).rejects.toThrow(/20000 × 20000 pixels/)
+
+    expect(fake.writes).toEqual([])
+  })
+
+  it('still converts an image far too large to rotate, because converting streams', async () => {
+    const fake = fakeVips()
+    fake.size = { width: 20_000, height: 20_000 }
+
+    const out = await createRunner(fake.load).run(
+      { task: task('jpg', 'png'), files: [file()], budgetBytes: 90 * 1024 * 1024 },
+      new AbortController().signal,
+      () => {},
+    )
+
+    expect(out.size).toBe(4)
+  })
+
+  it('refuses a crop area that overlaps nothing, before opening a codec', async () => {
+    const fake = fakeVips()
+
+    await expect(
+      createRunner(fake.load).run(
+        {
+          task: task('jpg', 'jpg', 'crop'),
+          files: [file()],
+          image: { crop: { left: 5000, top: 5000, width: 100, height: 100 } },
+        },
+        new AbortController().signal,
+        () => {},
+      ),
+    ).rejects.toThrow(/does not overlap the image/)
+
+    expect(fake.writes).toEqual([])
+    expect(fake.images.every((image) => image.deleted)).toBe(true)
   })
 
   it('passes quality to lossy encoders only, clamped into libvips range', async () => {
@@ -244,7 +417,10 @@ describe('the vips runner', () => {
     // `writeToBuffer` on the same handle would fail. Re-opening also keeps the
     // 4x expansion factor in `MEMORY.vips` honest: a random-access pipeline
     // would materialise the whole bitmap to allow re-reads.
-    expect(fake.opens).toHaveLength(fake.writes.length)
+    //
+    // One open ahead of the attempts: the header probe that measures the source
+    // so the geometry can be planned once rather than per encode.
+    expect(fake.opens).toHaveLength(fake.writes.length + 1)
     expect(fake.opens.every((open) => open.kind === 'newFromBuffer')).toBe(true)
     // Every handle released, not just the winner's: Embind handles are not
     // garbage collected, so a leaked attempt is a full image on the WASM heap.
@@ -412,7 +588,7 @@ describe('the vips runner', () => {
       ),
     ).rejects.toThrow('unsupported colour space')
 
-    expect(fake.images.map((image) => image.deleted)).toEqual([true])
+    expect(fake.images.every((image) => image.deleted)).toBe(true)
   })
 
   it('opens indeterminate, forwards libvips percentages as fractions, and ends at 1', async () => {
@@ -463,9 +639,10 @@ describe('the vips runner', () => {
     ).rejects.toMatchObject({ name: 'AbortError' })
 
     // `kill` is the only handle on a synchronous WASM call; libvips checks it
-    // between scanline regions.
-    expect(fake.images.map((image) => image.kill)).toEqual([true])
-    expect(fake.images.map((image) => image.deleted)).toEqual([true])
+    // between scanline regions. The header probe is long released by then, which
+    // is why it is the pipeline's own handle that carries the flag.
+    expect(fake.images.at(-1)?.kill).toBe(true)
+    expect(fake.images.every((image) => image.deleted)).toBe(true)
   })
 
   it('stops listening on the signal once the job is over', async () => {

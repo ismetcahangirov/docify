@@ -73,6 +73,21 @@ export interface VipsImage {
   /** Called with `0..100` as libvips evaluates. */
   onProgress: (percent: number) => void
   writeToBuffer(suffix: string, options?: Record<string, unknown>): Uint8Array
+  /**
+   * The rectangle to keep, in pixels from the top-left. libvips names this
+   * `extract_area`; `crop` is its own alias for the same operation.
+   */
+  extractArea(left: number, top: number, width: number, height: number): VipsImage
+  /**
+   * Scales by `scale` horizontally and, unless `vscale` says otherwise, by the
+   * same factor vertically. Reduces with a Lanczos-3 kernel by default, which is
+   * the same filter `thumbnailBuffer` finishes with.
+   */
+  resize(scale: number, options?: Record<string, unknown>): VipsImage
+  /** Clockwise rotation. libvips spells the angles `d90`, `d180` and `d270`. */
+  rot(angle: string): VipsImage
+  /** Mirrors along one axis: `horizontal` or `vertical`. */
+  flip(direction: string): VipsImage
   /** Embind handles are not garbage collected; every image must be released. */
   delete(): void
 }

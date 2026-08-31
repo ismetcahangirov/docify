@@ -23,20 +23,26 @@
  * chosen and fail at `new WebAssembly.Memory({ shared: true })` would surface as
  * an unexplained crash several seconds into a 5 MB download.
  *
- * ## Why it carries no decoded-pixel ceiling
+ * ## Where its decoded-pixel ceiling applies, and where it does not
  *
  * `./raster-limits` bounds the other three raster engines, because each of them
  * materialises a whole bitmap whose cost the input's size does not predict —
- * `width × height` and not bytes. libvips does not. Both entry points below
- * stream: `newFromBuffer` with `access: 'sequential'` hands the writer scanline
+ * `width × height` and not bytes. For most of what libvips does that is not
+ * true: `newFromBuffer` with `access: 'sequential'` hands the writer scanline
  * regions, and `thumbnailBuffer` shrinks on load inside the codec before a
  * full-resolution image ever exists. That is the reason `MEMORY.vips` is 4 where
- * `MEMORY.canvas` is 6, and a pixel ceiling here would refuse work this engine
- * finishes in a few hundred kilobytes. Issue #160 decided this deliberately; if
- * a future operation forces a random-access pipeline, the ceiling comes back
- * with it. The target-size search in `./vips-encode` is the first thing that
- * could have: it encodes the same source several times, and re-opens it for each
- * attempt precisely so the pipeline stays sequential.
+ * `MEMORY.canvas` is 6, and a blanket pixel ceiling would refuse work this
+ * engine finishes in a few hundred kilobytes. Issue #160 decided that
+ * deliberately, and said that if a future operation forced a random-access
+ * pipeline the ceiling would come back with it.
+ *
+ * Rotate and flip are that operation. Both read the source bottom-up, so the
+ * whole image has to be in memory, and a 400 megapixel scan that compressed to a
+ * few megabytes sails through the router's byte check and then asks for 3.2 GB.
+ * `assertPipelineFits` in `./vips-pipeline` charges exactly those jobs and
+ * nothing else. The target-size search in `./vips-encode` is the case that
+ * looked like it would force the same thing and does not: it re-opens the source
+ * for each attempt precisely so the pipeline stays sequential.
  *
  * ## Lazy loading
  *
@@ -48,6 +54,7 @@
 import { throwIfAborted } from '@/lib/abort'
 import type { Capabilities, ConversionTask } from '@/lib/router/types'
 
+import { imageLabel } from './raster-limits'
 import type { EngineDescriptor, EngineInput, EngineRunner, ProgressCallback } from './types'
 import { encodeImage } from './vips-encode'
 import { needsHeifModule, VIPS_OPERATIONS, VIPS_READABLE, VIPS_WRITABLE } from './vips-formats'
@@ -121,7 +128,16 @@ export function createRunner(load: VipsLoader = loadVips): EngineRunner {
       const vips = await moduleFor(libraries)
       throwIfAborted(signal)
 
-      return encodeImage(vips, bytes, input.task, options, signal, onProgress)
+      return encodeImage({
+        module: vips,
+        bytes,
+        task: input.task,
+        options,
+        label: imageLabel(source),
+        budgetBytes: input.budgetBytes,
+        signal,
+        onProgress,
+      })
     },
   }
 }

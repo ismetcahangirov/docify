@@ -47,13 +47,18 @@ export const VIPS_WRITABLE: ReadonlySet<FormatId> = new Set<FormatId>([
 /**
  * Operations this engine implements.
  *
- * `crop`, `rotate` and the rest of the geometry family land with issue 4.5;
- * claiming them here would route work to a runner that ignores them.
+ * The whole raster family: a format swap, both ways of compressing, and the four
+ * geometry operations. `merge`, `split` and the document operations belong to
+ * the PDF engines and are not claimed here, so the router never offers libvips a
+ * job it would have to ignore half of.
  */
 export const VIPS_OPERATIONS: ReadonlySet<Operation> = new Set<Operation>([
   'convert',
   'compress',
   'resize',
+  'crop',
+  'rotate',
+  'flip',
 ])
 
 /** Formats whose codec lives in the `vips-heif.wasm` side module. */
