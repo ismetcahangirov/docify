@@ -31,6 +31,7 @@
     "fflate": "^0.8.3",
     "libheif-js": "1.19.8",
     "lucide-react": "^1.31.0",
+    "mp4box": "2.4.1",
     "next": "15.5.23",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.2.108",
