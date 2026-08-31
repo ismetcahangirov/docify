@@ -10,7 +10,12 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { CANVAS_READABLE, CANVAS_WRITABLE, descriptor } from '@/lib/engines/canvas'
+import {
+  CANVAS_READABLE,
+  CANVAS_WRITABLE,
+  descriptor,
+  preservesMetadata,
+} from '@/lib/engines/canvas'
 import { ENGINES, getEngine } from '@/lib/engines/registry'
 import type { Capabilities, ConversionTask, FormatId, Operation } from '@/lib/router/types'
 
@@ -133,5 +138,21 @@ describe('the canvas engine module graph', () => {
     expect(registryGraph.files).not.toContain('lib/engines/canvas-runner.ts')
     expect(registryGraph.files).not.toContain('lib/engines/bmp.ts')
     expect(registryGraph.packages).toEqual([])
+  })
+})
+
+describe('preservesMetadata', () => {
+  it('is true for the one pair a canvas can put metadata back into', () => {
+    expect(preservesMetadata({ from: 'jpg', to: 'jpg', op: 'convert' })).toBe(true)
+  })
+
+  it('is false everywhere else, including out of a JPEG', () => {
+    // A browser's PNG and WebP encoders expose no hook for a metadata chunk, and
+    // BMP has nowhere to put one at all. Saying so is what lets a caller warn
+    // before the conversion instead of the user finding out afterwards.
+    expect(preservesMetadata({ from: 'jpg', to: 'png', op: 'convert' })).toBe(false)
+    expect(preservesMetadata({ from: 'jpg', to: 'webp', op: 'convert' })).toBe(false)
+    expect(preservesMetadata({ from: 'jpg', to: 'bmp', op: 'convert' })).toBe(false)
+    expect(preservesMetadata({ from: 'png', to: 'jpg', op: 'convert' })).toBe(false)
   })
 })

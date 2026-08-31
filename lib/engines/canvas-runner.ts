@@ -28,6 +28,7 @@ import { throwIfAborted } from '@/lib/abort'
 import type { FormatId } from '@/lib/router/types'
 
 import { encodeBmp } from './bmp'
+import { carryMetadata } from './canvas-metadata'
 import { prepareSvg } from './canvas-svg'
 import { type ImageOptions, resolveQuality } from './image-options'
 import { assertBitmapFits, imageLabel } from './raster-limits'
@@ -149,10 +150,11 @@ export function createCanvasRunner(
         onProgress(DRAWN)
 
         const output = await encode(canvas, target, input.image)
+        const finished = await carryMetadata(source, output, input)
         throwIfAborted(signal)
         onProgress(1)
 
-        return output
+        return finished
       } finally {
         bitmap?.close()
       }
