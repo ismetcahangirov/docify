@@ -163,7 +163,12 @@ describe('startConversion', () => {
     }
 
     expect(start).not.toThrow()
-    await expect(result).rejects.toThrow(/browser/i)
+    // The guard this lands on lives in `client.ts`'s `spawn()`, and what it is
+    // for is naming server rendering as the cause and the move into an event
+    // handler as the fix. `/browser/i` would be satisfied by any of several
+    // unrelated messages — see the same assertion in `./client.test.ts`.
+    await expect(result).rejects.toThrow(/server rendering/i)
+    await expect(result).rejects.toThrow(/event handler|effect/i)
   })
 
   it('mints a job id, so every job can be cancelled', async () => {
