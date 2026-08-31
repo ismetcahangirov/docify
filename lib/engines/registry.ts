@@ -41,6 +41,7 @@
  */
 
 import { descriptor as canvas } from '@/lib/engines/canvas'
+import { descriptor as ffmpeg } from '@/lib/engines/ffmpeg'
 import { descriptor as heif } from '@/lib/engines/heif'
 import { descriptor as pdfjs } from '@/lib/engines/pdfjs'
 import { descriptor as pdflib } from '@/lib/engines/pdflib'
@@ -60,6 +61,7 @@ export const ENGINES: readonly EngineDescriptor[] = Object.freeze([
   pdfjs,
   heif,
   vips,
+  ffmpeg,
 ])
 
 /**

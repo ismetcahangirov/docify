@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "pnpm vendor && next dev",
     "build": "pnpm vendor && next build",
-    "vendor": "node scripts/vendor-wasm-vips/cli.mjs && node scripts/vendor-pdfjs/cli.mjs",
+    "vendor": "node scripts/vendor-wasm-vips/cli.mjs && node scripts/vendor-pdfjs/cli.mjs && node scripts/vendor-ffmpeg/cli.mjs",
     "start": "next start",
     "lint": "eslint . && pnpm run lint:design",
     "lint:design": "node scripts/design-lint/cli.mjs",
@@ -25,6 +25,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@ffmpeg/core": "0.12.10",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "comlink": "^4.4.2",

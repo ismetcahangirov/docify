@@ -9,6 +9,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 
+import { descriptor as realFfmpeg } from '@/lib/engines/ffmpeg'
 import { descriptor as realWebCodecs } from '@/lib/engines/webcodecs'
 import { route } from '@/lib/router/route'
 import type { ConversionTask } from '@/lib/router/types'
@@ -125,5 +126,50 @@ describe('route — the real WebCodecs descriptor', () => {
 
     expect(result.message).toMatch(/36 MB/)
     expect(result.suggestion.length).toBeGreaterThan(0)
+  })
+})
+
+describe('route — the real ffmpeg descriptor', () => {
+  it('takes the containers no faster engine claims, and warns about all three costs', () => {
+    register(realWebCodecs, realFfmpeg)
+
+    const result = chosen(route(mp4ToWebm, 50 * MB, { ...desktop, crossOriginIsolated: false }))
+
+    expect(result.engine).toBe('ffmpeg')
+    // The order is fixed so a UI can render the list verbatim: how slow, why it
+    // is slow, the wait before it starts, then the cost to the file.
+    expect(result.warnings.map((warning) => warning.code)).toEqual([
+      'SLOW_PATH',
+      'NO_ISOLATION',
+      'LARGE_DOWNLOAD',
+      'QUALITY_LOSS',
+    ])
+  })
+
+  it('quotes its real download size, which is the number the warning is for', () => {
+    register(realFfmpeg)
+
+    const download = chosen(route(mp4ToWebm, 10 * MB, desktop)).warnings.find(
+      (warning) => warning.code === 'LARGE_DOWNLOAD',
+    )
+
+    expect(download?.message).toMatch(/31 MB/)
+  })
+
+  it('never wins a pair WebCodecs could have taken', () => {
+    register(realWebCodecs, realFfmpeg)
+
+    // Both claim mov to mp4. 15 against 90 is what keeps a 30 MB download and a
+    // software decode away from a job the GPU could have done.
+    expect(chosen(route(movToMp4, 50 * MB, desktop)).engine).toBe('webcodecs')
+  })
+
+  it('holds less than WebCodecs, so it refuses a file the fast path would take', () => {
+    register(realFfmpeg)
+
+    // 4.5x the input against WebCodecs' 2.5x: 266 MB on this desktop rather
+    // than 480 MB.
+    expect(chosen(route(mp4ToWebm, 200 * MB, desktop)).engine).toBe('ffmpeg')
+    expect(refused(route(mp4ToWebm, 400 * MB, desktop)).code).toBe('FILE_TOO_LARGE')
   })
 })

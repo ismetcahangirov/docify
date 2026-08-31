@@ -159,7 +159,7 @@ describe('convert', () => {
   it('still has no engine behind an id whose runner has not landed', async () => {
     const api = createConversionApi()
 
-    await expect(api.convert(requestFor('a', 'ffmpeg'))).rejects.toThrow(/ffmpeg/)
+    await expect(api.convert(requestFor('a', 'zip'))).rejects.toThrow(/zip/)
   })
 
   it('refuses a job id that another running job already holds', async () => {
