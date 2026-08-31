@@ -16,11 +16,11 @@ import { PDFDocument, rgb } from 'pdf-lib'
 import { describe, expect, it, vi } from 'vitest'
 
 import { JPEG_QUALITY } from '@/lib/engines/bitmap'
+import { MAX_CANVAS_SIDE } from '@/lib/engines/canvas-limits'
 import {
   canvasSize,
   DEFAULT_RENDER_DPI,
   encodingFor,
-  MAX_CANVAS_SIDE,
   MAX_RENDER_DPI,
   pageEntryName,
   PDF_USER_SPACE_DPI,

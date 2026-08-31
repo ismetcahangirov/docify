@@ -32,6 +32,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## session
 
+- [session-2026-08-14-12f2e378](entries/session-2026-08-14-12f2e378.md) — Session on 2026-08-14: agent, engines, router (125 file ops)
 - [session-2026-08-14-3d8eb6eb](entries/session-2026-08-14-3d8eb6eb.md) — Session on 2026-08-14: engines, agent (47 file ops)
 - [session-2026-08-14-4d6b83f8](entries/session-2026-08-14-4d6b83f8.md) — Session on 2026-08-14: engines, agent (158 file ops)
 - [session-2026-08-14-ce23b202](entries/session-2026-08-14-ce23b202.md) — Session on 2026-08-14: agent, engines, router (110 file ops)

@@ -10,6 +10,7 @@
 import type { FormatId } from '@/lib/router/types'
 
 import { BITMAP_MIME_TYPES, JPEG_QUALITY } from './bitmap'
+import { MAX_CANVAS_PIXELS, MAX_CANVAS_SIDE } from './canvas-limits'
 import type { PdfRenderOptions } from './pdf-options'
 import { allPageIndices, pageIndices } from './pdf-pages'
 import type { PdfViewport } from './pdfjs-runtime'
@@ -29,18 +30,6 @@ export const DEFAULT_RENDER_DPI = 150
 
 export const MIN_RENDER_DPI = 12
 export const MAX_RENDER_DPI = 1200
-
-/**
- * Canvas limits, taken from the strictest mainstream implementation rather than
- * the most generous.
- *
- * Safari refuses a canvas past 16 384 px on either axis and browsers cap total
- * area independently of that. Exceeding either yields a blank surface rather
- * than an exception — the conversion "succeeds" and the user downloads an empty
- * image — so the check has to happen here, before anything is allocated.
- */
-export const MAX_CANVAS_SIDE = 16_384
-export const MAX_CANVAS_PIXELS = 67_108_864
 
 /** What `convertToBlob` is asked for, plus the extension that matches it. */
 export interface PageEncoding {

@@ -24,8 +24,8 @@
  * files and nothing fixed describes it. It is a function of the device budget.
  *
  * {@link assertBitmapFits} is the **factual** bound for the engines that decode
- * through a browser bitmap. A canvas past {@link MAX_BITMAP_SIDE} or
- * {@link MAX_BITMAP_PIXELS} yields a blank surface rather than an exception, so
+ * through a browser bitmap. A canvas past {@link MAX_CANVAS_SIDE} or
+ * {@link MAX_CANVAS_PIXELS} yields a blank surface rather than an exception, so
  * this refuses a file no browser could have rendered anyway. It is deliberately
  * *not* derived from the memory budget: what a decoded `ImageBitmap` plus its
  * canvas actually costs has never been measured — `createImageBitmap` and
@@ -49,6 +49,7 @@
 
 import { DESKTOP_BUDGET_FLOOR_BYTES } from '@/lib/router/budget'
 
+import { MAX_CANVAS_PIXELS, MAX_CANVAS_SIDE } from './canvas-limits'
 import type { ImageSize } from './raster-size'
 
 /**
@@ -86,24 +87,6 @@ export const DEFAULT_BUDGET_BYTES = DESKTOP_BUDGET_FLOOR_BYTES
  * making a PDF of its own camera roll is unaffected by any of this.
  */
 export const PDFLIB_DECODED_BYTES_PER_PIXEL = 8
-
-/**
- * Canvas limits, taken from the strictest mainstream implementation rather than
- * the most generous.
- *
- * Safari refuses a canvas past 16 384 px on either axis and browsers cap total
- * area independently of that. Exceeding either yields a blank surface rather
- * than an exception — the conversion "succeeds" and the user downloads an empty
- * image — so the check has to happen before anything is allocated.
- *
- * The same two numbers appear as `MAX_CANVAS_SIDE` and `MAX_CANVAS_PIXELS` in
- * `./pdf-render-plan`, which reached them first and for the same reason. They
- * are stated again here rather than imported because that module pulls the
- * whole pdf.js page-planning graph in behind it, and this one is reached from
- * the canvas engine, whose entire point is that it downloads nothing.
- */
-export const MAX_BITMAP_SIDE = 16_384
-export const MAX_BITMAP_PIXELS = 67_108_864
 
 const MEGAPIXEL = 1_000_000
 const MB = 1024 * 1024
@@ -213,16 +196,16 @@ export function assertBitmapFits(label: string, size: ImageSize): void {
   const { width, height } = size
 
   if (
-    width <= MAX_BITMAP_SIDE &&
-    height <= MAX_BITMAP_SIDE &&
-    width * height <= MAX_BITMAP_PIXELS
+    width <= MAX_CANVAS_SIDE &&
+    height <= MAX_CANVAS_SIDE &&
+    width * height <= MAX_CANVAS_PIXELS
   ) {
     return
   }
 
   throw new Error(
     `${label} is ${width} × ${height} pixels, which is larger than a browser canvas can ` +
-      `hold — at most ${MAX_BITMAP_SIDE} pixels on a side and ${megapixels(MAX_BITMAP_PIXELS)} ` +
+      `hold — at most ${MAX_CANVAS_SIDE} pixels on a side and ${megapixels(MAX_CANVAS_PIXELS)} ` +
       'megapixels in total. Use the resize tool to bring it under that, then convert the result.',
   )
 }
