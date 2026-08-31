@@ -53,6 +53,36 @@ describe('the webcodecs descriptor', () => {
     expect(descriptor.supports(task('mp4', 'webm'), desktop)).toBe(false)
   })
 
+  it('claims the audio pairs the browser can encode, gated on the audio codecs', () => {
+    expect(descriptor.supports(task('m4a', 'm4a'), desktop)).toBe(true)
+    expect(descriptor.supports(task('mp4', 'ogg'), desktop)).toBe(true)
+    expect(descriptor.supports(task('m4a', 'ogg', 'compress'), desktop)).toBe(true)
+
+    // A browser can genuinely have one family of codecs and not the other,
+    // which is why `Capabilities` probes them apart and this gates on the one
+    // the job actually needs.
+    expect(descriptor.supports(task('m4a', 'ogg'), { ...desktop, webCodecsAudio: false })).toBe(
+      false,
+    )
+    expect(descriptor.supports(task('m4a', 'ogg'), { ...desktop, webCodecsVideo: false })).toBe(
+      true,
+    )
+  })
+
+  it('leaves MP3 to ffmpeg, because no browser has an encoder for it', () => {
+    // `AudioEncoder` decodes MP3 and writes nothing; the alternative is an LGPL
+    // encoder, which is the repository owner's decision rather than an engine's.
+    expect(descriptor.supports(task('m4a', 'mp3'), desktop)).toBe(false)
+    expect(descriptor.supports(task('mp4', 'wav'), desktop)).toBe(false)
+    expect(descriptor.supports(task('mp4', 'flac'), desktop)).toBe(false)
+  })
+
+  it('never converts an audio-only container as video', () => {
+    // An `.m4a` is the same box structure as an `.mp4` and, by convention, has
+    // no picture in it: converting one "to MP4" would produce a blank screen.
+    expect(descriptor.supports(task('m4a', 'mp4'), desktop)).toBe(false)
+  })
+
   it('claims no operation it does not implement', () => {
     expect(descriptor.supports(task('mp4', 'mp4', 'extract'), desktop)).toBe(false)
     expect(descriptor.supports(task('mp4', 'mp4', 'merge'), desktop)).toBe(false)

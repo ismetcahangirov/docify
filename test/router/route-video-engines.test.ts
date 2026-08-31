@@ -101,6 +101,23 @@ describe('route — the real WebCodecs descriptor', () => {
     expect(refused(route(shrinkMp4, 40 * MB, iphone)).code).toBe('DEVICE_TOO_WEAK')
   })
 
+  it('takes the audio pairs too, on a browser that has only the audio codecs', () => {
+    register(realWebCodecs, ffmpeg())
+    const audioOnly = { ...desktop, webCodecsVideo: false }
+
+    expect(
+      chosen(route({ from: 'm4a', to: 'ogg', op: 'convert' }, 20 * MB, audioOnly)).engine,
+    ).toBe('webcodecs')
+  })
+
+  it('hands MP3 to ffmpeg, since no browser encodes it', () => {
+    register(realWebCodecs, ffmpeg())
+
+    expect(chosen(route({ from: 'm4a', to: 'mp3', op: 'convert' }, 20 * MB, desktop)).engine).toBe(
+      'ffmpeg',
+    )
+  })
+
   it('quotes a ceiling the user can act on when the file is too large', () => {
     register(realWebCodecs)
 
