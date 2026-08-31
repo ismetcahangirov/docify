@@ -34,7 +34,9 @@
  * `MEMORY.canvas` is 6, and a pixel ceiling here would refuse work this engine
  * finishes in a few hundred kilobytes. Issue #160 decided this deliberately; if
  * a future operation forces a random-access pipeline, the ceiling comes back
- * with it.
+ * with it. The target-size search in `./vips-encode` is the first thing that
+ * could have: it encodes the same source several times, and re-opens it for each
+ * attempt precisely so the pipeline stays sequential.
  *
  * ## Lazy loading
  *
@@ -46,34 +48,16 @@
 import { throwIfAborted } from '@/lib/abort'
 import type { Capabilities, ConversionTask } from '@/lib/router/types'
 
-import { type ImageOptions, wantsResize } from './image-options'
 import type { EngineDescriptor, EngineInput, EngineRunner, ProgressCallback } from './types'
-import {
-  mimeType,
-  needsHeifModule,
-  saveOptions,
-  saveSuffix,
-  VIPS_OPERATIONS,
-  VIPS_READABLE,
-  VIPS_WRITABLE,
-} from './vips-formats'
+import { encodeImage } from './vips-encode'
+import { needsHeifModule, VIPS_OPERATIONS, VIPS_READABLE, VIPS_WRITABLE } from './vips-formats'
 import {
   loadVips,
   VIPS_BASE_LOAD_COST,
   VIPS_HEIF_WASM,
-  type VipsImage,
   type VipsLoader,
   type VipsModule,
 } from './vips-runtime'
-
-/**
- * Stands in for "no limit on this axis" when only one of width/height is given.
- *
- * libvips fits the image inside a width × height box, so the unconstrained axis
- * needs a number no real image reaches. libvips itself refuses dimensions above
- * roughly 65 500 px, so a million is unreachable by construction.
- */
-const UNBOUNDED_DIMENSION = 1_000_000
 
 export const descriptor: EngineDescriptor = {
   id: 'vips',
@@ -137,82 +121,9 @@ export function createRunner(load: VipsLoader = loadVips): EngineRunner {
       const vips = await moduleFor(libraries)
       throwIfAborted(signal)
 
-      return encode(vips, bytes, input.task, options, signal, onProgress)
+      return encodeImage(vips, bytes, input.task, options, signal, onProgress)
     },
   }
-}
-
-/**
- * Decodes, optionally resizes and re-encodes, in one libvips pipeline.
- *
- * Nothing is evaluated until `writeToBuffer`: `newFromBuffer` and
- * `thumbnailBuffer` build a lazy pipeline, and the single synchronous write at
- * the end is where the pixels — and the progress ticks — actually happen.
- */
-function encode(
-  module: VipsModule,
-  bytes: Uint8Array,
-  task: ConversionTask,
-  options: ImageOptions | undefined,
-  signal: AbortSignal,
-  onProgress: ProgressCallback,
-): Blob {
-  // libvips reports percentages only once it can estimate the work, and the
-  // whole pipeline runs inside one synchronous call. Indeterminate is the honest
-  // opening state; real ticks overwrite it as soon as there are any.
-  onProgress(-1)
-
-  const image = open(module, bytes, options)
-  const cancel = () => {
-    // Checked by libvips between scanline regions, which is the only place a
-    // synchronous WASM call can be interrupted from the outside.
-    image.kill = true
-  }
-
-  try {
-    image.onProgress = (percent) => onProgress(clampFraction(percent / 100))
-    signal.addEventListener('abort', cancel, { once: true })
-
-    const written = image.writeToBuffer(saveSuffix(task.to), saveOptions(task.to, options))
-
-    // A killed pipeline returns whatever it had rather than throwing, so the
-    // cancel is enforced here instead of trusted to libvips.
-    throwIfAborted(signal)
-    onProgress(1)
-
-    // Copied out of the WASM heap: the view returned above is backed by memory
-    // libvips is free to reuse, and a Blob built on it would decode to noise.
-    return new Blob([new Uint8Array(written)], { type: mimeType(task.to) })
-  } finally {
-    signal.removeEventListener('abort', cancel)
-    // Embind handles are not garbage collected. Miss this and the WASM heap
-    // grows by a full decoded image per conversion until the tab dies.
-    image.delete()
-  }
-}
-
-/**
- * Opens the source, resizing on the way in when a target size was asked for.
- *
- * `thumbnailBuffer` rather than a decode followed by `resize`, because it is the
- * whole reason this engine beats Canvas on quality *and* on memory: it shrinks
- * on load where the codec allows it (JPEG DCT scaling, WebP and AVIF thumbnail
- * scaling), reduces the remainder with a Lanczos-3 kernel, and premultiplies
- * alpha so edges do not darken. A decoded-then-resized 8000 px JPEG would hold
- * the full bitmap; this holds a few scanlines.
- */
-function open(module: VipsModule, bytes: Uint8Array, options: ImageOptions | undefined): VipsImage {
-  if (!wantsResize(options)) {
-    // Sequential access lets libvips stream the image in scanline regions rather
-    // than materialise it, which is what the router's 4× expansion factor
-    // assumes (`MEMORY.vips` in `lib/router/budget.ts`).
-    return module.Image.newFromBuffer(bytes, '', { access: 'sequential' })
-  }
-
-  return module.Image.thumbnailBuffer(bytes, options?.width ?? UNBOUNDED_DIMENSION, {
-    height: options?.height ?? UNBOUNDED_DIMENSION,
-    size: options?.enlarge === true ? 'both' : 'down',
-  })
 }
 
 /**
@@ -230,11 +141,4 @@ function onlyFile(input: EngineInput): Blob {
   }
 
   return input.files[0]
-}
-
-/** libvips can report slightly over 100, and reports nothing at all on failure. */
-function clampFraction(value: number): number {
-  if (!Number.isFinite(value)) return -1
-
-  return Math.min(Math.max(value, 0), 1)
 }

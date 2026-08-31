@@ -82,6 +82,19 @@ const MIME_TYPE: Partial<Record<FormatId, string>> = {
 const LOSSY_OUTPUT: ReadonlySet<FormatId> = new Set<FormatId>(['jpg', 'webp', 'avif'])
 
 /**
+ * Whether writing `format` responds to quality at all.
+ *
+ * The gate on the target-size search: PNG, TIFF and GIF as this build writes
+ * them are lossless, so eight re-encodes at descending qualities would produce
+ * eight byte-identical files and a user waiting for nothing. GIF is lossy in the
+ * colloquial sense — it quantises to 256 colours — but `Q` does not steer that,
+ * so it belongs on the lossless side of this particular question.
+ */
+export function isLossyOutput(format: FormatId): boolean {
+  return LOSSY_OUTPUT.has(format)
+}
+
+/**
  * PNG deflate effort.
  *
  * 6 is zlib's own default and the knee of the curve: 9 costs roughly twice the

@@ -17,10 +17,12 @@
  *   `OffscreenCanvas` to encode, and `route()` gates on both itself. Repeating
  *   the check here would only downgrade a browser missing them from a
  *   `CODEC_UNAVAILABLE` that names the missing API to a bare `UNSUPPORTED_PAIR`.
- * - **Only `convert`.** `EngineInput` carries no quality, no target size and no
- *   angle yet, so an engine that accepted `resize` would hand back the original
- *   dimensions and call it a success. Those operations arrive with the options
- *   that make them meaningful (issues #33–#35).
+ * - **Only `convert`.** It does honour `image.quality` — the same 1..100 scale
+ *   the rest of the app uses, converted to the `0..1` a canvas wants — so a
+ *   converted JPEG comes out where the user asked for it. What it will not claim
+ *   is `compress` or `resize`: `compress` means a *target size*, which costs a
+ *   re-encode per attempt and belongs with the encoder that can shrink on load,
+ *   and `drawImage` downsamples bilinearly in one step. Both go to `vips`.
  * - **Nothing lossless.** A canvas decodes to RGBA and re-encodes from scratch,
  *   so EXIF, ICC profiles and any lossless JPEG transform are gone. The router's
  *   `QUALITY_LOSS` warning covers the pairs where that shows.
