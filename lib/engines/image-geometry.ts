@@ -179,8 +179,8 @@ function fitScale(plan: ResizePlan, base: ImageSize): number {
  * axis", not "fail the conversion".
  */
 function planResize(options: ImageOptions | undefined, base: ImageSize): ResizePlan | null {
-  const width = positiveInteger(options?.width)
-  const height = positiveInteger(options?.height)
+  const width = positiveDimension(options?.width)
+  const height = positiveDimension(options?.height)
   if (width === undefined && height === undefined) return null
 
   const locked = options?.lockAspectRatio !== false
@@ -245,7 +245,16 @@ function atLeastOnePixel(value: number): number {
   return Math.max(1, Math.floor(value))
 }
 
-function positiveInteger(value: number | undefined): number | undefined {
+/**
+ * A requested pixel dimension, or `undefined` when the job named none.
+ *
+ * Anything that is not a positive finite number is "none" rather than an error:
+ * a cleared input box reads as `NaN` and means "no constraint on this axis", not
+ * "fail the conversion". Exported because the SVG path in `./canvas-svg` reads
+ * the same two fields under different rules about enlarging, and two copies of
+ * this is how the two paths come to disagree about what `0` means.
+ */
+export function positiveDimension(value: number | undefined): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined
 
   return Math.round(value)
