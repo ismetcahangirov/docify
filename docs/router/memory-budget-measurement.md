@@ -256,6 +256,14 @@ never re-routes (CLAUDE.md §2.4, `lib/worker/types.ts`). `EngineInput.budgetByt
 is the field the main thread puts its already-computed answer in — a number, not
 the `Capabilities` it came from, so the worker still cannot decide anything.
 
+`conversionRequest()` in `lib/worker/request.ts` is what fills it, and it is the
+only thing that assembles a `ConvertRequest`. It takes the accepted
+`RouteSuccess` and the `Capabilities` that decision was made against in one
+call, which is what makes the two impossible to mismatch: there is no way to
+send an engine chosen for one device with a budget computed for another. Before
+#177 nothing set the field at all, and every job on every device silently ran at
+the desktop floor.
+
 When it is absent, `DEFAULT_BUDGET_BYTES` applies, and that is
 `DESKTOP_BUDGET_FLOOR_BYTES` (140 MB) rather than the iOS ceiling. That is a
 deliberate departure from "assume the weakest device", and the reason is that
@@ -330,10 +338,6 @@ above. These are the holes that are still open:
   *input bytes* are all that stands between a flat 60 megapixel PNG and a phone,
   and they understate it by two orders of magnitude. This is the largest thing
   this document knows it cannot see.
-- **Nobody sets `EngineInput.budgetBytes` yet.** No UI starts conversions, so
-  every job today runs at `DEFAULT_BUDGET_BYTES`. The field is the whole fix and
-  the arithmetic already takes it; the caller has to pass `budgetBytes(caps)`
-  when it lands.
 - `pdf-split` holds one `PDFDocument` per page until the archive is written, so
   its cost scales with page count. `split-vector-large` is 200 pages of 0.3 MB
   peaking at 44 MB, which the model under-predicts by 10 MB.
