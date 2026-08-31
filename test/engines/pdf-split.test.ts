@@ -19,7 +19,7 @@ import type { PdfSplitOptions } from '@/lib/engines/pdf-options'
 import type { EngineInput } from '@/lib/engines/types'
 import type { ConversionTask } from '@/lib/router/types'
 
-import { rewordEncryptedRefusal } from '../support/pdf-lib'
+import { lockedPdfBlob, rewordEncryptedRefusal } from '../support/pdf-lib'
 
 const task: ConversionTask = { from: 'pdf', to: 'pdf', op: 'split' }
 
@@ -311,14 +311,7 @@ describe('errors that have to explain themselves', () => {
     // pdf-lib refuses an encrypted document outright; without this the user
     // would see "Input document to `PDFDocument.load` is encrypted", which
     // names an API rather than a next step.
-    const encrypted = await fixture(2)
-    const bytes = new Uint8Array(await encrypted.arrayBuffer())
-    const document = await PDFDocument.load(bytes)
-    // The presence of `/Encrypt` in the trailer is what pdf-lib checks, so the
-    // cheapest faithful fixture is a real document that declares one.
-    document.context.trailerInfo.Encrypt = document.context.obj({})
-
-    const locked = await blobOf(document)
+    const locked = await lockedPdfBlob(2)
 
     await expect(
       splitPdf({ task, files: [locked] }, new AbortController().signal, nothing),

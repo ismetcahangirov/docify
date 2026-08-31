@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { openPdf } from '@/lib/engines/pdf-open'
 
-import { rewordEncryptedRefusal } from '../support/pdf-lib'
+import { lockedPdfBytes, rewordEncryptedRefusal } from '../support/pdf-lib'
 
 const encrypted = 'This PDF is locked. Unlock it first.'
 const damaged = (detail: string) => `This file could not be read as a PDF: ${detail}`
@@ -23,27 +23,6 @@ async function fixture(pageCount: number): Promise<Uint8Array> {
   for (let page = 1; page <= pageCount; page += 1) document.addPage([200, 800])
 
   return new Uint8Array(await document.save())
-}
-
-/**
- * A document that declares `/Encrypt` in its trailer.
- *
- * Written out by hand because pdf-lib can read encryption but not write it, and
- * splicing the entry into a generated file would corrupt the compressed streams
- * around it.
- */
-function locked(): Uint8Array {
-  return new TextEncoder().encode(
-    [
-      '%PDF-1.7',
-      '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj',
-      '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj',
-      '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] >>\nendobj',
-      '4 0 obj\n<< /Filter /Standard /V 1 /R 2 /O <00> /U <00> /P -1 >>\nendobj',
-      'trailer\n<< /Size 5 /Root 1 0 R /Encrypt 4 0 R >>',
-      '%%EOF',
-    ].join('\n'),
-  )
 }
 
 describe('opening a document that can be read', () => {
@@ -72,7 +51,7 @@ describe('opening a document that can be read', () => {
   it('passes its load options through to pdf-lib', async () => {
     // `ignoreEncryption` is the observable one: it turns the failure below into
     // a successful open, which nothing else in this helper could do.
-    const pageCount = await openPdf(locked(), {
+    const pageCount = await openPdf(await lockedPdfBytes(), {
       load: { ignoreEncryption: true },
       read: (source) => source.getPageCount(),
       encrypted,
@@ -86,7 +65,11 @@ describe('opening a document that can be read', () => {
 describe('opening a document that cannot be read', () => {
   it('answers an encrypted document with the caller’s own wording', async () => {
     await expect(
-      openPdf(locked(), { read: (source) => source.getPageCount(), encrypted, damaged }),
+      openPdf(await lockedPdfBytes(), {
+        read: (source) => source.getPageCount(),
+        encrypted,
+        damaged,
+      }),
     ).rejects.toThrow(encrypted)
   })
 
@@ -222,7 +205,11 @@ describe('what says a document is encrypted', () => {
     rewordEncryptedRefusal()
 
     await expect(
-      openPdf(locked(), { read: (source) => source.getPageCount(), encrypted, damaged }),
+      openPdf(await lockedPdfBytes(), {
+        read: (source) => source.getPageCount(),
+        encrypted,
+        damaged,
+      }),
     ).rejects.toThrow(encrypted)
   })
 
@@ -231,7 +218,7 @@ describe('what says a document is encrypted', () => {
     // `ignoreEncryption`, so pdf-lib never raises its encrypted error at all,
     // and the failure arrives from the page tree instead.
     await expect(
-      openPdf(locked(), {
+      openPdf(await lockedPdfBytes(), {
         load: { ignoreEncryption: true },
         read: () => {
           throw new Error("Cannot read properties of undefined (reading 'Pages')")
@@ -252,5 +239,20 @@ describe('what says a document is encrypted', () => {
         damaged,
       }),
     ).rejects.toThrow(/could not be read as a PDF/)
+  })
+})
+
+describe('the locked fixture the four pdf-lib suites share', () => {
+  // It is one document in one place now (#180), so a silent change to it would
+  // surface as four confusing failures elsewhere rather than as one here.
+  it('is a well-formed document that happens to declare /Encrypt', async () => {
+    const relaxed = await PDFDocument.load(await lockedPdfBytes(3), { ignoreEncryption: true })
+
+    expect(relaxed.isEncrypted).toBe(true)
+    expect(relaxed.getPageCount()).toBe(3)
+  })
+
+  it('is refused by a plain load, which is what every suite leans on', async () => {
+    await expect(PDFDocument.load(await lockedPdfBytes())).rejects.toThrow(/encrypt/i)
   })
 })

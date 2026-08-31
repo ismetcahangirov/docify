@@ -16,7 +16,7 @@ import { createRunner } from '@/lib/engines/pdflib'
 import type { EngineInput, ProgressCallback } from '@/lib/engines/types'
 import type { ConversionTask } from '@/lib/router/types'
 
-import { rewordEncryptedRefusal } from '../support/pdf-lib'
+import { lockedPdfFile, rewordEncryptedRefusal } from '../support/pdf-lib'
 
 import { PDF_SUITE_TIMEOUT_MS } from '../support/timeouts'
 
@@ -40,35 +40,6 @@ async function pdf(widths: readonly number[], name?: string): Promise<Blob> {
   const bytes = new Uint8Array(await document.save())
 
   return name === undefined ? new Blob([bytes]) : new File([bytes], name)
-}
-
-/**
- * A password-protected PDF, under a name an error message can quote.
- *
- * A trailer that resolves `/Encrypt` is the whole of what `PDFDocument.load`
- * refuses on, so declaring one on a document pdf-lib generated itself keeps
- * everything a merge touches first — header at offset zero, catalog, page tree,
- * xref — genuinely well formed, and puts the fault exactly where the test wants
- * it. `test/engines/pdf-split.test.ts` splices the same entry, onto a document
- * it has already saved and reloaded rather than a fresh one.
- *
- * The streams behind it stay plaintext, which no real locked PDF's would be.
- * That is the honest limit of this fixture and it does not matter here: merge
- * never reaches them, because `load` refuses the document before pdf-lib
- * decodes anything. The dictionary is filled in as a real one would be so the
- * file does not also depend on an empty `/Encrypt` being tolerated.
- */
-async function locked(name: string): Promise<File> {
-  const document = await PDFDocument.create()
-  document.addPage([100, 200])
-  document.context.trailerInfo.Encrypt = document.context.obj({
-    Filter: 'Standard',
-    V: 1,
-    R: 2,
-    P: -1,
-  })
-
-  return new File([new Uint8Array(await document.save())], name)
 }
 
 /** The widths of every page in `blob`, in document order. */
@@ -177,7 +148,7 @@ describe('rejecting a merge that cannot work', () => {
     // before `copyPages` runs at all. Second of three, so a message that quoted
     // the wrong position could not pass by landing on the first file or the
     // last.
-    const failure = run([await pdf([100]), await locked('payslip.pdf'), await pdf([200])])
+    const failure = run([await pdf([100]), await lockedPdfFile('payslip.pdf'), await pdf([200])])
 
     await expect(failure).rejects.toThrow(/payslip\.pdf/)
     await expect(failure).rejects.toThrow(/file 2 of 3/i)
@@ -195,7 +166,7 @@ describe('rejecting a merge that cannot work', () => {
     // With the word taken away, only the trailer can answer — and the wrong
     // answer here is telling someone their payslip is damaged.
     rewordEncryptedRefusal()
-    const failure = run([await pdf([100]), await locked('payslip.pdf')])
+    const failure = run([await pdf([100]), await lockedPdfFile('payslip.pdf')])
 
     await expect(failure).rejects.toThrow(/password-protected/i)
     await expect(failure).rejects.toThrow(/payslip.pdf/)
