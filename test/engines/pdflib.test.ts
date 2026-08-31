@@ -48,9 +48,17 @@ const pdfToPdf = (op: Operation): ConversionTask => ({ from: 'pdf', to: 'pdf', o
 
 describe('the pdflib descriptor', () => {
   it('claims the structural PDF operations', () => {
-    for (const op of ['merge', 'split', 'organize', 'rotate'] as const) {
+    for (const op of ['merge', 'split', 'organize', 'rotate', 'protect', 'unlock'] as const) {
       expect(descriptor.supports(pdfToPdf(op), desktop)).toBe(true)
     }
+  })
+
+  it('claims the password operations on a phone, because the crypto needs no WASM', () => {
+    // AES and the SHA-2 family come from `SubtleCrypto`, which every browser has;
+    // the only requirement the two operations add is a secure context, and every
+    // page this ships on is one.
+    expect(descriptor.supports(pdfToPdf('protect'), oldPhone)).toBe(true)
+    expect(descriptor.supports(pdfToPdf('unlock'), oldPhone)).toBe(true)
   })
 
   it('claims images to PDF, which is a convert rather than a PDF-to-PDF edit', () => {
@@ -120,6 +128,19 @@ describe('the pdflib runner', () => {
     await expect(
       createRunner().run(input(pdfToPdf('split')), new AbortController().signal, nothing),
     ).rejects.toThrow(/could not be read as a PDF/i)
+  })
+
+  it('dispatches the two password operations to their own modules', async () => {
+    // Same shape as the split case above: the stub is not a document, so what is
+    // being pinned is which module answered. Protecting complains about the
+    // missing password before it ever looks at the bytes; unlocking gets as far
+    // as scanning them and finds no encryption dictionary.
+    await expect(
+      createRunner().run(input(pdfToPdf('protect')), new AbortController().signal, nothing),
+    ).rejects.toThrow(/needs a password/i)
+    await expect(
+      createRunner().run(input(pdfToPdf('unlock')), new AbortController().signal, nothing),
+    ).rejects.toThrow(/no password on it/i)
   })
 
   it('refuses an operation this engine never claimed', async () => {
