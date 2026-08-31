@@ -5,6 +5,7 @@
 // exactly what makes it testable without one. The header readers it consumes
 // live in `./raster-size` and are tested there.
 
+import { MAX_CANVAS_PIXELS, MAX_CANVAS_SIDE } from '@/lib/engines/canvas-limits'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -12,8 +13,6 @@ import {
   assertDecodedPixelsFit,
   DEFAULT_BUDGET_BYTES,
   imageLabel,
-  MAX_BITMAP_PIXELS,
-  MAX_BITMAP_SIDE,
   maxDecodedPixels,
   PDFLIB_DECODED_BYTES_PER_PIXEL,
 } from '@/lib/engines/raster-limits'
@@ -141,13 +140,13 @@ describe('refusing an image no browser bitmap could hold', () => {
 
   it('admits an image exactly on both limits', () => {
     expect(() =>
-      assertBitmapFits('"square.png"', { width: MAX_BITMAP_SIDE, height: 4096 }),
+      assertBitmapFits('"square.png"', { width: MAX_CANVAS_SIDE, height: 4096 }),
     ).not.toThrow()
   })
 
   it('refuses one axis past what Safari will allocate', () => {
     expect(() =>
-      assertBitmapFits('"banner.png"', { width: MAX_BITMAP_SIDE + 1, height: 10 }),
+      assertBitmapFits('"banner.png"', { width: MAX_CANVAS_SIDE + 1, height: 10 }),
     ).toThrow(/"banner\.png" is 16385 × 10 pixels[\s\S]*larger than a browser canvas can hold/)
   })
 
@@ -161,7 +160,7 @@ describe('refusing an image no browser bitmap could hold', () => {
     // Sized from what a canvas can hold, which is a fact, rather than from an
     // unmeasured per-pixel cost against a conservative budget — which would
     // refuse a 12 megapixel phone photo.
-    expect(MAX_BITMAP_PIXELS).toBeGreaterThan(4032 * 3024)
+    expect(MAX_CANVAS_PIXELS).toBeGreaterThan(4032 * 3024)
   })
 })
 
