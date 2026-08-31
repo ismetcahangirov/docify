@@ -89,6 +89,12 @@ export interface PdfRenderTask {
 export interface PdfPage {
   getViewport(parameters: { scale: number }): PdfViewport
   render(parameters: { canvas: RenderCanvas; viewport: PdfViewport }): PdfRenderTask
+  /**
+   * The page's text as positioned runs. Structurally `PdfTextItem[]` from
+   * `./pdf-text-layout`, declared loosely here so this module keeps describing
+   * pdf.js rather than depending on what we do with it.
+   */
+  getTextContent(): Promise<{ items: readonly unknown[] }>
   /** Drops the page's operator list and font references. */
   cleanup(): boolean
 }

@@ -49,6 +49,7 @@ describe('ConversionTask', () => {
       | 'heic'
       | 'ico'
       | 'pdf'
+      | 'txt'
       | 'mp4'
       | 'webm'
       | 'mov'
@@ -178,7 +179,7 @@ describe('Warning', () => {
 
   it('is exactly the four warning codes the router can raise', () => {
     expectTypeOf<WarningCode>().toEqualTypeOf<
-      'SLOW_PATH' | 'QUALITY_LOSS' | 'LARGE_DOWNLOAD' | 'NO_ISOLATION'
+      'SLOW_PATH' | 'QUALITY_LOSS' | 'LARGE_DOWNLOAD' | 'NO_ISOLATION' | 'LAYOUT_LOSS'
     >()
   })
 

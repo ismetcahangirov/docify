@@ -55,6 +55,16 @@ export const PDFJS_LOAD_COST = 1_824_935
 /** What a rendered page can be written as: the raster formats a canvas encodes. */
 const RENDERABLE_TARGETS: ReadonlySet<FormatId> = new Set(['jpg', 'png'])
 
+/**
+ * The target that needs no canvas at all.
+ *
+ * Text extraction reads the same document through the same parser and never
+ * draws anything, which is why it is the one job this engine can do on a browser
+ * without `OffscreenCanvas` — and why the capability gate below is scoped to the
+ * raster targets rather than applied to the engine as a whole.
+ */
+const TEXT_TARGET: FormatId = 'txt'
+
 export const descriptor: EngineDescriptor = {
   id: 'pdfjs',
   label: 'PDF page rendering (pdf.js)',
@@ -63,8 +73,9 @@ export const descriptor: EngineDescriptor = {
   // same task, so the ordering is documentation more than arbitration.
   priority: 30,
   supports(task: ConversionTask, caps: Capabilities): boolean {
-    if (task.from !== 'pdf') return false
-    if (task.op !== 'convert' || !RENDERABLE_TARGETS.has(task.to)) return false
+    if (task.from !== 'pdf' || task.op !== 'convert') return false
+    if (task.to === TEXT_TARGET) return true
+    if (!RENDERABLE_TARGETS.has(task.to)) return false
 
     return caps.offscreenCanvas
   },
@@ -81,12 +92,23 @@ export function createRunner(): EngineRunner {
       throwIfAborted(signal)
 
       const { task } = input
-      if (task.op !== 'convert' || !RENDERABLE_TARGETS.has(task.to)) {
+      if (task.op !== 'convert' || (task.to !== TEXT_TARGET && !RENDERABLE_TARGETS.has(task.to))) {
         // Reached only when `supports()` and this disagree, which is a routing
         // bug. Saying so beats downloading pdf.js to discover it.
         throw new Error(
-          `The pdf.js engine renders pages to JPG or PNG, not "${task.to}" by "${task.op}".`,
+          `The pdf.js engine reads pages as JPG, PNG or text, not "${task.to}" by "${task.op}".`,
         )
+      }
+
+      // One `await import()` per target, each with a literal specifier: a
+      // computed one would defeat the bundler's static analysis and collapse
+      // both operations into a single chunk (CLAUDE.md §2.3).
+      if (task.to === TEXT_TARGET) {
+        const { extractPdfText } = await import('./pdf-text')
+
+        throwIfAborted(signal)
+
+        return extractPdfText(input, signal, onProgress)
       }
 
       const { renderPdfPages } = await import('./pdf-render')

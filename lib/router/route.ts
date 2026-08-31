@@ -58,6 +58,16 @@ const LOSSY_IMAGE_FORMATS: ReadonlySet<FormatId> = new Set(['jpg', 'webp', 'avif
 const LOSSLESS_AUDIO_FORMATS: ReadonlySet<FormatId> = new Set(['wav', 'flac'])
 
 /**
+ * Targets that keep the words and throw the document away.
+ *
+ * A different loss from `QUALITY_LOSS`, which is about re-encoding: nothing is
+ * being re-encoded here, and nothing about the *text* degrades. What is lost is
+ * everything that was not text — the layout, the fonts, the images, the tables —
+ * because the target format has nowhere to put any of it.
+ */
+const TEXT_FORMATS: ReadonlySet<FormatId> = new Set(['txt'])
+
+/**
  * Whether writing this format throws information away.
  *
  * WebP, AVIF and HEIC all have lossless modes on paper; every engine we ship
@@ -228,6 +238,16 @@ function warningsFor(
     warnings.push({
       code: 'LARGE_DOWNLOAD',
       message: `${engine.label} is a ${formatBytes(engine.loadCost)} one-time download; it is cached afterwards.`,
+    })
+  }
+
+  if (TEXT_FORMATS.has(task.to) && !TEXT_FORMATS.has(task.from)) {
+    warnings.push({
+      code: 'LAYOUT_LOSS',
+      message:
+        'A text file holds words and nothing else, so the layout, fonts, images and tables ' +
+        'are not carried across. The result is readable text, not an editable copy of the ' +
+        'document.',
     })
   }
 

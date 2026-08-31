@@ -68,6 +68,12 @@ export interface PdfLayoutOptions {
   margin?: number
 }
 
+/** Reading a document's words out as plain text. */
+export interface PdfTextOptions {
+  /** 1-based range spec limiting which pages are read. Absent means all. */
+  pages?: string
+}
+
 /** Adding a password to a document. */
 export interface PdfProtectOptions {
   /**
@@ -111,6 +117,7 @@ export interface PdfOptions {
   split?: PdfSplitOptions
   organize?: PdfOrganizeOptions
   render?: PdfRenderOptions
+  text?: PdfTextOptions
   layout?: PdfLayoutOptions
   protect?: PdfProtectOptions
   unlock?: PdfUnlockOptions
