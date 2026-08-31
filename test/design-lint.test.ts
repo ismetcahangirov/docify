@@ -115,6 +115,34 @@ describe('no-gradient', () => {
   })
 })
 
+describe('no-arrow-glyph', () => {
+  // The shipped latin subset has no U+2192, so a text arrow renders in whatever
+  // fallback face the browser picks — different metrics on every platform.
+  it('flags the right arrow CLAUDE.md section 3 puts on the primary button', () => {
+    expect(rulesFor('components/ui/button.tsx', `<span>Convert →</span>`)).toContain(
+      'no-arrow-glyph',
+    )
+  })
+
+  it('flags the rest of the block, not just the one character', () => {
+    expect(rulesFor('components/x.tsx', `<p>← back</p>`)).toContain('no-arrow-glyph')
+    expect(rulesFor('components/x.tsx', `<p>a ↔ b</p>`)).toContain('no-arrow-glyph')
+  })
+
+  it('flags one written as a CSS content string', () => {
+    expect(rulesFor('app/globals.css', `.x::after { content: '→'; }`)).toContain('no-arrow-glyph')
+  })
+
+  it('does not flag prose in a comment, where the engines write theirs', () => {
+    expect(rulesFor('lib/engines/bmp.ts', `// images → PDF costs more than it looks`)).toEqual([])
+    expect(rulesFor('lib/router/types.ts', `/** the from → to triple */`)).toEqual([])
+  })
+
+  it('does not flag an inline SVG, which is the way an arrow is meant to ship', () => {
+    expect(rulesFor('components/ui/button.tsx', '<ArrowRight aria-hidden="true" />')).toEqual([])
+  })
+})
+
 describe('no-raw-hex', () => {
   it('flags a hex code in a CSS rule', () => {
     expect(rulesFor('app/x.css', '.a { color: #7c3aed; }')).toEqual(['no-raw-hex'])

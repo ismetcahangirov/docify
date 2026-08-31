@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import { XIcon } from 'lucide-react'
 import { describe, expect, it } from 'vitest'
 
 import { Button, BUTTON_SIZES, buttonVariants } from '@/components/ui/button'
@@ -153,5 +154,63 @@ describe('Button', () => {
 
     expect(link).toBeInTheDocument()
     expect(link.className).toContain('rounded-full')
+  })
+})
+
+describe('the primary arrow', () => {
+  /** Any character in the arrows block, which is what the latin subset lacks. */
+  const ARROW_GLYPH = /[←-⇿]/u
+
+  it('draws it as an inline SVG rather than a text character', () => {
+    render(<Button>Convert file</Button>)
+    const button = screen.getByRole('button', { name: 'Convert file' })
+
+    expect(button.querySelector('svg')).not.toBeNull()
+    expect(button.textContent ?? '').not.toMatch(ARROW_GLYPH)
+  })
+
+  it('keeps the arrow out of the accessible name', () => {
+    // Decorative: the name comes from the label, and a screen reader that read
+    // "Convert file right arrow" would be reading the decoration aloud.
+    render(<Button>Convert file</Button>)
+    const button = screen.getByRole('button', { name: 'Convert file' })
+
+    expect(button.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('carries it through asChild, which is how a link gets one', () => {
+    render(
+      <Button asChild>
+        <a href="/convert">Start converting</a>
+      </Button>,
+    )
+    const link = screen.getByRole('link', { name: 'Start converting' })
+
+    expect(link.querySelector('svg')).not.toBeNull()
+  })
+
+  it('belongs to the primary variant alone', () => {
+    // CLAUDE.md section 3 puts the arrow on the primary button. On a secondary
+    // or ghost button it would claim an emphasis the variant does not have.
+    render(
+      <>
+        <Button variant="secondary">Cancel</Button>
+        <Button variant="ghost">Learn more</Button>
+      </>,
+    )
+
+    expect(screen.getByRole('button', { name: 'Cancel' }).querySelector('svg')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Learn more' }).querySelector('svg')).toBeNull()
+  })
+
+  it('leaves an icon button to its own icon', () => {
+    // `size="icon"` is a square holding one glyph; a second one would not fit.
+    render(
+      <Button size="icon" aria-label="Close">
+        <XIcon aria-hidden="true" />
+      </Button>,
+    )
+
+    expect(screen.getByRole('button', { name: 'Close' }).querySelectorAll('svg')).toHaveLength(1)
   })
 })

@@ -3,7 +3,9 @@
  *
  * CLAUDE.md section 3 lists five prohibitions. Four of them are mechanical, and
  * those are the four encoded here: no glassmorphism, no blue or purple hue, no
- * decorative gradient, and no raw hex code outside the `@theme` palette. Every
+ * decorative gradient, and no raw hex code outside the `@theme` palette. A
+ * fifth rule is not from that list but is enforced the same way, because it is
+ * the same kind of mistake: no arrow drawn as a text character (#124). Every
  * function below takes the source as a string and does no I/O, so a rule can be
  * tested without a fixture file on disk — which matters, because a fixture that
  * violated the prohibitions would have to be excluded from the scan, and an
@@ -115,6 +117,25 @@ const RULES = [
     languages: ['css', 'js'],
     pattern: /\b(?:repeating-)?(?:linear|radial|conic)-gradient\s*\(/g,
     message: 'decorative gradients are forbidden — fill the surface with a single token',
+  },
+  {
+    /*
+     * The self-hosted faces ship only the Google `latin` unicode-range. It
+     * covers U+2191 and U+2193 but not U+2192 — the `→` CLAUDE.md section 3 puts
+     * on the primary button — so an arrow written as text is rendered by
+     * whatever fallback face the browser picks: wrong metrics, wrong weight,
+     * different on every platform. The whole U+2190–U+21FF block is refused
+     * rather than the one character, because the next arrow reached for will be
+     * a different one and the fallback is no better for it.
+     *
+     * Comments are masked before the scan, so the `images → PDF` in an engine
+     * header is untouched. This is about what ships to a screen.
+     */
+    id: 'no-arrow-glyph',
+    languages: ['css', 'js'],
+    pattern: /[\u2190-\u21FF]/gu,
+    message:
+      'arrows must be an inline SVG, not a text glyph — the shipped latin subset has no U+2192',
   },
   {
     id: 'no-raw-hex',

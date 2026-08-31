@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
+import { ArrowRightIcon } from 'lucide-react'
 import { Slot } from 'radix-ui'
 
 import { cn } from '@/lib/utils'
@@ -44,6 +45,15 @@ const BUTTON_SIZES = {
  * fill keep `currentColor` on purpose: inheriting is what lets them invert
  * between the light and the dark sections.
  */
+/**
+ * The one place the defaults are written.
+ *
+ * `cva` needs them and so does the arrow below, which belongs to the primary
+ * button alone — and a button that names no variant would otherwise have to be
+ * compared against a second copy of the word.
+ */
+const DEFAULTS = { variant: 'primary', size: 'default' } as const
+
 const buttonVariants = cva(
   [
     'inline-flex shrink-0 items-center justify-center gap-2',
@@ -66,15 +76,32 @@ const buttonVariants = cva(
       },
       size: BUTTON_SIZES,
     },
-    defaultVariants: {
-      variant: 'primary',
-      size: 'default',
-    },
+    defaultVariants: DEFAULTS,
   },
 )
 
+/**
+ * The arrow CLAUDE.md section 3 puts on the primary button, drawn rather than
+ * typed.
+ *
+ * Written as the character it names, it would miss every subset the app ships:
+ * the self-hosted faces carry only Google's `latin` unicode-range, which covers
+ * U+2191 and U+2193 but not U+2192 (`app/fonts.ts`). The browser would fall
+ * back to a system face whose weight, metrics and optical size match neither
+ * Archivo nor Inter, and pick a different one on every platform.
+ * `scripts/design-lint` refuses the whole U+2190–U+21FF block so the shortcut
+ * cannot come back.
+ *
+ * `aria-hidden` because it is decoration: the accessible name is the label, and
+ * "Convert file right arrow" is the decoration read aloud.
+ */
+function ButtonArrow() {
+  return <ArrowRightIcon aria-hidden="true" />
+}
+
 function Button({
   className,
+  children,
   variant,
   size,
   asChild = false,
@@ -85,16 +112,23 @@ function Button({
   }) {
   const Comp = asChild ? Slot.Root : 'button'
 
-  // The defaults live in `defaultVariants` only. Repeating them here as
-  // destructuring defaults — as shadcn does, to feed its `data-variant` /
-  // `data-size` attributes — gives two places to keep in sync for attributes
-  // nothing in this project styles or queries.
+  // Only the primary variant, and never the icon size — that one is a square
+  // holding a single glyph, and a second would not fit in it.
+  const showsArrow =
+    (variant ?? DEFAULTS.variant) === 'primary' && (size ?? DEFAULTS.size) !== 'icon'
+
+  // `Slottable` is what lets `asChild` keep the arrow: it marks which child the
+  // caller's element is merged into, so the icon travels *inside* the rendered
+  // link instead of turning the slot into an illegal two-child render.
   return (
     <Comp
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
-    />
+    >
+      {asChild ? <Slot.Slottable>{children}</Slot.Slottable> : children}
+      {showsArrow && <ButtonArrow />}
+    </Comp>
   )
 }
 
