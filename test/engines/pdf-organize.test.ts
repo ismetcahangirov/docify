@@ -17,7 +17,7 @@ import type { PdfOrganizeOptions } from '@/lib/engines/pdf-options'
 import type { EngineInput } from '@/lib/engines/types'
 import type { Operation } from '@/lib/router/types'
 
-import { rewordEncryptedRefusal } from '../support/pdf-lib'
+import { lockedPdfBlob, rewordEncryptedRefusal } from '../support/pdf-lib'
 
 interface PageSpec {
   /** Doubles as the page's identity: source page `n` is 100 + n points tall. */
@@ -287,21 +287,7 @@ describe('what organising refuses', () => {
   })
 
   it('says so when the document is password-protected', async () => {
-    // Written out by hand because pdf-lib can read encryption but not write it,
-    // and splicing `/Encrypt` into a generated file would corrupt the compressed
-    // streams around it. This is the one case where "could not be read as a PDF"
-    // would send the user hunting for a corrupt download instead of a password.
-    const locked = new Blob([
-      [
-        '%PDF-1.7',
-        '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj',
-        '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj',
-        '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] >>\nendobj',
-        '4 0 obj\n<< /Filter /Standard /V 1 /R 2 /O <00> /U <00> /P -1 >>\nendobj',
-        'trailer\n<< /Size 5 /Root 1 0 R /Encrypt 4 0 R >>',
-        '%%EOF',
-      ].join('\n'),
-    ])
+    const locked = await lockedPdfBlob()
 
     await expect(organizePages(input([locked]), live(), nothing)).rejects.toThrow(
       /password-protected/i,
