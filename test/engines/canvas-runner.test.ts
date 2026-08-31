@@ -15,6 +15,8 @@ import { DEFAULT_QUALITY } from '@/lib/engines/image-options'
 import type { EngineInput } from '@/lib/engines/types'
 import type { ConversionTask, FormatId } from '@/lib/router/types'
 
+import { readMetadataSegments } from '@/lib/engines/jpeg-metadata'
+
 import { pngBytes } from './synthetic-images'
 
 class FakeBitmap {
@@ -55,6 +57,8 @@ class FakeCanvas {
   readonly convertCalls: { type?: string; quality?: number }[] = []
   /** When set, `convertToBlob` answers with this type instead of the requested one. */
   producedType: string | null = null
+  /** When set, `convertToBlob` answers with these exact bytes. */
+  encoded: Blob | null = null
 
   private readonly context: FakeContext
 
@@ -76,6 +80,8 @@ class FakeCanvas {
 
   async convertToBlob(options: { type?: string; quality?: number } = {}): Promise<Blob> {
     this.convertCalls.push(options)
+    if (this.encoded !== null) return this.encoded
+
     return new Blob(['encoded'], { type: this.producedType ?? options.type })
   }
 }
@@ -173,6 +179,104 @@ describe('the canvas runner — a straightforward conversion', () => {
 
       expect(canvas.convertCalls[0]?.type).toBe(type)
     }
+  })
+
+  describe('the metadata toggle', () => {
+    const exifSegment = [
+      0xff,
+      0xe1,
+      0x00,
+      0x0c,
+      ...[...'Exif'].map((c) => c.charCodeAt(0)),
+      0,
+      0,
+      1,
+      2,
+      3,
+      4,
+    ]
+    const scan = [0xff, 0xda, 0x00, 0x08, 1, 1, 0, 0, 63, 0, 0x9a, 0xbc, 0xff, 0xd9]
+
+    /** A JPEG carrying GPS-shaped metadata, as a phone camera would write it. */
+    const photo = () => new Blob([new Uint8Array([0xff, 0xd8, ...exifSegment, ...scan])])
+
+    /** What a browser JPEG encoder produces: pixels, and nothing else. */
+    const reEncoded = () =>
+      new Blob([new Uint8Array([0xff, 0xd8, ...scan])], { type: 'image/jpeg' })
+
+    function jpegHarness() {
+      const built = harness()
+      built.canvas.encoded = reEncoded()
+
+      return built
+    }
+
+    const jpegJob = (image?: EngineInput['image']): EngineInput => ({
+      task: { from: 'jpg', to: 'jpg', op: 'convert' },
+      files: [photo()],
+      image,
+    })
+
+    it('strips metadata by default, which is what a canvas does anyway', async () => {
+      const { environment } = jpegHarness()
+
+      const output = await createCanvasRunner(environment).run(
+        jpegJob(),
+        new AbortController().signal,
+        noProgress,
+      )
+
+      // The privacy-safe direction, and the one that needs no code: a canvas
+      // decodes to RGBA and re-encodes, so the GPS block never survives.
+      expect(readMetadataSegments(new Uint8Array(await output.arrayBuffer()))).toEqual([])
+    })
+
+    it('carries it across when the job asks to keep it', async () => {
+      const { environment } = jpegHarness()
+
+      const output = await createCanvasRunner(environment).run(
+        jpegJob({ keepMetadata: true }),
+        new AbortController().signal,
+        noProgress,
+      )
+
+      const carried = readMetadataSegments(new Uint8Array(await output.arrayBuffer()))
+      expect(carried).toHaveLength(1)
+      expect([...carried[0]]).toEqual(exifSegment)
+    })
+
+    it('leaves the output alone for a pair it cannot put metadata back into', async () => {
+      const { environment, canvas } = harness()
+      canvas.encoded = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' })
+
+      const output = await createCanvasRunner(environment).run(
+        { ...jpegJob({ keepMetadata: true }), task: { from: 'jpg', to: 'png', op: 'convert' } },
+        new AbortController().signal,
+        noProgress,
+      )
+
+      // A browser's PNG encoder has no hook for an Exif chunk. Producing a file
+      // with a JPEG segment glued to the front of it would be far worse than
+      // producing one without the metadata.
+      expect(new Uint8Array(await output.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]))
+    })
+
+    it('is a no-op for a source that carries nothing', async () => {
+      const { environment } = jpegHarness()
+
+      const output = await createCanvasRunner(environment).run(
+        {
+          ...jpegJob({ keepMetadata: true }),
+          files: [new Blob([new Uint8Array([0xff, 0xd8, ...scan])])],
+        },
+        new AbortController().signal,
+        noProgress,
+      )
+
+      expect(new Uint8Array(await output.arrayBuffer())).toEqual(
+        new Uint8Array(await reEncoded().arrayBuffer()),
+      )
+    })
   })
 
   it('rasterises an SVG at the resolution the job asked for', async () => {
