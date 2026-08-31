@@ -204,7 +204,7 @@ function convert(sample: Mp4RawSample): Mp4Sample {
 
 function formatOf(mp4: Mp4BoxModule, file: Mp4File, track: Mp4TrackInfo): Mp4TrackFormat {
   const entry = file.getTrackById(track.id)?.mdia.minf.stbl.stsd.entries[0]
-  const configuration = entry?.boxes.find((box) => CONFIGURATION_BOXES.has(box.type))
+  const configuration = entry?.boxes?.find((box) => CONFIGURATION_BOXES.has(box.type))
 
   return {
     codec: track.codec,

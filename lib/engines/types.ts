@@ -12,6 +12,7 @@ import type { Capabilities, ConversionTask, EngineId } from '@/lib/router/types'
 
 import type { ImageOptions } from './image-options'
 import type { PdfOptions } from './pdf-options'
+import type { VideoOptions } from './video-options'
 
 export interface EngineDescriptor {
   id: EngineId
@@ -52,6 +53,12 @@ export interface EngineInput {
    * See `./pdf-options` for the slot each operation reads.
    */
   pdf?: PdfOptions
+  /**
+   * Settings for video work — output size, bitrate, frame rate, and whether to
+   * ask for a hardware encoder. Absent means every default, which is a valid
+   * job: a container conversion needs no settings at all. See `./video-options`.
+   */
+  video?: VideoOptions
   /**
    * Memory this device may spend on the job, in bytes: `budgetBytes(caps)` from
    * `lib/router/budget.ts`, computed on the main thread that routed.

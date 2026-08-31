@@ -66,7 +66,8 @@ export interface Mp4RawSample {
 /** The sample-description entry a track's codec configuration hangs off. */
 export interface Mp4SampleEntry {
   type: string
-  boxes: readonly Mp4Box[]
+  /** Absent, not empty, on an entry that carries no child boxes at all. */
+  boxes?: readonly Mp4Box[]
 }
 
 export interface Mp4Trak {
