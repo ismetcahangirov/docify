@@ -48,15 +48,21 @@ export const PDFLIB_LOAD_COST = 525_000
 /**
  * Operations that read a PDF and write a PDF.
  *
- * `protect` and `unlock` are deliberately absent. pdf-lib can neither encrypt
- * nor decrypt, so claiming them here would route a job to an engine that cannot
- * finish it; issue #43 decides what actually serves them.
+ * `protect` and `unlock` are here even though pdf-lib itself can neither encrypt
+ * nor decrypt. The standard security handler is implemented alongside it, in
+ * `./pdf-crypt-standard` and the two derivation modules beside it, and the two
+ * operations take opposite routes: `./pdf-protect` mutates a parsed document and
+ * lets pdf-lib serialise it, while `./pdf-unlock` never parses at all — pdf-lib
+ * cannot read an encrypted document, so decryption happens on the raw bytes.
+ * Both module headers explain the asymmetry.
  */
 const STRUCTURAL_OPERATIONS: ReadonlySet<Operation> = new Set([
   'merge',
   'split',
   'organize',
   'rotate',
+  'protect',
+  'unlock',
 ])
 
 /**
@@ -132,6 +138,10 @@ async function loadOperation(task: ConversionTask): Promise<PdfOperation> {
     case 'organize':
     case 'rotate':
       return (await import('./pdf-organize')).organizePages
+    case 'protect':
+      return (await import('./pdf-protect')).protectPdf
+    case 'unlock':
+      return (await import('./pdf-unlock')).unlockPdf
     case 'convert':
       return (await import('./pdf-from-images')).imagesToPdf
     default:

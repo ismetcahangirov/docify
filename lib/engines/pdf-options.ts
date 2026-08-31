@@ -68,6 +68,40 @@ export interface PdfLayoutOptions {
   margin?: number
 }
 
+/** Adding a password to a document. */
+export interface PdfProtectOptions {
+  /**
+   * The password the document will ask for when it is opened.
+   *
+   * Required: there is no default that would not be a lie. It never leaves the
+   * device — the whole encryption happens in the worker (CLAUDE.md §2.1).
+   */
+  password?: string
+  /**
+   * A second password that also opens the document. Defaults to {@link password}.
+   *
+   * PDF calls this the *owner* password and uses it to gate permissions. Docify
+   * writes every document with all permissions allowed — see `./pdf-protect` for
+   * why a lock every reader may ignore is not worth offering — so its only
+   * effect here is to give a second way in, which is what a team sharing one
+   * document usually wants.
+   */
+  ownerPassword?: string
+}
+
+/** Removing a password from a document. */
+export interface PdfUnlockOptions {
+  /**
+   * The password that opens the document. Either the open password or the owner
+   * password will do; both derive the same file key.
+   *
+   * An empty password is the common case rather than an oversight: a document
+   * with restrictions but no open password has one, and that is what most people
+   * reach for an unlocker to remove.
+   */
+  password?: string
+}
+
 /**
  * The `pdf` slot of `EngineInput`. Every field is optional: a job with no
  * settings at all is a valid job, and each operation documents its own defaults
@@ -78,4 +112,6 @@ export interface PdfOptions {
   organize?: PdfOrganizeOptions
   render?: PdfRenderOptions
   layout?: PdfLayoutOptions
+  protect?: PdfProtectOptions
+  unlock?: PdfUnlockOptions
 }
