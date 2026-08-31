@@ -71,12 +71,13 @@ Two deliberate compromises, both of which change what a result means:
 | `pdflib` | **Measured**, four operations, below |
 | `zip` | **Measured** through `fflate` directly, which is what the engine will be built on |
 | `pdfjs` | **Half measured.** Parsing runs in Node; rendering needs a canvas, so the render term is an estimate — see below |
-| `canvas`, `vips`, `heif` | **Not measured.** Browser APIs and WASM modules with no Node equivalent; their factors are unchanged from before this document existed. `canvas` and `heif` do carry a hard ceiling on what a browser canvas can hold, which is a fact rather than a measurement — see "the decoded-pixel ceiling" |
+| `canvas`, `heif` | **Measured in a browser**, by `browser-memory-measure.mjs` — see "the browser harness". Their `bytesPerPixel` and `heif`'s reserve come from it; their byte factors are the pixel-less fallback and remain unmeasured |
+| `vips` | **Not measured.** It streams scanline regions and never materialises a bitmap, so it charges nothing per pixel and is exempt from the ceiling in the engines |
 | `webcodecs`, `ffmpeg`, `libarchive` | **Not measured.** No engine ships yet, and none of the three has a Node stand-in worth measuring. Their factors and `holds` values are carried over and are as good as the guess that produced them |
 
-Measuring the browser engines needs a Playwright harness on a cross-origin-isolated
-page driving `performance.measureUserAgentSpecificMemory()`. That is a separate
-piece of work and is not pretended to have been done here.
+That harness is `browser-memory-measure.mjs`: Playwright driving a
+cross-origin-isolated page through `performance.measureUserAgentSpecificMemory()`.
+It is what closed the `canvas` and `heif` rows.
 
 Two adjustments apply to every Node number before it is compared to the model:
 
@@ -176,6 +177,105 @@ input and 3.42× on a job small enough for fflate's own working set to show, bot
 including the `Blob` copy. The engine itself does not exist yet; this measures the
 library it will be built on, which is also what `lib/engines/zip-output.ts`
 already uses.
+
+## The browser harness
+
+`memory-measure.mjs` runs in Node and therefore cannot touch three of the nine
+engines. `browser-memory-measure.mjs` next to it runs the same kind of sweep in
+a real Chromium:
+
+```bash
+node docs/router/browser-memory-measure.mjs            # every scenario, ~9 minutes
+node docs/router/browser-memory-measure.mjs canvas-    # by prefix
+```
+
+It builds its images with the generator `memory-corpus.mjs` exports, serves
+them from a local origin, and reads
+`performance.measureUserAgentSpecificMemory()` — the only API that reports what
+a *renderer* holds rather than what the JS heap holds, which is the whole point
+here: a decoded `ImageBitmap` is not on the JS heap at all.
+
+Two launch conditions are not negotiable and cost an afternoon to find:
+
+1. **Cross-origin isolation.** The API is gated on it, so the harness serves
+   `Cross-Origin-Opener-Policy: same-origin` and
+   `Cross-Origin-Embedder-Policy: require-corp` — the pair `next.config.ts`
+   already sets on `/convert/*`.
+2. **A process-isolated origin.** Chromium's *old* headless mode does not lock a
+   renderer to a site and the call throws `SecurityError` there even though
+   `crossOriginIsolated` is `true`. `channel: 'chromium'` selects the new
+   headless, which works. Both were tried; the failure is reproducible.
+
+The API is asynchronous and cannot chase a peak the way the Node sampler does,
+so each scenario instead *holds* every allocation of its worst moment — source
+blob, decoded bitmap, canvas, encoded output — and measures there. That is the
+moment the engine occupies, and unlike a sampled peak it is reproducible.
+
+One mistake is worth recording because it is invisible in the output: an early
+version passed image bytes into the page through `page.evaluate`, which marshals
+every byte into a JS array element. The incompressible image then reported
+255 MB instead of 22.9 — the measurement was mostly of the argument. Images
+arrive over HTTP for that reason.
+
+### Browser results
+
+Measured 2026-08-31, Chromium 142 (Playwright 1.62.1, new headless), Windows 11.
+
+| scenario | in MB | Mpx | peak MB | peak/in | peak B/px |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `canvas-flat-1mpx` | 0.0 | 1.0 | 3.9 | 178.2 | 4.04 |
+| `canvas-flat-2mpx` | 0.0 | 2.0 | 7.7 | 187.0 | 4.02 |
+| `canvas-flat-6mpx` | 0.1 | 6.0 | 22.9 | 205.1 | 4.01 |
+| `canvas-flat-12mpx` | 0.2 | 12.0 | 45.8 | 214.7 | 4.00 |
+| `canvas-flat-24mpx` | 0.4 | 24.0 | 91.6 | 216.1 | 4.00 |
+| `canvas-noise-6mpx` | 17.2 | 6.0 | 22.9 | **1.3** | 4.01 |
+| `heif-module-only` | 0.0 | 0.0 | 20.5 | — | — |
+| `heif-fixture-64` | 0.0 | 0.0 | 20.6 | 43 209 | — |
+
+Each scenario ran twice, once writing PNG and once writing JPEG; the two agree
+to three significant figures, which is what says the output format is not what
+is being measured.
+
+**The two rows that settle the argument are the last two canvas ones.** Six
+megapixels of flat colour is 0.1 MB and six megapixels of noise is 17.2 MB —
+165× apart in bytes, identical in pixels. Both peak at 22.9 MB. A model
+expressed as a multiple of the encoded size has to be 205 for one of them and
+1.3 for the other, and `MEMORY.canvas` was 6.
+
+**`peak B/px` is flat at 4.00–4.04 across a 24× range in pixel count.** That is
+the number `MEMORY.canvas.bytesPerPixel` is fitted to. It is charged as 6:
+4.00 for the decoded bitmap and its canvas, plus 2 for the encoded output, which
+`measureUserAgentSpecificMemory` does not attribute to the renderer at all — its
+worst measured case is a 2.9 B/px incompressible PNG re-encode and its typical
+case is 0.3.
+
+**libheif costs 20.5 MB before it is shown a pixel.** `heif-module-only`
+instantiates the module and decodes nothing. That is `MEMORY.heif.reserveBytes`,
+rounded to 21 MB, and it is a cost no multiple of the input can express: the old
+model priced the 499-byte fixture at 2.5 kB against a reality of 20.6 MB.
+
+### What the browser sweep still cannot say
+
+- **libheif's per-pixel cost.** The repository holds one HEIC, 64 × 64, and
+  4096 pixels cannot separate a slope from noise. There is no HEIC encoder in
+  this build — `libheif-js` ships the decoder only, which
+  `lib/engines/heif-decode.ts` also relies on — so a corpus cannot be generated
+  the way the PNG one is. `MEMORY.heif.bytesPerPixel` is 8 by arithmetic
+  instead: `heif-decode.ts` allocates `width × height × 4` for the buffer
+  libheif fills, `heif.ts` draws that onto a canvas, the canvas sweep measured
+  that at 4.00, and both are live at once. This is the one row still waiting on
+  a corpus.
+- **A `Blob`'s backing store.** It is held by the browser process, not the
+  renderer, and the API does not attribute it. This is why the byte factors stay
+  as well as the pixel term, rather than being replaced by it.
+
+### Why the byte factors stay
+
+`MEMORY.canvas.factor` is still 6 and `MEMORY.heif.factor` is still 5, both
+still unmeasured. They are what answers when the caller could not read a header:
+`RouteFile.pixels` is optional, and a job with no bound at all is the failure
+this table exists to prevent. Where both are known the job is charged both, and
+over-charging a job whose pixels are known is the safe direction.
 
 ## The decoded-pixel ceiling
 
@@ -331,13 +431,8 @@ better than guessing at a header format.
 `lib/engines/raster-limits.ts`'s job, guarded before `embedPng` and measured
 above. These are the holes that are still open:
 
-- **What a browser bitmap costs per pixel.** `canvas` and `heif` are held to
-  what a canvas can *hold*, not to what it costs, because nobody has measured
-  the second number — see "the other three raster engines" above. Until the
-  browser harness exists, `MEMORY.canvas` at 6× and `MEMORY.heif` at 5× of the
-  *input bytes* are all that stands between a flat 60 megapixel PNG and a phone,
-  and they understate it by two orders of magnitude. This is the largest thing
-  this document knows it cannot see.
+- **libheif per pixel**, and only that: see "what the browser sweep still
+  cannot say". Everything else about `canvas` and `heif` is now measured.
 - `pdf-split` holds one `PDFDocument` per page until the archive is written, so
   its cost scales with page count. `split-vector-large` is 200 pages of 0.3 MB
   peaking at 44 MB, which the model under-predicts by 10 MB.

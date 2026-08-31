@@ -13,7 +13,8 @@
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { zlibSync } from 'fflate'
 import { PDFDocument, StandardFonts } from 'pdf-lib'
@@ -76,7 +77,7 @@ function concat(...parts) {
  * what a screenshot or an export from a design tool behaves like. The pair is
  * the point: both decode to exactly `width × height × 4` bytes.
  */
-function pngBytes(width, height, seed, noise = 1) {
+export function pngBytes(width, height, seed, noise = 1) {
   const random = rng(seed)
   const stride = 1 + width * 3
   const raw = new Uint8Array(height * stride)
@@ -222,11 +223,16 @@ async function buildCorpus(outDir) {
   console.log(`${manifest.length} files, ${manifest.reduce((sum, f) => sum + f.bytes, 0)} bytes`)
 }
 
-const outDir = process.argv[2]
+// Importable as well as runnable: `browser-memory-measure.mjs` builds its own
+// images with the same generator rather than a second copy of it, and importing
+// this file must not then write a corpus as a side effect.
+if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  const outDir = process.argv[2]
 
-if (outDir === undefined) {
-  console.error('usage: memory-corpus.mjs <dir>')
-  process.exit(1)
+  if (outDir === undefined) {
+    console.error('usage: memory-corpus.mjs <dir>')
+    process.exit(1)
+  }
+
+  await buildCorpus(outDir)
 }
-
-await buildCorpus(outDir)

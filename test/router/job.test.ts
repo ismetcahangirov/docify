@@ -17,6 +17,8 @@ describe('jobInput', () => {
       largestBytes: 3 * MB,
       smallestBytes: 3 * MB,
       fileCount: 1,
+      totalPixels: 0,
+      largestPixels: 0,
     })
   })
 
@@ -27,6 +29,8 @@ describe('jobInput', () => {
       largestBytes: 5 * MB,
       smallestBytes: MB,
       fileCount: 3,
+      totalPixels: 0,
+      largestPixels: 0,
     })
   })
 
@@ -36,6 +40,8 @@ describe('jobInput', () => {
       largestBytes: 0,
       smallestBytes: 0,
       fileCount: 0,
+      totalPixels: 0,
+      largestPixels: 0,
     })
   })
 
@@ -82,5 +88,48 @@ describe('isMeasurable', () => {
     expect(isMeasurable(jobInput(Number.POSITIVE_INFINITY))).toBe(false)
     expect(isMeasurable(jobInput([MB, Number.NaN]))).toBe(false)
     expect(isMeasurable(jobInput([MB, -MB]))).toBe(false)
+  })
+})
+
+describe('jobInput, on files that carry a pixel count', () => {
+  it('keeps both totals, so either scope can be budgeted', () => {
+    const job = jobInput([
+      { bytes: MB, pixels: 2_000_000 },
+      { bytes: 3 * MB, pixels: 1_000_000 },
+    ])
+
+    expect(job).toEqual({
+      totalBytes: 4 * MB,
+      largestBytes: 3 * MB,
+      smallestBytes: MB,
+      fileCount: 2,
+      totalPixels: 3_000_000,
+      largestPixels: 2_000_000,
+    })
+  })
+
+  it('reports the largest pixel count, not the pixels of the largest file', () => {
+    // The two are different images and the difference is the whole point: a
+    // flat screenshot is smaller in bytes than a photograph a quarter its size,
+    // and it is the screenshot that decides whether the decode fits.
+    const job = jobInput([
+      { bytes: 20 * MB, pixels: 2_000_000 },
+      { bytes: MB, pixels: 24_000_000 },
+    ])
+
+    expect(job.largestBytes).toBe(20 * MB)
+    expect(job.largestPixels).toBe(24_000_000)
+  })
+
+  it('treats a file with no pixel count as saying nothing, not as saying zero', () => {
+    const job = jobInput([{ bytes: MB, pixels: 5_000_000 }, { bytes: MB }])
+
+    expect(job.totalPixels).toBe(5_000_000)
+    expect(job.largestPixels).toBe(5_000_000)
+    expect(job.fileCount).toBe(2)
+  })
+
+  it('answers the same as a plain list when no file carries pixels', () => {
+    expect(jobInput([{ bytes: 5 * MB }, { bytes: MB }])).toEqual(jobInput([5 * MB, MB]))
   })
 })

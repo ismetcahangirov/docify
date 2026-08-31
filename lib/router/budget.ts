@@ -12,6 +12,8 @@
  * measuring on real devices.
  */
 
+import { MAX_CANVAS_PIXELS } from '@/lib/engines/canvas-limits'
+
 import type { Capabilities, EngineId, EngineMemory, JobInput } from './types'
 
 const MB = 1024 * 1024
@@ -88,18 +90,61 @@ export const DESKTOP_BUDGET_FLOOR_BYTES = ANDROID_BUDGET_BYTES
  * are measured, `pdfjs` is half measured, and the other six are not.
  */
 export const MEMORY: Record<EngineId, EngineMemory> = {
-  /** Not measured — a browser API with no Node stand-in. A decoded RGBA bitmap
-   *  is many times its encoded source, and the canvas keeps the source, the
-   *  bitmap and the re-encoded output alive at once. One image is decoded at a
-   *  time, so a batch costs what its biggest member costs rather than what the
-   *  batch adds up to. */
-  canvas: { factor: 6, holds: 'one-at-a-time', reserveBytes: 0 },
+  /**
+   * Measured in Chromium, by `docs/router/browser-memory-measure.mjs`.
+   *
+   * The entry the byte model was worst at, and the reason `bytesPerPixel`
+   * exists. The sweep runs the same decode at 1, 2, 6, 12 and 24 megapixels and
+   * reports **4.00–4.04 bytes per decoded pixel**, flat across the range. It
+   * then runs two 6 megapixel images whose encoded sizes are 165× apart — a
+   * flat screenshot at 0.1 MB and incompressible noise at 17.2 MB — and both
+   * peak at 22.9 MB. Same pixels, same memory; the old factor of 6 was 205×
+   * short on one of them and 4× over on the other.
+   *
+   * 6 bytes a pixel: 4.00 measured for the decoded bitmap and its canvas, plus
+   * 2 for the encoded output, which `measureUserAgentSpecificMemory` does not
+   * attribute to the renderer at all — its worst measured case is a 2.9 B/px
+   * incompressible PNG re-encode and its typical case is 0.3.
+   *
+   * The byte factor of 6 stays, and stays unmeasurable, because it is what
+   * answers when the caller could not read a header: there is no pixel count to
+   * charge then, and a job with no bound at all is the failure this table
+   * exists to prevent. The sweep says exactly how wrong it is in each
+   * direction — 205× low on the flat image, 4.5× high on the noisy one — which
+   * is the argument for the pixel term rather than for a different factor.
+   * Where both are known the job is charged both, and over-charging a job whose
+   * pixels are known is the safe direction.
+   */
+  canvas: { factor: 6, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 6 },
   /** Not measured. libvips works in scanline regions rather than whole images,
-   *  so it holds much less than a canvas for the same pixel count. */
-  vips: { factor: 4, holds: 'one-at-a-time', reserveBytes: 0 },
-  /** Not measured. HEIC decoding materialises the full tiled image plus the
-   *  RGB output. */
-  heif: { factor: 5, holds: 'one-at-a-time', reserveBytes: 0 },
+   *  so it holds much less than a canvas for the same pixel count — and charges
+   *  nothing per pixel for the same reason: it never materialises the bitmap.
+   *  `lib/engines/vips.ts` says the same thing about its missing guard. */
+  vips: { factor: 4, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
+  /**
+   * The reserve is measured; the per-pixel term is arithmetic on top of a
+   * measurement. `docs/router/browser-memory-measure.mjs`.
+   *
+   * Instantiating libheif and decoding *nothing* costs **20.5 MB** — a WASM
+   * heap allocated before the first pixel is looked at, identical for a
+   * 500-byte thumbnail and a 48 megapixel photograph. A factor on the input
+   * bytes cannot express that at all: the old model priced the 499-byte fixture
+   * at 2.5 kB against a reality of 20.6 MB. 21 MB is the reserve.
+   *
+   * The byte factor of 5 is unchanged and still unmeasured: like canvas's, it
+   * is the fallback for a job whose pixels nobody read, and the corpus that
+   * could replace it does not exist.
+   *
+   * The pixel term could not be fitted the same way — the repository holds one
+   * HEIC, 64 × 64, and 4096 pixels cannot separate a slope from noise; there is
+   * no HEIC encoder in this build to make a corpus with (see
+   * `lib/engines/heif-decode.ts`). 8 is arithmetic instead: `heif-decode.ts`
+   * allocates `width × height × 4` for the RGBA buffer libheif fills, and
+   * `heif.ts` then draws that onto a canvas, which the canvas sweep measured at
+   * 4.00. Both are live at once. `memory-budget-measurement.md` records this as
+   * the one row still waiting on a corpus.
+   */
+  heif: { factor: 5, holds: 'one-at-a-time', reserveBytes: 21 * MB, bytesPerPixel: 8 },
   /**
    * Measured across four operations. Counting the `Blob` copy the browser makes
    * of the serialised result, merge peaks at 2.91× its inputs, images → PDF at
@@ -118,7 +163,17 @@ export const MEMORY: Record<EngineId, EngineMemory> = {
    * follows page count, which the router cannot see, and the document explains
    * why 32 MB is still the right number.
    */
-  pdflib: { factor: 4, holds: 'all-at-once', reserveBytes: 32 * MB },
+  /*
+   * `bytesPerPixel: 0` although it decodes: pdf-lib's per-pixel cost depends on
+   * the *format* and this table does not see one. `embedPng` holds raw samples
+   * until `save()` — 8 bytes a pixel, measured — while `embedJpg` scans to SOF0
+   * and copies the bytes without running a decoder, so a 288 megapixel JPEG
+   * costs its bytes and nothing more. Charging either rate here would refuse a
+   * camera panorama or admit a screenshot batch. That bound therefore stays in
+   * `lib/engines/raster-limits.ts`, where the format is in hand, and it is
+   * measured and tested there.
+   */
+  pdflib: { factor: 4, holds: 'all-at-once', reserveBytes: 32 * MB, bytesPerPixel: 0 },
   /**
    * The resolution-bound engine, and the one number here that is still part
    * estimate. Parsing a document measured at 1.03× its bytes; the render, the
@@ -133,21 +188,21 @@ export const MEMORY: Record<EngineId, EngineMemory> = {
    * taken off it, and the 17.8–34.4 MB pdf.js itself costs to open a document at
    * all.
    */
-  pdfjs: { factor: 4, holds: 'one-at-a-time', reserveBytes: 32 * MB },
+  pdfjs: { factor: 4, holds: 'one-at-a-time', reserveBytes: 32 * MB, bytesPerPixel: 0 },
   /** Not measured — no engine ships yet. Streams frames through the hardware
    *  codec; never holds the whole file. */
-  webcodecs: { factor: 2.5, holds: 'one-at-a-time', reserveBytes: 0 },
+  webcodecs: { factor: 2.5, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
   /** Not measured — no engine ships yet. Input, output and scratch buffers all
    *  live in MEMFS simultaneously, which is why it is also the last resort. */
-  ffmpeg: { factor: 4.5, holds: 'one-at-a-time', reserveBytes: 0 },
+  ffmpeg: { factor: 4.5, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
   /** Measured through `fflate` itself, which is what the engine will be built
    *  on: `zipSync` is handed every member and builds the archive in one buffer,
    *  so a job costs what its members add up to — 2.93× on 447 MB of input and
    *  3.42× on a job small enough for fflate's own working set to show. */
-  zip: { factor: 3, holds: 'all-at-once', reserveBytes: 0 },
+  zip: { factor: 3, holds: 'all-at-once', reserveBytes: 0, bytesPerPixel: 0 },
   /** Not measured — no engine ships yet. libarchive buffers a whole entry plus
    *  the compressed source. */
-  libarchive: { factor: 3, holds: 'one-at-a-time', reserveBytes: 0 },
+  libarchive: { factor: 3, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
 }
 
 /**
@@ -208,9 +263,59 @@ export function heldBytes(memory: EngineMemory, job: JobInput): number {
   return memory.holds === 'all-at-once' ? job.totalBytes : job.largestBytes
 }
 
-/** Peak memory `job` will cost under `memory`, in bytes. */
+/**
+ * The decoded pixels of `job` that `memory` says are live at the same time.
+ *
+ * Scoped the same way as {@link heldBytes} and for the same reason. Zero
+ * whenever the caller passed no pixel counts, which is what keeps a job routed
+ * from bytes alone behaving exactly as it did before the term existed.
+ */
+export function heldPixels(memory: EngineMemory, job: JobInput): number {
+  return memory.holds === 'all-at-once' ? job.totalPixels : job.largestPixels
+}
+
+/**
+ * Peak memory `job` will cost under `memory`, in bytes.
+ *
+ * Three terms, because three different things pay for a conversion: what the
+ * encoded bytes cost, what the *decoded* pixels cost, and what the engine costs
+ * before it is given anything. The middle one is not a refinement of the first
+ * — it is the term that makes the model true for an image at all, since a
+ * decoded bitmap is `width × height × bytes` however well the file compressed.
+ * `docs/router/memory-budget-measurement.md` is the measurement.
+ */
 export function peakBytes(memory: EngineMemory, job: JobInput): number {
-  return memory.factor * heldBytes(memory, job) + memory.reserveBytes
+  return (
+    memory.factor * heldBytes(memory, job) +
+    memory.bytesPerPixel * heldPixels(memory, job) +
+    memory.reserveBytes
+  )
+}
+
+/**
+ * Whether an image in `job` is larger than a browser canvas can hold.
+ *
+ * Not a memory budget — a flat fact about the platform, and the one bound that
+ * does not move with the device. Past {@link MAX_CANVAS_PIXELS} a canvas comes
+ * back *blank* rather than throwing, so the engines that decode through one
+ * refuse first (`assertBitmapFits` in `lib/engines/raster-limits.ts`). Until
+ * this check existed the router admitted those jobs happily and the user paid
+ * for a download and a worker before being told no, which is a worse error than
+ * being told up front.
+ *
+ * "Charges per decoded pixel" and "decodes through a browser bitmap" are the
+ * same set of engines by construction: an engine that never materialises a
+ * bitmap has nothing to charge for. `vips` is the case that proves it — it
+ * streams scanline regions, is exempt from the guard in the engines, and
+ * carries `bytesPerPixel: 0` here.
+ *
+ * Answers on the largest single image whatever the engine's scope: two images
+ * are never on one canvas, so a total says nothing about this.
+ */
+export function fitsBitmapCeiling(engine: EngineId, job: JobInput): boolean {
+  if (MEMORY[engine].bytesPerPixel === 0) return true
+
+  return job.largestPixels <= MAX_CANVAS_PIXELS
 }
 
 /**
@@ -245,5 +350,5 @@ export function maxInputBytes(engine: EngineId, caps: Capabilities): number {
  * rejecting that is the router's `EMPTY_INPUT` check, not the budget's job.
  */
 export function fitsInBudget(engine: EngineId, job: JobInput, caps: Capabilities): boolean {
-  return peakBytes(MEMORY[engine], job) <= budgetBytes(caps)
+  return fitsBitmapCeiling(engine, job) && peakBytes(MEMORY[engine], job) <= budgetBytes(caps)
 }

@@ -11,7 +11,7 @@
  * business.
  */
 
-import type { JobInput, RouteInput } from './types'
+import type { JobInput, RouteFile, RouteInput } from './types'
 
 /**
  * Reduces `input` to the numbers the budget reasons about.
@@ -26,28 +26,80 @@ import type { JobInput, RouteInput } from './types'
  */
 export function jobInput(input: RouteInput): JobInput {
   if (typeof input === 'number') {
-    return { totalBytes: input, largestBytes: input, smallestBytes: input, fileCount: 1 }
+    return sized(input, input, input, 1)
   }
 
   if (input.length === 0) {
-    return { totalBytes: 0, largestBytes: 0, smallestBytes: 0, fileCount: 0 }
+    return sized(0, 0, 0, 0)
   }
+
+  // A list of files says two things per entry; a list of numbers says one. The
+  // pixel half is optional per file, and a file that omits it contributes
+  // nothing to either pixel total rather than a zero that would look measured.
+  if (typeof input[0] === 'object') return fileJobInput(input as readonly RouteFile[])
 
   // Seeded from the first entry rather than from ±Infinity, so that a list of
   // one unreadable size reports that size back instead of an invented bound.
   // Not `Math.max`/`Math.min` over a spread either: a merge can name a hundred
   // files, and a spread that long is an argument list rather than a loop.
+  const sizes = input as readonly number[]
   let totalBytes = 0
-  let largestBytes = input[0]
-  let smallestBytes = input[0]
+  let largestBytes = sizes[0]
+  let smallestBytes = sizes[0]
 
-  for (const size of input) {
+  for (const size of sizes) {
     totalBytes += size
     if (size > largestBytes) largestBytes = size
     if (size < smallestBytes) smallestBytes = size
   }
 
-  return { totalBytes, largestBytes, smallestBytes, fileCount: input.length }
+  return sized(totalBytes, largestBytes, smallestBytes, sizes.length)
+}
+
+/** The four byte numbers, with no pixel information attached. */
+function sized(
+  totalBytes: number,
+  largestBytes: number,
+  smallestBytes: number,
+  fileCount: number,
+): JobInput {
+  return { totalBytes, largestBytes, smallestBytes, fileCount, totalPixels: 0, largestPixels: 0 }
+}
+
+/**
+ * The same reduction over files that also carry a pixel count.
+ *
+ * `largestPixels` is the largest *pixel count*, not the pixel count of the
+ * largest file. They are not the same image and the difference is the whole
+ * point: a flat 24 megapixel screenshot is smaller in bytes than a photograph
+ * a quarter its size, and it is the screenshot that decides whether the decode
+ * fits.
+ */
+function fileJobInput(files: readonly RouteFile[]): JobInput {
+  let totalBytes = 0
+  let largestBytes = files[0].bytes
+  let smallestBytes = files[0].bytes
+  let totalPixels = 0
+  let largestPixels = 0
+
+  for (const file of files) {
+    totalBytes += file.bytes
+    if (file.bytes > largestBytes) largestBytes = file.bytes
+    if (file.bytes < smallestBytes) smallestBytes = file.bytes
+
+    const pixels = file.pixels ?? 0
+    totalPixels += pixels
+    if (pixels > largestPixels) largestPixels = pixels
+  }
+
+  return {
+    totalBytes,
+    largestBytes,
+    smallestBytes,
+    fileCount: files.length,
+    totalPixels,
+    largestPixels,
+  }
 }
 
 /**
