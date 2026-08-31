@@ -42,6 +42,24 @@ export interface ImageOptions {
    */
   enlarge?: boolean
   /**
+   * A ceiling on the output file size, in bytes.
+   *
+   * The second of the two ways to ask for compression, and the one a person
+   * actually has a number for: "under 500 kB for the upload form" rather than
+   * "quality 63". No lossy encoder takes a size, so the engine reaches it by
+   * encoding and adjusting — see `./image-target-size` for the search and what
+   * it costs.
+   *
+   * Only meaningful for a lossy output. PNG and TIFF ignore `quality` entirely,
+   * so there is no dial to search and the engine encodes once; the size such a
+   * job produces is the size that format produces.
+   *
+   * When both this and {@link quality} are given, this wins: it is the more
+   * specific request, and honouring the quality instead would silently produce
+   * the file the user said was too big.
+   */
+  targetBytes?: number
+  /**
    * Carry EXIF, ICC, XMP and IPTC across to the output. Defaults to `false`.
    *
    * Stripping is the safer default for a tool people point at holiday photos:
@@ -62,6 +80,23 @@ export function resolveQuality(options: ImageOptions | undefined): number {
   if (!isPositive(requested)) return DEFAULT_QUALITY
 
   return Math.min(Math.max(Math.round(requested), MIN_QUALITY), MAX_QUALITY)
+}
+
+/**
+ * The output size ceiling this job asks for, or `undefined` for "no ceiling".
+ *
+ * Unlike {@link resolveQuality} there is no default to fall back on: most jobs
+ * name no target, and inventing one would compress files nobody asked to
+ * compress. A target that no file could meet — zero, negative, or unreadable —
+ * is treated as no target rather than as an error: it is a broken form field,
+ * and the search it would trigger costs eight full re-encodes to arrive at the
+ * lowest-quality file by a much slower route.
+ */
+export function resolveTargetBytes(options: ImageOptions | undefined): number | undefined {
+  const requested = options?.targetBytes
+  if (!isPositive(requested)) return undefined
+
+  return Math.floor(requested)
 }
 
 function isPositive(value: number | undefined): value is number {

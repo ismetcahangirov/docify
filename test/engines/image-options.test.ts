@@ -5,6 +5,7 @@ import {
   MAX_QUALITY,
   MIN_QUALITY,
   resolveQuality,
+  resolveTargetBytes,
   wantsResize,
 } from '@/lib/engines/image-options'
 
@@ -44,5 +45,31 @@ describe('wantsResize', () => {
     expect(wantsResize({ quality: 90 })).toBe(false)
     expect(wantsResize({ width: 0 })).toBe(false)
     expect(wantsResize({ width: -100 })).toBe(false)
+  })
+})
+
+describe('resolveTargetBytes', () => {
+  it('reports the requested ceiling when one was asked for', () => {
+    expect(resolveTargetBytes({ targetBytes: 500_000 })).toBe(500_000)
+  })
+
+  it('is undefined when the job named no target, which is not the same as a target of zero', () => {
+    expect(resolveTargetBytes(undefined)).toBeUndefined()
+    expect(resolveTargetBytes({})).toBeUndefined()
+    expect(resolveTargetBytes({ quality: 90 })).toBeUndefined()
+  })
+
+  it('ignores a target no file could ever meet rather than failing the job', () => {
+    // A zero or negative ceiling is a broken form field, not an instruction. The
+    // search would spend eight full re-encodes discovering that nothing fits and
+    // then hand back the quality-1 file anyway, so it is better not to start.
+    expect(resolveTargetBytes({ targetBytes: 0 })).toBeUndefined()
+    expect(resolveTargetBytes({ targetBytes: -1 })).toBeUndefined()
+    expect(resolveTargetBytes({ targetBytes: Number.NaN })).toBeUndefined()
+    expect(resolveTargetBytes({ targetBytes: Number.POSITIVE_INFINITY })).toBeUndefined()
+  })
+
+  it('rounds to a whole number of bytes, because half a byte is not a size', () => {
+    expect(resolveTargetBytes({ targetBytes: 1024.7 })).toBe(1024)
   })
 })

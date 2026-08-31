@@ -212,6 +212,144 @@ describe('the vips runner', () => {
     expect(fake.writes.map((write) => write.options?.Q)).toEqual([80, 55, undefined, 100])
   })
 
+  it('searches the quality scale for a requested output size', async () => {
+    const fake = fakeVips()
+    // 100 bytes a quality point: 4000 admits quality 40 and refuses 41.
+    fake.bytesForQuality = (quality) => (quality ?? 100) * 100
+
+    const out = await createRunner(fake.load).run(
+      { task: task('jpg', 'jpg', 'compress'), files: [file()], image: { targetBytes: 4000 } },
+      new AbortController().signal,
+      () => {},
+    )
+
+    // 4000 bytes is quality 40's output, the largest that fits. The delivered
+    // file is that attempt's own bytes — the search keeps its winner rather than
+    // re-encoding at the end, which would cost a ninth pass.
+    expect(out.size).toBe(4000)
+    expect(fake.writes.map((write) => write.options?.Q)).toContain(40)
+  })
+
+  it('re-opens the source for every attempt, so each encode gets its own sequential pass', async () => {
+    const fake = fakeVips()
+    fake.bytesForQuality = (quality) => (quality ?? 100) * 100
+
+    await createRunner(fake.load).run(
+      { task: task('png', 'webp', 'compress'), files: [file()], image: { targetBytes: 4000 } },
+      new AbortController().signal,
+      () => {},
+    )
+
+    // libvips lets a sequentially-opened image be read exactly once, so a second
+    // `writeToBuffer` on the same handle would fail. Re-opening also keeps the
+    // 4x expansion factor in `MEMORY.vips` honest: a random-access pipeline
+    // would materialise the whole bitmap to allow re-reads.
+    expect(fake.opens).toHaveLength(fake.writes.length)
+    expect(fake.opens.every((open) => open.kind === 'newFromBuffer')).toBe(true)
+    // Every handle released, not just the winner's: Embind handles are not
+    // garbage collected, so a leaked attempt is a full image on the WASM heap.
+    expect(fake.images.every((image) => image.deleted)).toBe(true)
+  })
+
+  it('spends one encode when full quality already meets the target', async () => {
+    const fake = fakeVips()
+    fake.bytesForQuality = () => 1000
+
+    await createRunner(fake.load).run(
+      { task: task('jpg', 'jpg', 'compress'), files: [file()], image: { targetBytes: 50_000 } },
+      new AbortController().signal,
+      () => {},
+    )
+
+    expect(fake.writes.map((write) => write.options?.Q)).toEqual([100])
+  })
+
+  it('delivers the smallest file it could make when the target is unreachable', async () => {
+    const fake = fakeVips()
+    fake.bytesForQuality = (quality) => (quality ?? 100) * 100
+
+    const out = await createRunner(fake.load).run(
+      { task: task('jpg', 'jpg', 'compress'), files: [file()], image: { targetBytes: 10 } },
+      new AbortController().signal,
+      () => {},
+    )
+
+    // The user asked to compress; the most compressed file there is remains the
+    // answer, and failing the job would leave them with nothing at all.
+    expect(out.size).toBe(100)
+  })
+
+  it('ignores a target size for a lossless output, which has no quality dial to turn', async () => {
+    const fake = fakeVips()
+    fake.bytesForQuality = () => 9999
+
+    await createRunner(fake.load).run(
+      { task: task('jpg', 'png', 'compress'), files: [file()], image: { targetBytes: 10 } },
+      new AbortController().signal,
+      () => {},
+    )
+
+    // Eight identical re-encodes of a PNG cannot make it smaller; one is honest.
+    expect(fake.writes).toHaveLength(1)
+    expect(fake.writes[0].options).toEqual({ keep: 'none', compression: 6 })
+  })
+
+  it('lets a target size override a quality the user also set', async () => {
+    const fake = fakeVips()
+    fake.bytesForQuality = (quality) => (quality ?? 100) * 100
+
+    const out = await createRunner(fake.load).run(
+      {
+        task: task('jpg', 'jpg', 'compress'),
+        files: [file()],
+        image: { quality: 95, targetBytes: 4000 },
+      },
+      new AbortController().signal,
+      () => {},
+    )
+
+    // Quality 95 produces 9500 bytes, which is the file the user just said was
+    // too large. The more specific request wins.
+    expect(out.size).toBe(4000)
+  })
+
+  it('reports progress that only ever climbs across a multi-attempt search', async () => {
+    const fake = fakeVips()
+    fake.bytesForQuality = (quality) => (quality ?? 100) * 100
+    fake.duringWrite = (image) => image.onProgress(50)
+    const seen: number[] = []
+
+    await createRunner(fake.load).run(
+      { task: task('jpg', 'jpg', 'compress'), files: [file()], image: { targetBytes: 4000 } },
+      new AbortController().signal,
+      (progress) => seen.push(progress),
+    )
+
+    expect(seen[0]).toBe(-1)
+    expect(seen.at(-1)).toBe(1)
+    const ticks = seen.slice(1)
+    expect(ticks).toEqual([...ticks].sort((a, b) => a - b))
+  })
+
+  it('stops the search as soon as the job is cancelled', async () => {
+    const fake = fakeVips()
+    fake.bytesForQuality = (quality) => (quality ?? 100) * 100
+    const controller = new AbortController()
+    fake.duringWrite = () => controller.abort()
+
+    await expect(
+      createRunner(fake.load).run(
+        { task: task('jpg', 'jpg', 'compress'), files: [file()], image: { targetBytes: 4000 } },
+        controller.signal,
+        () => {},
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+
+    // Cancelled during the first attempt: the search must not go on to spend
+    // seven more full re-encodes of an image nobody is waiting for.
+    expect(fake.writes).toHaveLength(1)
+  })
+
   it('strips metadata by default and keeps it only on request', async () => {
     const fake = fakeVips()
     const runner = createRunner(fake.load)

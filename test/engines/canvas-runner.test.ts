@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { CanvasEnvironment } from '@/lib/engines/canvas-runner'
 import { BACKDROP, createCanvasRunner } from '@/lib/engines/canvas-runner'
+import { DEFAULT_QUALITY } from '@/lib/engines/image-options'
 import type { EngineInput } from '@/lib/engines/types'
 import type { ConversionTask, FormatId } from '@/lib/router/types'
 
@@ -135,6 +136,23 @@ describe('the canvas runner — a straightforward conversion', () => {
     expect(created).toEqual([[2, 2]])
     expect(canvas.convertCalls[0]?.type).toBe('image/png')
     expect(output.type).toBe('image/png')
+  })
+
+  it('encodes at the shared default quality, and at whatever the job asked for', async () => {
+    const { environment, canvas } = harness()
+    const runner = createCanvasRunner(environment)
+    const signal = new AbortController().signal
+
+    await runner.run(inputFor('png', 'jpg'), signal, noProgress)
+    await runner.run({ ...inputFor('png', 'jpg'), image: { quality: 40 } }, signal, noProgress)
+    await runner.run({ ...inputFor('png', 'jpg'), image: { quality: 5000 } }, signal, noProgress)
+
+    // The default is `image-options`' and not a number of this engine's own:
+    // two engines handed the same job have to produce comparable output, and
+    // Canvas and libvips are routinely alternatives for the same pair. The
+    // browsers' own `toBlob` default of 0.92 is a different, higher number, and
+    // using it here made a Canvas-routed JPEG visibly larger than a vips one.
+    expect(canvas.convertCalls.map((call) => call.quality)).toEqual([DEFAULT_QUALITY / 100, 0.4, 1])
   })
 
   it('maps every supported target onto its MIME type', async () => {

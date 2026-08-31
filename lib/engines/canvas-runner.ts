@@ -23,6 +23,7 @@ import { throwIfAborted } from '@/lib/abort'
 import type { FormatId } from '@/lib/router/types'
 
 import { encodeBmp } from './bmp'
+import { type ImageOptions, resolveQuality } from './image-options'
 import { assertBitmapFits, imageLabel } from './raster-limits'
 import { rasterSize } from './raster-size'
 import type { EngineInput, EngineRunner, ProgressCallback } from './types'
@@ -57,13 +58,17 @@ const KEEPS_ALPHA: ReadonlySet<CanvasFormat> = new Set<CanvasFormat>(['png', 'we
 export const BACKDROP = 'white'
 
 /**
- * Encoder quality for the lossy targets.
+ * libvips' 1..100 quality scale expressed the way `convertToBlob` wants it.
  *
- * 0.92 is the browsers' own `toBlob` default and the level at which JPEG
- * artefacts stop being visible on photographic content. Ignored for PNG and for
- * the BMP path, both of which are lossless.
+ * The scale conversion is the whole reason this constant exists: the shared
+ * default and the user's slider both live in `./image-options`, on the scale
+ * libvips and every command-line encoder use, and a canvas takes a `0..1`
+ * fraction instead. Keeping the default there rather than here is what makes a
+ * JPEG produced by this engine comparable to one produced by wasm-vips —
+ * routing picks between them for the same pair, and a browser's own `toBlob`
+ * default of 0.92 made the Canvas output visibly the larger of the two.
  */
-const QUALITY = 0.92
+const QUALITY_SCALE = 100
 
 /**
  * Progress checkpoints.
@@ -137,7 +142,7 @@ export function createCanvasRunner(
         throwIfAborted(signal)
         onProgress(DRAWN)
 
-        const output = await encode(canvas, target)
+        const output = await encode(canvas, target, input.image)
         throwIfAborted(signal)
         onProgress(1)
 
@@ -164,7 +169,11 @@ function draw(canvas: OffscreenCanvas, bitmap: ImageBitmap, target: CanvasFormat
   context.drawImage(bitmap, 0, 0)
 }
 
-async function encode(canvas: OffscreenCanvas, target: CanvasFormat): Promise<Blob> {
+async function encode(
+  canvas: OffscreenCanvas,
+  target: CanvasFormat,
+  options: ImageOptions | undefined,
+): Promise<Blob> {
   const type = MIME_TYPES[target]
 
   if (target === 'bmp') {
@@ -176,7 +185,13 @@ async function encode(canvas: OffscreenCanvas, target: CanvasFormat): Promise<Bl
     return new Blob([encodeBmp(context.getImageData(0, 0, canvas.width, canvas.height))], { type })
   }
 
-  const blob = await canvas.convertToBlob({ type, quality: QUALITY })
+  // Passed for every target, PNG included: `convertToBlob` ignores it for a
+  // lossless type, and branching on which types are lossy here would fork a
+  // table `./image-options` and `./vips-formats` already keep between them.
+  const blob = await canvas.convertToBlob({
+    type,
+    quality: resolveQuality(options) / QUALITY_SCALE,
+  })
 
   // `convertToBlob` is specified to fall back to PNG for a type it cannot
   // write, silently. Delivering a PNG named `.webp` is worse than failing: the

@@ -40,7 +40,9 @@ class FakeImage implements VipsImage {
     this.fake.writes.push({ suffix, options })
     this.fake.duringWrite?.(this)
 
-    return new Uint8Array([1, 2, 3, 4])
+    const size = this.fake.bytesForQuality?.(options?.Q as number | undefined)
+
+    return new Uint8Array(size ?? 4).fill(1)
   }
 
   delete(): void {
@@ -57,6 +59,15 @@ export interface FakeVips {
   shutdowns: number
   /** Runs inside `writeToBuffer`, where libvips would be evaluating pixels. */
   duringWrite?: (image: FakeImage) => void
+  /**
+   * How many bytes `writeToBuffer` should hand back for a given `Q`.
+   *
+   * The one thing a target-size search reads, and the only way to drive it
+   * without a codec: the search is a function of the sizes it observes, so a
+   * fake that answers by quality reproduces the whole loop deterministically.
+   * Absent means every write is four bytes, as it was before the search existed.
+   */
+  bytesForQuality?: (quality: number | undefined) => number
   load: VipsLoader
 }
 
