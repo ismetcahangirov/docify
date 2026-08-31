@@ -120,8 +120,17 @@ describe('byPreference', () => {
 
 describe('enginesFor', () => {
   it('finds no candidate for a pair no registered engine claims', () => {
+    // An archive is not media, and nothing registered reads one yet.
     expect(enginesFor({ from: 'rar', to: 'mp4', op: 'convert' }, desktop)).toEqual([])
-    expect(enginesFor({ from: 'mp4', to: 'webm', op: 'convert' }, desktop)).toEqual([])
+    expect(enginesFor({ from: '7z', to: 'zip', op: 'convert' }, desktop)).toEqual([])
+  })
+
+  it('leaves the containers WebCodecs cannot touch to ffmpeg alone', () => {
+    // WebM is not the ISO base media format, so mp4box can neither read nor
+    // write it and the fast path never claims the pair.
+    expect(
+      enginesFor({ from: 'mp4', to: 'webm', op: 'convert' }, desktop).map((engine) => engine.id),
+    ).toEqual(['ffmpeg'])
   })
 
   it('finds the engine that does claim the pair', () => {
@@ -146,7 +155,8 @@ describe('enginesFor', () => {
 
 describe('getEngine', () => {
   it('returns undefined for an id no engine has claimed yet', () => {
-    expect(getEngine('ffmpeg')).toBeUndefined()
+    expect(getEngine('zip')).toBeUndefined()
+    expect(getEngine('libarchive')).toBeUndefined()
   })
 
   it('finds a registered engine by its id', () => {
