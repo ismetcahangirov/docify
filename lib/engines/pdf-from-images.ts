@@ -52,6 +52,7 @@
  * `docs/router/memory-budget-measurement.md`.
  */
 
+import { throwIfAborted } from '@/lib/abort'
 import { PageSizes, PDFDocument, type PDFImage } from 'pdf-lib'
 
 import type { PdfLayoutOptions } from './pdf-options'
@@ -275,8 +276,4 @@ function marginOf(layout: PdfLayoutOptions | undefined): number {
 
 function startsWith(bytes: Uint8Array, signature: Uint8Array): boolean {
   return bytes.length >= signature.length && signature.every((byte, index) => bytes[index] === byte)
-}
-
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) throw new DOMException('The conversion was cancelled.', 'AbortError')
 }

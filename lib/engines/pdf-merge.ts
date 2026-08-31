@@ -36,6 +36,7 @@
  * which is a feature of its own rather than a line in this one.
  */
 
+import { throwIfAborted } from '@/lib/abort'
 import { PDFDocument, type PDFPage } from 'pdf-lib'
 
 import { openPdf } from './pdf-open'
@@ -290,8 +291,4 @@ function yieldToMessageLoop(): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, 0)
   })
-}
-
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) throw new DOMException('The conversion was cancelled.', 'AbortError')
 }

@@ -30,6 +30,7 @@
  * `await import('./pdf-split')` in `./pdflib` (CLAUDE.md §2.3).
  */
 
+import { throwIfAborted } from '@/lib/abort'
 import { PDFDocument } from 'pdf-lib'
 
 import { openPdf } from './pdf-open'
@@ -189,8 +190,4 @@ function onlyFile(input: EngineInput): Blob {
   }
 
   return input.files[0]
-}
-
-function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) throw new DOMException('The conversion was cancelled.', 'AbortError')
 }
