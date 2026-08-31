@@ -36,6 +36,11 @@ import type { ConversionTask, FormatId } from '@/lib/router/types'
 
 import { fakePdfjs, type FakePdfjs } from './pdfjs-fake'
 
+import { PDF_SUITE_TIMEOUT_MS } from '../support/timeouts'
+
+// Real documents, real parsing: see the module this number lives in.
+vi.setConfig({ testTimeout: PDF_SUITE_TIMEOUT_MS })
+
 const LETTER = { width: 612, height: 792 }
 
 const task = (to: FormatId): ConversionTask => ({ from: 'pdf', to, op: 'convert' })
