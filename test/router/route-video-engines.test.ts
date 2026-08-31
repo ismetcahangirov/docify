@@ -1,0 +1,112 @@
+// @vitest-environment node
+//
+// Deliberately not jsdom, for the reason `route-pdf-engines.test.ts` gives:
+// `route()` may look at nothing but its three arguments, so a `window` read
+// inside it has to throw here rather than pass quietly.
+//
+// The real WebCodecs descriptor against the real budget model — the counterpart
+// CLAUDE.md §5.4 requires for the suites that run on fakes.
+
+import { describe, expect, it, vi } from 'vitest'
+
+import { descriptor as realWebCodecs } from '@/lib/engines/webcodecs'
+import { route } from '@/lib/router/route'
+import type { ConversionTask } from '@/lib/router/types'
+
+import {
+  chosen,
+  desktop,
+  ffmpeg,
+  ios,
+  MB,
+  refused,
+  register,
+  resetRegistryBetweenTests,
+} from './support/route-harness'
+
+vi.mock('@/lib/engines/registry', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/engines/registry')>()
+
+  return (await import('./support/route-harness')).mockedRegistry(actual)
+})
+
+resetRegistryBetweenTests()
+
+const movToMp4: ConversionTask = { from: 'mov', to: 'mp4', op: 'convert' }
+const shrinkMp4: ConversionTask = { from: 'mp4', to: 'mp4', op: 'compress' }
+const mp4ToWebm: ConversionTask = { from: 'mp4', to: 'webm', op: 'convert' }
+
+/**
+ * An iPhone new enough to have the codecs.
+ *
+ * The harness's own `ios` predates them, which is the right default for the
+ * suites that check what happens without them — but it makes every budget
+ * assertion here about ffmpeg instead.
+ */
+const iphone = { ...ios, webCodecsVideo: true }
+
+describe('route — the real WebCodecs descriptor', () => {
+  it('wins the ISO container pairs outright, ahead of ffmpeg', () => {
+    register(realWebCodecs, ffmpeg())
+
+    const result = chosen(route(movToMp4, 50 * MB, desktop))
+
+    expect(result.engine).toBe('webcodecs')
+    // The hardware path, chosen for the hardware and not for the download —
+    // though it is also a two-hundredth of ffmpeg's size.
+    expect(result.loadCost).toBeLessThan(1 * MB)
+  })
+
+  it('warns about nothing but the re-encode, since it downloads almost nothing', () => {
+    register(realWebCodecs)
+
+    const codes = chosen(route(movToMp4, 50 * MB, desktop)).warnings.map((warning) => warning.code)
+
+    // No SLOW_PATH: that warning is ffmpeg's, and it would be a lie here.
+    expect(codes).toEqual(['QUALITY_LOSS'])
+  })
+
+  it('hands the job to ffmpeg on a browser with no video codecs', () => {
+    register(realWebCodecs, ffmpeg())
+
+    expect(chosen(route(movToMp4, 50 * MB, { ...desktop, webCodecsVideo: false })).engine).toBe(
+      'ffmpeg',
+    )
+  })
+
+  it('is not offered at all without them, rather than failing after the download', () => {
+    register(realWebCodecs)
+
+    expect(refused(route(movToMp4, 50 * MB, { ...desktop, webCodecsVideo: false })).code).toBe(
+      'UNSUPPORTED_PAIR',
+    )
+  })
+
+  it('leaves the containers it cannot read to ffmpeg rather than claiming them', () => {
+    register(realWebCodecs, ffmpeg())
+
+    expect(chosen(route(mp4ToWebm, 50 * MB, desktop)).engine).toBe('ffmpeg')
+    expect(chosen(route({ from: 'mkv', to: 'mp4', op: 'convert' }, 50 * MB, desktop)).engine).toBe(
+      'ffmpeg',
+    )
+  })
+
+  it('takes a file on a phone that ffmpeg would refuse, because it holds less', () => {
+    register(realWebCodecs, ffmpeg())
+
+    // 90 MB / 2.5 = 36 MB on an iPhone, against ffmpeg's 90 / 4.5 = 20 MB.
+    expect(chosen(route(shrinkMp4, 30 * MB, iphone)).engine).toBe('webcodecs')
+    // Past that it is the phone's ceiling being reported, not the file's:
+    // `DEVICE_TOO_WEAK` is what a mobile browser's fixed allowance produces.
+    expect(refused(route(shrinkMp4, 40 * MB, iphone)).code).toBe('DEVICE_TOO_WEAK')
+  })
+
+  it('quotes a ceiling the user can act on when the file is too large', () => {
+    register(realWebCodecs)
+
+    const result = refused(route(shrinkMp4, 40 * MB, iphone))
+
+    expect(result.message).toMatch(/36 MB/)
+    expect(result.suggestion.length).toBeGreaterThan(0)
+  })
+})

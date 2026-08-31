@@ -180,7 +180,7 @@ async function readDirectly(
   file.onReady = (info) => {
     const track = info.tracks[0]
     const entry = file.getTrackById(track.id)?.mdia.minf.stbl.stsd.entries[0]
-    const configuration = entry?.boxes[0]
+    const configuration = entry?.boxes?.[0]
     const stream = new mp4.DataStream(undefined, 0, BIG_ENDIAN)
     configuration?.write(stream)
 

@@ -46,6 +46,7 @@ import { descriptor as pdfjs } from '@/lib/engines/pdfjs'
 import { descriptor as pdflib } from '@/lib/engines/pdflib'
 import type { EngineDescriptor } from '@/lib/engines/types'
 import { descriptor as vips } from '@/lib/engines/vips'
+import { descriptor as webcodecs } from '@/lib/engines/webcodecs'
 import type { Capabilities, ConversionTask, EngineId } from '@/lib/router/types'
 
 /**
@@ -54,6 +55,7 @@ import type { Capabilities, ConversionTask, EngineId } from '@/lib/router/types'
  */
 export const ENGINES: readonly EngineDescriptor[] = Object.freeze([
   canvas,
+  webcodecs,
   pdflib,
   pdfjs,
   heif,
