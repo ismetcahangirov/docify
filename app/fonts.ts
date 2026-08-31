@@ -14,9 +14,10 @@ import localFont from 'next/font/local'
  * Only the `latin` subset is shipped (the same unicode-range Google serves for
  * it), upright only, and JetBrains Mono at a single weight. Italics and mono
  * bold are therefore synthesised by the browser — deliberate, since the type
- * scale in CLAUDE.md section 3 asks for neither. Note also that U+2192 `→` is
- * *outside* the latin range: the primary-button arrow must be an inline SVG,
- * not a text glyph, or it renders in a fallback face. Tracked in issue #124.
+ * scale in CLAUDE.md section 3 asks for neither. Note also that U+2192 is
+ * *outside* the latin range: the primary-button arrow is therefore an inline
+ * SVG (`components/ui/button.tsx`), and `scripts/design-lint` refuses the whole
+ * U+2190–U+21FF block so it cannot quietly become a text character again.
  *
  * Each family exposes a CSS variable. `app/globals.css` maps those onto the
  * `--font-display` / `--font-sans` / `--font-mono` theme tokens — that mapping
