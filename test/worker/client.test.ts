@@ -10,6 +10,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createConversionApi } from '@/lib/worker/api'
+
 import { type FakeWorkerHandle, installFakeWorker } from './fake-worker'
 
 let spawns: FakeWorkerHandle['spawns']
@@ -73,10 +75,16 @@ describe('ensureWorker', () => {
   })
 
   it('says why it cannot start when there is no Worker constructor', async () => {
+    // Not `/browser/i`: half the guards in this codebase contain that word, and
+    // #165 came within one reword of retargeting these assertions at a
+    // different message without either of them noticing. What this guard is
+    // *for* is naming the cause — server rendering, not a bundler fault — and
+    // the way out (CLAUDE.md §2.5), so those are what is asserted.
     vi.stubGlobal('Worker', undefined)
     const { ensureWorker } = await loadClient()
 
-    expect(() => ensureWorker()).toThrow(/browser/i)
+    expect(() => ensureWorker()).toThrow(/server rendering/i)
+    expect(() => ensureWorker()).toThrow(/event handler|effect/i)
   })
 })
 
@@ -162,6 +170,20 @@ describe('terminateWorker', () => {
 
 describe('convert', () => {
   it('carries an engine failure back across the worker boundary', async () => {
+    // The engine fails on demand rather than by accident. This used to lean on
+    // the real Canvas runner dying inside `createImageBitmap`, which jsdom does
+    // not implement — an assertion pinned to the API the engine happens to call
+    // today, and one #160 broke by changing where the runner reaches for its
+    // bytes. What is under test is the *crossing*: whatever an engine rejects
+    // with has to arrive here as a rejection carrying its sentence, rather than
+    // as a hung promise or an `error` event on the worker.
+    const message = 'This image is 40000 × 40000 pixels, larger than a canvas can hold.'
+    installFakeWorker(() =>
+      createConversionApi(async () => ({
+        run: () => Promise.reject(new Error(message)),
+      })),
+    )
+
     const { ensureWorker } = await loadClient()
 
     const request = {
@@ -170,10 +192,33 @@ describe('convert', () => {
       files: [new Blob(['x'])],
     }
 
-    // The canvas runner loads here, then fails on `createImageBitmap`, which
-    // jsdom does not implement. What is being tested is the crossing: whatever
-    // the engine threw has to arrive on this side as a rejection rather than as
-    // a hung promise or an `error` event on the worker.
-    await expect(ensureWorker().convert(request)).rejects.toThrow(/createImageBitmap/)
+    await expect(ensureWorker().convert(request)).rejects.toThrow(message)
+  })
+
+  it('does not mistake an engine failure for a cancellation', async () => {
+    // The one way the crossing could carry the sentence and still be wrong: a
+    // failure that arrives named `AbortError` is reported to the user as
+    // "cancelled", so nothing is shown and nothing is retried.
+    installFakeWorker(() =>
+      createConversionApi(async () => ({
+        run: () => Promise.reject(new Error('The document is damaged.')),
+      })),
+    )
+
+    const { ensureWorker } = await loadClient()
+
+    const failure: unknown = await ensureWorker()
+      .convert({
+        engine: 'canvas' as const,
+        task: { from: 'png' as const, to: 'webp' as const, op: 'convert' as const },
+        files: [new Blob(['x'])],
+      })
+      .then(
+        () => null,
+        (reason: unknown) => reason,
+      )
+
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).name).not.toBe('AbortError')
   })
 })
