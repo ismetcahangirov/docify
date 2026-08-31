@@ -6,10 +6,12 @@
 // must not mistake for either — rather than three times over from inside merge,
 // split and organize.
 
-import { PDFDocument } from 'pdf-lib'
-import { describe, expect, it } from 'vitest'
+import { EncryptedPDFError, PDFDocument } from 'pdf-lib'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { openPdf } from '@/lib/engines/pdf-open'
+
+import { rewordEncryptedRefusal } from '../support/pdf-lib'
 
 const encrypted = 'This PDF is locked. Unlock it first.'
 const damaged = (detail: string) => `This file could not be read as a PDF: ${detail}`
@@ -193,5 +195,62 @@ describe('opening a document for a job that is being cancelled', () => {
     await expect(
       openPdf(await fixture(1), { read: () => Promise.reject(impostor), encrypted, damaged }),
     ).rejects.toThrow(/could not be read as a PDF: the operation was aborted/)
+  })
+})
+
+describe('what says a document is encrypted', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('is not the type, which is dead for the pinned pdf-lib', () => {
+    // Measured, not reasoned about. pdf-lib 1.17.1 transpiles its error classes
+    // to ES5 with `_this = _super.call(this, msg) || this`; native
+    // `Error.call(this, msg)` returns a fresh object rather than initialising
+    // `this`, so the prototype chain never connects. If a pdf-lib upgrade ever
+    // fixes this, this test fails and the helper can be told about it.
+    const raised = new EncryptedPDFError()
+
+    expect(raised instanceof EncryptedPDFError).toBe(false)
+    expect(raised.name).toBe('Error')
+  })
+
+  it('classifies a locked document whose failure never says the word', async () => {
+    // The text match cannot help here: nothing thrown mentions encryption. If
+    // it is all that holds the classification up, the user is told their file
+    // is damaged and goes looking for a corrupted download.
+    rewordEncryptedRefusal()
+
+    await expect(
+      openPdf(locked(), { read: (source) => source.getPageCount(), encrypted, damaged }),
+    ).rejects.toThrow(encrypted)
+  })
+
+  it('classifies one that opened and then failed further in', async () => {
+    // The case the old comment reserved for the text fallback: loaded with
+    // `ignoreEncryption`, so pdf-lib never raises its encrypted error at all,
+    // and the failure arrives from the page tree instead.
+    await expect(
+      openPdf(locked(), {
+        load: { ignoreEncryption: true },
+        read: () => {
+          throw new Error("Cannot read properties of undefined (reading 'Pages')")
+        },
+        encrypted,
+        damaged,
+      }),
+    ).rejects.toThrow(encrypted)
+  })
+
+  it('still calls a damaged file damaged', async () => {
+    // The structural check must not answer everything: a file that is not a PDF
+    // has no trailer to read, and "unlock it first" is advice nobody can follow.
+    await expect(
+      openPdf(new TextEncoder().encode('not a PDF at all'), {
+        read: (source) => source.getPageCount(),
+        encrypted,
+        damaged,
+      }),
+    ).rejects.toThrow(/could not be read as a PDF/)
   })
 })

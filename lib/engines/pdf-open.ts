@@ -20,7 +20,29 @@
  * page tree twice or force split to hold a copy it never wanted, so the caller
  * passes the read in and the guard closes around it.
  *
- * ## Why the wording is the caller's too
+ * ## Why the encrypted check re-reads the file
+
+pdf-lib exports `EncryptedPDFError` and raising it is how `load` refuses a
+locked document, so `reason instanceof EncryptedPDFError` reads like the right
+check. For the pinned version it is dead code — always false. pdf-lib 1.17.1
+transpiles its error classes to ES5 with `_this = _super.call(this, msg) ||
+this`, and native `Error.call(this, msg)` returns a *fresh* object rather than
+initialising `this`, so the prototype chain never connects. Probing the
+installed package gives `ctor=Error`, `name=Error`, `instanceof` false, in both
+the `cjs` and `es` builds. Nothing about the thrown value identifies it.
+
+So the question is asked of the *document* instead of the error:
+{@link declaresEncryption} re-opens the bytes with `ignoreEncryption` and reads
+`isEncrypted`, which is pdf-lib's own reading of the trailer. That is a
+structural fact rather than a sentence, so a pdf-lib reword cannot silently
+turn "your file is password-protected" into "your file is damaged" — which is
+the exact failure this helper exists to prevent, across merge, split and
+organize at once.
+
+The text match stays behind it as the fallback, for the file too broken to
+re-parse but coherent enough to have said so.
+
+## Why the caller's wording is the caller's too
  *
  * CLAUDE.md §2.5 asks an error to name a next step, and the next step depends on
  * the job: a locked file in a merge list can be removed from the list, while a
@@ -35,7 +57,7 @@
  * therefore stays out of the initial bundle (CLAUDE.md §2.3).
  */
 
-import { EncryptedPDFError, type LoadOptions, PDFDocument } from 'pdf-lib'
+import { type LoadOptions, PDFDocument } from 'pdf-lib'
 
 import { isAbort } from '@/lib/abort'
 
@@ -94,13 +116,41 @@ export async function openPdf<T>(bytes: Uint8Array, options: PdfOpenOptions<T>):
 
     const detail = reason instanceof Error ? reason.message : String(reason)
 
-    // The type is the reliable signal and the text is the fallback: pdf-lib
-    // raises `EncryptedPDFError` from `load`, but an encrypted document can
-    // also fail further in, where all that survives is the message.
-    if (reason instanceof EncryptedPDFError || /encrypt/i.test(detail)) {
+    // The document's own trailer is the reliable signal and the text is the
+    // fallback. Asking pdf-lib what it raised is not an option: see
+    // `declaresEncryption`.
+    if ((await declaresEncryption(bytes, options.load)) || /encrypt/i.test(detail)) {
       throw new Error(options.encrypted)
     }
 
     throw new Error(options.damaged(detail))
+  }
+}
+/**
+ * Whether the document says it is encrypted, asked of the file rather than of
+ * the failure.
+ *
+ * `isEncrypted` is pdf-lib's own reading of `/Encrypt` in the trailer, and
+ * `ignoreEncryption` is what lets the document be built far enough to be asked.
+ * The caller's other load options are kept: a check that parses under different
+ * rules than the load it is explaining could answer about a different document.
+ *
+ * A second parse, on a path where the first one already failed. It costs
+ * nothing on the happy path and it is the only place the answer exists.
+ *
+ * Answers `false` rather than propagating when the re-read fails too: bytes
+ * that cannot be parsed at all have no trailer to declare anything, and
+ * "unlock it first" is advice nobody can follow.
+ */
+async function declaresEncryption(
+  bytes: Uint8Array,
+  load: LoadOptions | undefined,
+): Promise<boolean> {
+  try {
+    const document = await PDFDocument.load(bytes, { ...load, ignoreEncryption: true })
+
+    return document.isEncrypted
+  } catch {
+    return false
   }
 }

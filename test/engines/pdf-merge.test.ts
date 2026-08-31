@@ -9,12 +9,14 @@
 // branches adding one each is four needless collisions.
 
 import { PDFDocument } from 'pdf-lib'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { MAX_MERGE_FILES, mergePdfs } from '@/lib/engines/pdf-merge'
 import { createRunner } from '@/lib/engines/pdflib'
 import type { EngineInput, ProgressCallback } from '@/lib/engines/types'
 import type { ConversionTask } from '@/lib/router/types'
+
+import { rewordEncryptedRefusal } from '../support/pdf-lib'
 
 import { PDF_SUITE_TIMEOUT_MS } from '../support/timeouts'
 
@@ -83,6 +85,10 @@ const run = (
   signal: AbortSignal = new AbortController().signal,
   onProgress: ProgressCallback = nothing,
 ): Promise<Blob> => mergePdfs(input(files), signal, onProgress)
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('merging PDFs', () => {
   it('joins every page of every document into one', async () => {
@@ -182,6 +188,17 @@ describe('rejecting a merge that cannot work', () => {
     await expect(failure).rejects.toThrow(/password-protected/i)
     // CLAUDE.md §2.5: the way out, not just the diagnosis.
     await expect(failure).rejects.toThrow(/remove its password/i)
+  })
+
+  it('says so even when pdf-lib has stopped using the word', async () => {
+    // #176: the classification must not rest on the text of pdf-lib's refusal.
+    // With the word taken away, only the trailer can answer — and the wrong
+    // answer here is telling someone their payslip is damaged.
+    rewordEncryptedRefusal()
+    const failure = run([await pdf([100]), await locked('payslip.pdf')])
+
+    await expect(failure).rejects.toThrow(/password-protected/i)
+    await expect(failure).rejects.toThrow(/payslip.pdf/)
   })
 
   it('accepts a document that carries junk before its header', async () => {
