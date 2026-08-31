@@ -6,7 +6,7 @@
 // than against a spy on the calls it made.
 
 import { decodePDFRawStream, PDFArray, PDFDocument, PDFRawStream } from 'pdf-lib'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { imagesToPdf, POINTS_PER_PIXEL } from '@/lib/engines/pdf-from-images'
 import type { PdfLayoutOptions } from '@/lib/engines/pdf-options'
@@ -15,6 +15,11 @@ import type { EngineInput } from '@/lib/engines/types'
 import type { ConversionTask } from '@/lib/router/types'
 
 import { jpegBytes, pngBytes } from './synthetic-images'
+
+import { PDF_SUITE_TIMEOUT_MS } from '../support/timeouts'
+
+// Real documents, real parsing: see the module this number lives in.
+vi.setConfig({ testTimeout: PDF_SUITE_TIMEOUT_MS })
 
 const A4 = { width: 595.28, height: 841.89 }
 const task: ConversionTask = { from: 'png', to: 'pdf', op: 'convert' }

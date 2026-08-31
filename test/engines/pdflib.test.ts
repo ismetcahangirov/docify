@@ -4,10 +4,15 @@
 // readily as in a worker, so it is tested without a DOM. Anything the engine
 // needs from the browser must arrive through `Capabilities`.
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { createRunner, descriptor, PDFLIB_LOAD_COST } from '@/lib/engines/pdflib'
 import type { Capabilities, ConversionTask, Operation } from '@/lib/router/types'
+
+import { PDF_SUITE_TIMEOUT_MS } from '../support/timeouts'
+
+// Real documents, real parsing: see the module this number lives in.
+vi.setConfig({ testTimeout: PDF_SUITE_TIMEOUT_MS })
 
 const desktop: Capabilities = {
   crossOriginIsolated: true,

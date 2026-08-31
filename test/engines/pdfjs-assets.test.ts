@@ -43,6 +43,11 @@ import {
   vendorPdfjs,
 } from '@/scripts/vendor-pdfjs/vendor.mjs'
 
+import { PDF_SUITE_TIMEOUT_MS } from '../support/timeouts'
+
+// Real documents, real parsing: see the module this number lives in.
+vi.setConfig({ testTimeout: PDF_SUITE_TIMEOUT_MS })
+
 const ORIGIN = 'https://docify.app'
 
 /**

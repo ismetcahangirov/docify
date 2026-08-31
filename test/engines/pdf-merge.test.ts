@@ -9,12 +9,17 @@
 // branches adding one each is four needless collisions.
 
 import { PDFDocument } from 'pdf-lib'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { MAX_MERGE_FILES, mergePdfs } from '@/lib/engines/pdf-merge'
 import { createRunner } from '@/lib/engines/pdflib'
 import type { EngineInput, ProgressCallback } from '@/lib/engines/types'
 import type { ConversionTask } from '@/lib/router/types'
+
+import { PDF_SUITE_TIMEOUT_MS } from '../support/timeouts'
+
+// Real documents, real parsing: see the module this number lives in.
+vi.setConfig({ testTimeout: PDF_SUITE_TIMEOUT_MS })
 
 const merge: ConversionTask = { from: 'pdf', to: 'pdf', op: 'merge' }
 
