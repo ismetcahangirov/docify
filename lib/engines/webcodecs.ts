@@ -41,6 +41,7 @@
 import { throwIfAborted } from '@/lib/abort'
 import type { Capabilities, ConversionTask, FormatId, Operation } from '@/lib/router/types'
 
+import { isAudioTarget } from './audio-config'
 import type { EngineDescriptor, EngineInput, EngineRunner, ProgressCallback } from './types'
 
 /**
@@ -53,7 +54,15 @@ import type { EngineDescriptor, EngineInput, EngineRunner, ProgressCallback } fr
 export const WEBCODECS_LOAD_COST = 122_000
 
 /** Containers built on the ISO base media file format, which mp4box can read. */
-const ISO_CONTAINERS: ReadonlySet<FormatId> = new Set(['mp4', 'mov'])
+const ISO_CONTAINERS: ReadonlySet<FormatId> = new Set(['mp4', 'mov', 'm4a'])
+
+/**
+ * Sources whose picture is what the job is about.
+ *
+ * `m4a` is the same box structure as `mp4` with a different extension and, by
+ * convention, no video track — so it can be read but never converted *as* video.
+ */
+const VIDEO_SOURCES: ReadonlySet<FormatId> = new Set(['mp4', 'mov'])
 
 /**
  * Operations this engine implements.
@@ -73,7 +82,13 @@ export const descriptor: EngineDescriptor = {
   priority: 15,
   supports(task: ConversionTask, caps: Capabilities): boolean {
     if (!VIDEO_OPERATIONS.has(task.op)) return false
-    if (!ISO_CONTAINERS.has(task.from) || task.to !== 'mp4') return false
+    if (!ISO_CONTAINERS.has(task.from)) return false
+
+    // Two paths, gated on two different capabilities — a browser can genuinely
+    // have one family of codecs and not the other, which is why `Capabilities`
+    // probes them apart.
+    if (isAudioTarget(task.to) && task.to !== 'mp4') return caps.webCodecsAudio
+    if (task.to !== 'mp4' || !VIDEO_SOURCES.has(task.from)) return false
 
     return caps.webCodecsVideo
   },
@@ -91,6 +106,18 @@ export function createRunner(): EngineRunner {
       const source = onlyFile(input)
       const bytes = new Uint8Array(await source.arrayBuffer())
       throwIfAborted(signal)
+
+      // One `await import()` per path, each with a literal specifier: a
+      // computed one would defeat the bundler's static analysis and collapse
+      // both pipelines into a single chunk (CLAUDE.md §2.3).
+      if (input.task.to !== 'mp4') {
+        const { transcodeAudio } = await import('./audio-transcode')
+        throwIfAborted(signal)
+
+        const audio = await transcodeAudio(bytes, input.task.to, input.audio, signal, onProgress)
+
+        return new Blob([audio.bytes], { type: audio.mimeType })
+      }
 
       const { transcodeVideo } = await import('./video-transcode')
       throwIfAborted(signal)

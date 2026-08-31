@@ -10,6 +10,7 @@
 
 import type { Capabilities, ConversionTask, EngineId } from '@/lib/router/types'
 
+import type { AudioOptions } from './audio-options'
 import type { ImageOptions } from './image-options'
 import type { PdfOptions } from './pdf-options'
 import type { VideoOptions } from './video-options'
@@ -59,6 +60,11 @@ export interface EngineInput {
    * job: a container conversion needs no settings at all. See `./video-options`.
    */
   video?: VideoOptions
+  /**
+   * Settings for audio work — bitrate, sample rate, channel count. Absent means
+   * every default. See `./audio-options`.
+   */
+  audio?: AudioOptions
   /**
    * Memory this device may spend on the job, in bytes: `budgetBytes(caps)` from
    * `lib/router/budget.ts`, computed on the main thread that routed.
