@@ -51,6 +51,7 @@ export type Operation =
   | 'resize'
   | 'crop'
   | 'rotate'
+  | 'flip'
   | 'merge'
   | 'split'
   | 'extract'

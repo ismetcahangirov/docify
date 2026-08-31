@@ -74,6 +74,7 @@ describe('ConversionTask', () => {
       | 'resize'
       | 'crop'
       | 'rotate'
+      | 'flip'
       | 'merge'
       | 'split'
       | 'extract'

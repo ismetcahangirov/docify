@@ -27,14 +27,45 @@ export interface WriteCall {
   options?: Record<string, unknown>
 }
 
+/** One geometry operation, in the order the pipeline applied it. */
+export type StageCall =
+  | { kind: 'extractArea'; left: number; top: number; width: number; height: number }
+  | { kind: 'resize'; scale: number; options?: Record<string, unknown> }
+  | { kind: 'rot'; angle: string }
+  | { kind: 'flip'; direction: string }
+
 class FakeImage implements VipsImage {
-  readonly width = 1200
-  readonly height = 800
   kill = false
   deleted = false
   onProgress: (percent: number) => void = () => {}
 
-  constructor(private readonly fake: FakeVips) {}
+  constructor(
+    private readonly fake: FakeVips,
+    readonly width: number,
+    readonly height: number,
+  ) {}
+
+  extractArea(left: number, top: number, width: number, height: number): VipsImage {
+    this.fake.stages.push({ kind: 'extractArea', left, top, width, height })
+    return this.fake.derive(width, height)
+  }
+
+  resize(scale: number, options?: Record<string, unknown>): VipsImage {
+    this.fake.stages.push({ kind: 'resize', scale, options })
+    const vscale = typeof options?.vscale === 'number' ? options.vscale : scale
+    return this.fake.derive(Math.round(this.width * scale), Math.round(this.height * vscale))
+  }
+
+  rot(angle: string): VipsImage {
+    this.fake.stages.push({ kind: 'rot', angle })
+    const quarter = angle === 'd90' || angle === 'd270'
+    return this.fake.derive(quarter ? this.height : this.width, quarter ? this.width : this.height)
+  }
+
+  flip(direction: string): VipsImage {
+    this.fake.stages.push({ kind: 'flip', direction })
+    return this.fake.derive(this.width, this.height)
+  }
 
   writeToBuffer(suffix: string, options?: Record<string, unknown>): Uint8Array {
     this.fake.writes.push({ suffix, options })
@@ -54,9 +85,15 @@ export interface FakeVips {
   /** One entry per `loadVips` call, holding the side modules it was asked for. */
   loads: string[][]
   opens: OpenCall[]
+  /** Geometry operations, across every image, in the order they were applied. */
+  stages: StageCall[]
   writes: WriteCall[]
   images: FakeImage[]
   shutdowns: number
+  /** The dimensions every opened source reports. */
+  size: { width: number; height: number }
+  /** Makes the image a libvips operation would have returned. Test-internal. */
+  derive: (width: number, height: number) => FakeImage
   /** Runs inside `writeToBuffer`, where libvips would be evaluating pixels. */
   duringWrite?: (image: FakeImage) => void
   /**
@@ -81,19 +118,26 @@ export function fakeVips(): FakeVips {
   const fake: FakeVips = {
     loads: [],
     opens: [],
+    stages: [],
     writes: [],
     images: [],
     shutdowns: 0,
+    size: { width: 1200, height: 800 },
+    derive: () => {
+      throw new Error('replaced below')
+    },
     load: async () => {
       throw new Error('replaced below')
     },
   }
 
-  const newImage = (): FakeImage => {
-    const image = new FakeImage(fake)
+  const newImage = (width = fake.size.width, height = fake.size.height): FakeImage => {
+    const image = new FakeImage(fake, width, height)
     fake.images.push(image)
     return image
   }
+
+  fake.derive = newImage
 
   const vips: VipsModule = {
     Image: {

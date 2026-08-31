@@ -41,10 +41,14 @@
  *
  * `pdf-from-images`, `canvas` and `heif` need the same arithmetic and — the part
  * that settles it — the same sentence, because a refusal whose wording changes
- * with the engine teaches the user nothing (CLAUDE.md §2.5). `vips` is
- * deliberately guarded by neither: libvips streams in scanline regions and never
- * materialises the bitmap either ceiling would be protecting. See its module
- * header.
+ * with the engine teaches the user nothing (CLAUDE.md §2.5).
+ *
+ * `vips` uses {@link assertDecodedPixelsFit} for one narrow case and neither
+ * ceiling otherwise. libvips streams in scanline regions, so an ordinary
+ * conversion never materialises the bitmap either ceiling would be protecting —
+ * but a rotation and a flip read the source bottom-up, which streaming cannot
+ * serve, so those jobs do hold the whole image and are charged for it. See
+ * `assertPipelineFits` in `./vips-pipeline` and the `vips` module header.
  */
 
 import { DESKTOP_BUDGET_FLOOR_BYTES } from '@/lib/router/budget'
