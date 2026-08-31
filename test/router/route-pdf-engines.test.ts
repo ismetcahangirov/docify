@@ -57,6 +57,18 @@ describe('route — the PDF engines against the measured model', () => {
     expect(refused(route(pdfMerge, [6 * MB, 12 * MB], ios)).code).toBe('DEVICE_TOO_WEAK')
   })
 
+  it('routes PDF to text to pdf.js, on a browser that could not render a page', () => {
+    register(realPdfjs)
+
+    // Reading text draws nothing, so the `OffscreenCanvas` gate that governs the
+    // raster targets does not apply to it — and a browser without one can still
+    // pull the words out of a document.
+    const bare = { ...desktop, offscreenCanvas: false }
+
+    expect(chosen(route({ from: 'pdf', to: 'txt', op: 'convert' }, MB, bare)).engine).toBe('pdfjs')
+    expect(refused(route(pdfToJpg, MB, bare)).code).toBe('UNSUPPORTED_PAIR')
+  })
+
   it('reserves the render canvas before it spends the budget on the document', () => {
     register(realPdfjs)
 

@@ -89,7 +89,7 @@ describe('the pdfjs runner', () => {
         new AbortController().signal,
         nothing,
       ),
-    ).rejects.toThrow(/JPG or PNG/)
+    ).rejects.toThrow(/JPG, PNG or text/)
   })
 
   it('honours a signal that is already aborted before doing any work', async () => {

@@ -66,6 +66,7 @@ export class FakePage implements PdfPage {
   cleanups = 0
   renders = 0
   cancels = 0
+  textReads = 0
 
   constructor(
     private readonly fake: FakePdfjs,
@@ -113,6 +114,12 @@ export class FakePage implements PdfPage {
     return task
   }
 
+  async getTextContent(): Promise<{ items: readonly unknown[] }> {
+    this.textReads += 1
+
+    return { items: this.fake.textFor?.(this.number) ?? [] }
+  }
+
   cleanup(): boolean {
     this.cleanups += 1
 
@@ -130,6 +137,13 @@ export interface FakePdfjs {
   destroys: number
   /** Runs while a page render is in flight, before its task resolves. */
   duringRender?: (page: FakePage, task: PdfRenderTask, viewport: PdfViewport) => void
+  /**
+   * The text runs one page reports, by 1-based page number.
+   *
+   * Absent means every page is empty, which is what a scan looks like — and what
+   * the render tests, which care about pixels, want to keep costing nothing.
+   */
+  textFor?: (pageNumber: number) => readonly unknown[]
   load: PdfLoader
   createCanvas: RenderCanvasFactory
 }

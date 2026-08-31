@@ -28,6 +28,7 @@ export type FormatId =
   | 'heic'
   | 'ico'
   | 'pdf'
+  | 'txt'
   | 'mp4'
   | 'webm'
   | 'mov'
@@ -214,7 +215,8 @@ export type RejectionCode =
   'FILE_TOO_LARGE' | 'UNSUPPORTED_PAIR' | 'DEVICE_TOO_WEAK' | 'CODEC_UNAVAILABLE' | 'EMPTY_INPUT'
 
 /** The job will run, but the user should know something about how. */
-export type WarningCode = 'SLOW_PATH' | 'QUALITY_LOSS' | 'LARGE_DOWNLOAD' | 'NO_ISOLATION'
+export type WarningCode =
+  'SLOW_PATH' | 'QUALITY_LOSS' | 'LARGE_DOWNLOAD' | 'NO_ISOLATION' | 'LAYOUT_LOSS'
 
 export interface Warning {
   code: WarningCode

@@ -72,6 +72,36 @@ describe('route — warnings', () => {
     ).not.toContain('QUALITY_LOSS')
   })
 
+  it('warns LAYOUT_LOSS for a text target, which is a different loss from a re-encode', () => {
+    register(fake('pdfjs'))
+
+    const codes = warningCodes(route({ from: 'pdf', to: 'txt', op: 'convert' }, MB, desktop))
+
+    // Nothing is being re-encoded and the words themselves are exact; what a
+    // .txt cannot hold is everything that was not text. That is the sentence the
+    // acceptance criterion asks the user to be told before they convert.
+    expect(codes).toContain('LAYOUT_LOSS')
+    expect(codes).not.toContain('QUALITY_LOSS')
+  })
+
+  it('says plainly that a text file is not an editable copy of the document', () => {
+    register(fake('pdfjs'))
+
+    const warning = chosen(
+      route({ from: 'pdf', to: 'txt', op: 'convert' }, MB, desktop),
+    ).warnings.find((entry) => entry.code === 'LAYOUT_LOSS')
+
+    expect(warning?.message).toMatch(/not an editable copy/)
+  })
+
+  it('does not warn about layout when nothing had a layout to lose', () => {
+    register(fake('pdfjs'))
+
+    expect(
+      warningCodes(route({ from: 'txt', to: 'txt', op: 'convert' }, MB, desktop)),
+    ).not.toContain('LAYOUT_LOSS')
+  })
+
   it('reports the ffmpeg fallback in a fixed order: slow, single-threaded, download, quality', () => {
     register(ffmpeg())
 
