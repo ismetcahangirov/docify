@@ -40,7 +40,7 @@
 import { throwIfAborted } from '@/lib/abort'
 import type { Capabilities, ConversionTask, FormatId, Operation } from '@/lib/router/types'
 
-import { isFfmpegTarget } from './ffmpeg-args'
+import { ffmpegTargetHoldsAudio, ffmpegTargetHoldsVideo, isFfmpegTarget } from './ffmpeg-args'
 import { FFMPEG_LOAD_COST } from './ffmpeg-runtime'
 import type { EngineDescriptor, EngineInput, EngineRunner, ProgressCallback } from './types'
 
@@ -61,8 +61,15 @@ const READABLE: ReadonlySet<FormatId> = new Set([
   'aac',
 ])
 
-/** Formats with a picture in them. `extract` turns one of these into sound alone. */
-const VIDEO_FORMATS: ReadonlySet<FormatId> = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi'])
+/**
+ * Sources with a picture in them. `extract` turns one of these into sound
+ * alone, and only one of these can become a GIF.
+ *
+ * The *target* side of the same question is `ffmpegTargetHoldsVideo`, read off
+ * the target table: GIF has a picture and is not a video container, so one set
+ * cannot answer both.
+ */
+const VIDEO_SOURCES: ReadonlySet<FormatId> = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi'])
 
 const OPERATIONS: ReadonlySet<Operation> = new Set(['convert', 'compress', 'extract'])
 
@@ -82,7 +89,15 @@ export const descriptor: EngineDescriptor = {
     // Pulling the sound out of something with no picture is not an extraction,
     // it is a conversion — and claiming it here would give the same job two
     // names.
-    if (task.op === 'extract') return VIDEO_FORMATS.has(task.from) && !VIDEO_FORMATS.has(task.to)
+    if (task.op === 'extract') {
+      return VIDEO_SOURCES.has(task.from) && !ffmpegTargetHoldsVideo(task.to)
+    }
+
+    // A target that holds no sound holds nothing but the picture, so a source
+    // with no picture has nothing to give it. GIF is the case: a soundtrack
+    // cannot become an animation, and claiming the pair would spend a 31 MB
+    // download on a job that fails at the last step.
+    if (!ffmpegTargetHoldsAudio(task.to)) return VIDEO_SOURCES.has(task.from)
 
     return true
   },
@@ -123,7 +138,7 @@ export function createRunner(): EngineRunner {
           to: input.task.to,
           // `extract` is the operation that means "keep the sound and drop the
           // picture"; every other operation keeps whatever the target can hold.
-          keepVideo: input.task.op !== 'extract' && VIDEO_FORMATS.has(input.task.to),
+          keepVideo: input.task.op !== 'extract' && ffmpegTargetHoldsVideo(input.task.to),
           video: input.video,
           audio: input.audio,
         },

@@ -5,10 +5,16 @@ import { describe, expect, it } from 'vitest'
 import { resolveAudioBitrate } from '@/lib/engines/audio-options'
 import type { FfmpegJob } from '@/lib/engines/ffmpeg-args'
 import {
+  DEFAULT_GIF_FRAME_RATE,
+  DEFAULT_GIF_WIDTH,
   FFMPEG_TARGETS,
   ffmpegArgs,
   ffmpegTargetFor,
+  ffmpegTargetHoldsAudio,
+  ffmpegTargetHoldsVideo,
+  GIF_MAX_COLORS,
   isFfmpegTarget,
+  paletteFilter,
   scaleFilter,
 } from '@/lib/engines/ffmpeg-args'
 import { bitrateForTargetSize, DEFAULT_CRF } from '@/lib/engines/video-compression'
@@ -44,18 +50,34 @@ describe('the target table', () => {
       'aac',
       'flac',
       'pcm_s16le',
+      // Native, and the only encoder a GIF has.
+      'gif',
     ])
 
     for (const target of Object.values(FFMPEG_TARGETS)) {
       if (target.video !== null) expect(compiled).toContain(target.video)
-      expect(compiled).toContain(target.audio)
+      if (target.audio !== null) expect(compiled).toContain(target.audio)
     }
   })
 
   it('gives every target a MIME type, so a download is named correctly', () => {
     for (const target of Object.values(FFMPEG_TARGETS)) {
-      expect(target.mimeType).toMatch(/^(video|audio)\//)
+      expect(target.mimeType).toMatch(/^(video|audio|image)\//)
     }
+  })
+
+  it('answers what each target can hold from the table itself', () => {
+    // GIF is the case a hand-kept set of video formats gets wrong: it has a
+    // picture, it is not a video container, and it has no sound at all.
+    expect(ffmpegTargetHoldsVideo('gif')).toBe(true)
+    expect(ffmpegTargetHoldsAudio('gif')).toBe(false)
+    expect(ffmpegTargetHoldsVideo('mp4')).toBe(true)
+    expect(ffmpegTargetHoldsAudio('mp4')).toBe(true)
+    expect(ffmpegTargetHoldsVideo('mp3')).toBe(false)
+    expect(ffmpegTargetHoldsAudio('mp3')).toBe(true)
+    // A format this engine cannot write holds nothing.
+    expect(ffmpegTargetHoldsVideo('png' as FormatId)).toBe(false)
+    expect(ffmpegTargetHoldsAudio('png' as FormatId)).toBe(false)
   })
 
   it('says which formats it writes when asked for one it does not', () => {
@@ -261,5 +283,108 @@ describe('ffmpegArgs — the four sizing methods', () => {
       expect(args.filter((argument) => argument === '-b:v')).toHaveLength(1)
       expect(valueOf(args, '-b:v')).not.toBe('0')
     })
+  })
+})
+
+describe('GIF, where the palette is the quality', () => {
+  const gif = (video?: VideoOptions) =>
+    ffmpegArgs({
+      input: '/input.mp4',
+      output: '/output.gif',
+      from: 'mp4',
+      to: 'gif',
+      keepVideo: true,
+      video,
+    })
+
+  it('generates a palette from the clip instead of quantising to a fixed one', () => {
+    const chain = valueOf(gif(), '-filter_complex')
+
+    // The whole point of the issue: ffmpeg's default is a fixed web-safe
+    // palette, which posterises faces and bands gradients.
+    expect(chain).toContain(`palettegen=max_colors=${GIF_MAX_COLORS}`)
+    expect(chain).toContain('paletteuse')
+  })
+
+  it('builds the palette from the frames that will actually be written', () => {
+    const chain = paletteFilter({ width: 320, frameRate: 8 })
+
+    // `fps` and `scale` before `split`, so the palette describes the output.
+    // Generating it from the full-resolution source and scaling afterwards picks
+    // colours for pixels that no longer exist.
+    expect(chain.indexOf('fps=8')).toBeLessThan(chain.indexOf('split'))
+    expect(chain.indexOf('scale=320')).toBeLessThan(chain.indexOf('split'))
+    expect(chain.indexOf('split')).toBeLessThan(chain.indexOf('palettegen'))
+  })
+
+  it('does it in one pass, which is what split is for', () => {
+    const chain = paletteFilter({})
+
+    // Two passes over the file with a palette written in between is the usual
+    // recipe. Single-threaded in WebAssembly, halving the decoding halves the
+    // wait.
+    expect(chain).toContain('split[gifsrc][gifmap]')
+    expect(chain).toContain('[gifmap][gifpalette]paletteuse')
+  })
+
+  it('takes the frame rate and the width the job chose', () => {
+    const chain = valueOf(gif({ frameRate: 20, width: 640 }), '-filter_complex')
+
+    expect(chain).toContain('fps=20')
+    expect(chain).toContain('scale=640:-1')
+  })
+
+  it('takes them from the resize method too, since that is where a panel puts them', () => {
+    const chain = valueOf(
+      gif({ compression: { method: 'resize', width: 240, height: 180 } }),
+      '-filter_complex',
+    )
+
+    expect(chain).toContain('scale=240:180')
+  })
+
+  it('picks a sane frame rate and width when the job chose neither', () => {
+    const chain = paletteFilter({})
+
+    expect(chain).toContain(`fps=${DEFAULT_GIF_FRAME_RATE}`)
+    expect(chain).toContain(`scale=${DEFAULT_GIF_WIDTH}:-1`)
+  })
+
+  it('scales with lanczos, because a GIF is nearly always a heavy downscale', () => {
+    expect(paletteFilter({})).toContain('flags=lanczos')
+  })
+
+  it('dithers with a fixed pattern, which is a size decision and not a fidelity one', () => {
+    // Error diffusion is slightly better per frame and much worse per file: a
+    // different noise pattern in every frame is a file that cannot compress
+    // between them.
+    expect(paletteFilter({})).toContain('dither=bayer')
+  })
+
+  it('sends no rate-control flag at all, because the GIF encoder has none', () => {
+    const args = gif({ compression: { method: 'quality', crf: 18 } })
+
+    expect(args).not.toContain('-crf')
+    expect(args).not.toContain('-b:v')
+    expect(args).not.toContain('-preset')
+  })
+
+  it('uses the filter graph instead of -vf and -r, which cannot both apply', () => {
+    const args = gif({ frameRate: 15, width: 400 })
+
+    expect(args).not.toContain('-vf')
+    expect(args).not.toContain('-r')
+  })
+
+  it('drops the sound explicitly, since a GIF has nowhere to put it', () => {
+    const args = gif()
+
+    expect(args).toContain('-an')
+    expect(args).not.toContain('-c:a')
+    expect(args).not.toContain('-b:a')
+  })
+
+  it('loops forever, which is what every GIF in the wild does', () => {
+    expect(valueOf(gif(), '-loop')).toBe('0')
   })
 })

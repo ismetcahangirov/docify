@@ -327,3 +327,52 @@ describe('the duration probe', () => {
     expect([...core.files.keys()]).toEqual([])
   })
 })
+
+describe('GIF against the real core', () => {
+  /**
+   * The claim a fake cannot make: that the vendored build has `palettegen`,
+   * `paletteuse` and the GIF encoder compiled in at all, and that the filter
+   * chain this project writes is one ffmpeg accepts. A chain it rejects fails
+   * only at run time, after a 31 MB download, on the user's machine.
+   */
+  it('turns a real video into a real GIF with a generated palette', async () => {
+    const core = await realFfmpeg()
+
+    core.reset()
+    const made = core.exec(
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc=duration=1:size=160x120:rate=15',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '/source.mp4',
+    )
+    expect(made).toBe(0)
+    const bytes = core.FS.readFile('/source.mp4')
+    const input = new Uint8Array(bytes.length)
+    input.set(bytes)
+    core.FS.unlink('/source.mp4')
+
+    const result = await runFfmpeg({
+      core,
+      bytes: input,
+      job: {
+        from: 'mp4',
+        to: 'gif',
+        keepVideo: true,
+        video: { width: 80, frameRate: 8 },
+      } as never,
+      signal: running(),
+      onProgress: quiet,
+    })
+
+    expect(result.mimeType).toBe('image/gif')
+    // `GIF89a`, which is the only header a file with a palette and an animation
+    // can carry.
+    expect(String.fromCharCode(...result.bytes.subarray(0, 6))).toBe('GIF89a')
+    expect(core.FS.readdir('/')).not.toContain('output.gif')
+  }, 60_000)
+})
