@@ -285,3 +285,52 @@ describe('route — video into GIF', () => {
     expect(result.suggestion.length).toBeGreaterThan(0)
   })
 })
+
+describe('route — the audio format matrix', () => {
+  const AUDIO_FORMATS = ['mp3', 'wav', 'ogg', 'm4a', 'flac'] as const
+
+  it('finds an engine for every ordered pair of the five formats', () => {
+    register(realRemux, realWebCodecs, realFfmpeg)
+
+    for (const from of AUDIO_FORMATS) {
+      for (const to of AUDIO_FORMATS) {
+        if (from === to) continue
+
+        const result = route({ from, to, op: 'convert' }, 20 * MB, desktop)
+
+        expect(chosen(result).engine).toBeDefined()
+      }
+    }
+  })
+
+  it('finds one on a device with no codecs at all, which is what the fallback is for', () => {
+    register(realRemux, realWebCodecs, realFfmpeg)
+
+    const codecless = { ...desktop, webCodecsVideo: false, webCodecsAudio: false }
+
+    for (const from of AUDIO_FORMATS) {
+      for (const to of AUDIO_FORMATS) {
+        if (from === to) continue
+
+        expect(chosen(route({ from, to, op: 'convert' }, 20 * MB, codecless)).engine).toBe('ffmpeg')
+      }
+    }
+  })
+
+  it('prefers the browser codecs where the source is an ISO container', () => {
+    register(realRemux, realWebCodecs, realFfmpeg)
+
+    // No download at all against ffmpeg's 31 MB.
+    expect(chosen(route({ from: 'm4a', to: 'ogg', op: 'convert' }, 20 * MB, desktop)).engine).toBe(
+      'webcodecs',
+    )
+  })
+
+  it('says nothing about quality when both ends are lossless', () => {
+    register(realFfmpeg)
+
+    const result = chosen(route({ from: 'flac', to: 'wav', op: 'convert' }, 20 * MB, desktop))
+
+    expect(result.warnings.map((warning) => warning.code)).not.toContain('QUALITY_LOSS')
+  })
+})

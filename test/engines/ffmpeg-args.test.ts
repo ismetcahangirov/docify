@@ -2,7 +2,8 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { resolveAudioBitrate } from '@/lib/engines/audio-options'
+import type { AudioOptions } from '@/lib/engines/audio-options'
+import { nearestSampleRate, resolveAudioBitrate } from '@/lib/engines/audio-options'
 import type { FfmpegJob } from '@/lib/engines/ffmpeg-args'
 import {
   DEFAULT_GIF_FRAME_RATE,
@@ -386,5 +387,137 @@ describe('GIF, where the palette is the quality', () => {
 
   it('loops forever, which is what every GIF in the wild does', () => {
     expect(valueOf(gif(), '-loop')).toBe('0')
+  })
+})
+
+describe('the audio converter', () => {
+  /** The five formats the issue names, plus the raw AAC the table also writes. */
+  const AUDIO_FORMATS = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'] as const
+
+  const encode = (to: FormatId, audio?: AudioOptions, from: FormatId = 'mp3') =>
+    ffmpegArgs({
+      input: `/input.${from}`,
+      output: `/output.${to}`,
+      from,
+      to,
+      keepVideo: false,
+      audio,
+    })
+
+  it('writes every one of the five formats out of every other', () => {
+    for (const from of AUDIO_FORMATS) {
+      for (const to of AUDIO_FORMATS) {
+        if (from === to) continue
+
+        const args = encode(to, undefined, from)
+
+        expect(args).toContain('-vn')
+        expect(valueOf(args, '-c:a')).toBe(ffmpegTargetFor(to).audio)
+        expect(args.at(-1)).toBe(`/output.${to}`)
+      }
+    }
+  })
+
+  it('asks for a bitrate only where one changes anything', () => {
+    // FLAC is lossless and WAV is not compressed at all: their size is the
+    // audio, and a bitrate is a promise neither format can keep.
+    expect(encode('mp3', { bitrate: 128_000 })).toContain('-b:a')
+    expect(encode('ogg', { bitrate: 128_000 })).toContain('-b:a')
+    expect(encode('m4a', { bitrate: 128_000 })).toContain('-b:a')
+    expect(encode('aac', { bitrate: 128_000 })).toContain('-b:a')
+    expect(encode('wav', { bitrate: 128_000 })).not.toContain('-b:a')
+    expect(encode('flac', { bitrate: 128_000 })).not.toContain('-b:a')
+  })
+
+  it('passes the chosen bitrate through unchanged', () => {
+    expect(valueOf(encode('mp3', { bitrate: 320_000 }), '-b:a')).toBe('320000')
+  })
+
+  it('derives one per channel when the job names none', () => {
+    expect(valueOf(encode('mp3'), '-b:a')).toBe(String(resolveAudioBitrate(undefined, 2)))
+  })
+
+  describe('sample rate', () => {
+    it('is left to the source when the job does not ask', () => {
+      // Restating a default here would resample every file nobody asked to
+      // change.
+      expect(encode('mp3')).not.toContain('-ar')
+    })
+
+    it('is passed through where the encoder writes it', () => {
+      expect(valueOf(encode('mp3', { sampleRate: 44_100 }), '-ar')).toBe('44100')
+      expect(valueOf(encode('flac', { sampleRate: 96_000 }), '-ar')).toBe('96000')
+    })
+
+    it('snaps onto the list the encoder actually accepts', () => {
+      // Opus is defined at five rates and refuses everything else, after the
+      // whole file has been read.
+      expect(valueOf(encode('ogg', { sampleRate: 44_100 }), '-ar')).toBe('48000')
+      expect(valueOf(encode('ogg', { sampleRate: 22_050 }), '-ar')).toBe('24000')
+      expect(valueOf(encode('mp3', { sampleRate: 47_000 }), '-ar')).toBe('48000')
+    })
+
+    it('never emits a rate the encoder would refuse', () => {
+      for (const to of AUDIO_FORMATS) {
+        const target = ffmpegTargetFor(to)
+        if (target.sampleRates === undefined) continue
+
+        for (const requested of [8_000, 22_050, 44_100, 48_000, 96_000, 192_000]) {
+          const rate = Number(valueOf(encode(to, { sampleRate: requested }), '-ar'))
+
+          expect(target.sampleRates).toContain(rate)
+        }
+      }
+    })
+  })
+
+  describe('channels', () => {
+    it('are left to the source when the job does not ask', () => {
+      expect(encode('mp3')).not.toContain('-ac')
+    })
+
+    it('are passed through where the encoder writes them', () => {
+      expect(valueOf(encode('flac', { channels: 6 }), '-ac')).toBe('6')
+    })
+
+    it('are downmixed to what the encoder can hold rather than refused', () => {
+      // libmp3lame is mono or stereo and nothing else.
+      expect(valueOf(encode('mp3', { channels: 6 }), '-ac')).toBe('2')
+      expect(valueOf(encode('mp3', { channels: 1 }), '-ac')).toBe('1')
+    })
+
+    it('price the derived bitrate at the count that will actually be written', () => {
+      // A 5.1 source asked for MP3 is priced as the stereo file it becomes, not
+      // as six channels it cannot have.
+      expect(valueOf(encode('mp3', { channels: 6 }), '-b:a')).toBe(
+        String(resolveAudioBitrate(undefined, 2)),
+      )
+      expect(valueOf(encode('mp3', { channels: 1 }), '-b:a')).toBe(
+        String(resolveAudioBitrate(undefined, 1)),
+      )
+    })
+  })
+})
+
+describe('nearestSampleRate', () => {
+  const opus = [8000, 12000, 16000, 24000, 48000]
+
+  it('answers the rate itself when the encoder writes it', () => {
+    expect(nearestSampleRate(48_000, opus)).toBe(48_000)
+  })
+
+  it('answers the closest one otherwise', () => {
+    expect(nearestSampleRate(44_100, opus)).toBe(48_000)
+    expect(nearestSampleRate(11_025, opus)).toBe(12_000)
+    expect(nearestSampleRate(1_000, opus)).toBe(8_000)
+    expect(nearestSampleRate(192_000, opus)).toBe(48_000)
+  })
+
+  it('breaks a tie upward, which never loses a frequency', () => {
+    expect(nearestSampleRate(10_000, opus)).toBe(12_000)
+  })
+
+  it('leaves the request alone when the encoder has no list', () => {
+    expect(nearestSampleRate(44_100, [])).toBe(44_100)
   })
 })

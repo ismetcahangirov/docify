@@ -58,6 +58,29 @@ export function resolveChannels(options: AudioOptions | undefined, source: numbe
   return source > 0 ? source : 2
 }
 
+/**
+ * The rate in `supported` closest to `requested`.
+ *
+ * Every audio encoder accepts a fixed list of sample rates and refuses
+ * everything else outright — libmp3lame writes nine of them, libopus five —
+ * which turns "convert this 44.1 kHz track to Ogg at 44.1 kHz" into a job that
+ * fails after the file has been read, with a message about an invalid argument.
+ * Snapping is the honest answer: the user asked for a rate, and the nearest one
+ * the format can hold is what that request means here.
+ *
+ * Ties go upward. Resampling to the higher of two equidistant rates costs a few
+ * bytes and never loses a frequency the lower one would have discarded.
+ */
+export function nearestSampleRate(requested: number, supported: readonly number[]): number {
+  if (supported.length === 0) return requested
+
+  return supported.reduce((best, rate) => {
+    const closer = Math.abs(rate - requested) - Math.abs(best - requested)
+
+    return closer < 0 || (closer === 0 && rate > best) ? rate : best
+  })
+}
+
 /** The sample rate to encode at: the job's, or the source's. */
 export function resolveSampleRate(options: AudioOptions | undefined, source: number): number {
   const requested = options?.sampleRate
