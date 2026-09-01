@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { runFfmpeg } from '@/lib/engines/ffmpeg-run'
+import { parseDurationSeconds, runFfmpeg } from '@/lib/engines/ffmpeg-run'
 
 import { type FakeFfmpeg, fakeFfmpeg, realFfmpeg } from './ffmpeg-core'
 
@@ -240,4 +240,90 @@ describe('runFfmpeg against the real core', () => {
     const isMp3 = header[0] === 0xff || String.fromCharCode(...header) === 'ID3'
     expect(isMp3).toBe(true)
   }, 60_000)
+})
+
+describe('the duration probe', () => {
+  const DURATION_LINE = '  Duration: 00:01:30.50, start: 0.000000, bitrate: 1201 kb/s'
+
+  it('reads the running time out of the line ffmpeg prints about its input', () => {
+    expect(parseDurationSeconds([DURATION_LINE])).toBeCloseTo(90.5, 5)
+  })
+
+  it('handles a file long enough to need three hour digits', () => {
+    expect(parseDurationSeconds(['Duration: 100:00:00.00'])).toBe(360_000)
+  })
+
+  it('answers null for a container that does not carry one', () => {
+    expect(parseDurationSeconds(['  Duration: N/A, start: 0.000000, bitrate: N/A'])).toBeNull()
+    expect(parseDurationSeconds([])).toBeNull()
+  })
+
+  it('asks ffmpeg only when the job actually needs the answer', async () => {
+    const core = fakeFfmpeg()
+
+    await runFfmpeg({
+      core,
+      bytes: new Uint8Array([1, 2, 3]),
+      job: {
+        from: 'mp4',
+        to: 'mp4',
+        keepVideo: true,
+        video: { compression: { method: 'quality', crf: 20 } },
+      },
+      signal: new AbortController().signal,
+      onProgress: () => {},
+    })
+
+    // One exec: the conversion. A probe is a whole WASM call, and three of the
+    // four sizing methods have nothing to ask it.
+    expect(core.execs).toHaveLength(1)
+  })
+
+  it('probes before the conversion and feeds the answer into the command line', async () => {
+    const core = fakeFfmpeg()
+    core.duringExec = (fake) => {
+      fake.logger({ type: 'stderr', message: DURATION_LINE })
+    }
+
+    await runFfmpeg({
+      core,
+      bytes: new Uint8Array([1, 2, 3]),
+      job: {
+        from: 'mp4',
+        to: 'mp4',
+        keepVideo: true,
+        video: { compression: { method: 'target-size', targetBytes: 8 * 1024 * 1024 } },
+      },
+      signal: new AbortController().signal,
+      onProgress: () => {},
+    })
+
+    expect(core.execs).toHaveLength(2)
+    expect(core.execs[0].args).toEqual(['-hide_banner', '-i', '/input.mp4'])
+    // 90.5 seconds of it, so the rate is a real number rather than a default.
+    const bitrate = core.execs[1].args[core.execs[1].args.indexOf('-b:v') + 1]
+    expect(Number(bitrate)).toBeGreaterThan(0)
+  })
+
+  it('leaves nothing behind when the probe ran', async () => {
+    const core = fakeFfmpeg()
+    core.duringExec = (fake) => {
+      fake.logger({ type: 'stderr', message: DURATION_LINE })
+    }
+
+    await runFfmpeg({
+      core,
+      bytes: new Uint8Array([1, 2, 3]),
+      job: {
+        from: 'mp4',
+        to: 'mp4',
+        keepVideo: true,
+        video: { compression: { method: 'target-size', targetBytes: 8 * 1024 * 1024 } },
+      },
+      signal: new AbortController().signal,
+      onProgress: () => {},
+    })
+
+    expect([...core.files.keys()]).toEqual([])
+  })
 })

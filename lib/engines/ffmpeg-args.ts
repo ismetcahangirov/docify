@@ -27,6 +27,8 @@ import type { FormatId } from '@/lib/router/types'
 
 import type { AudioOptions } from './audio-options'
 import { resolveAudioBitrate } from './audio-options'
+import type { ResolvedVideoEncode } from './video-compression'
+import { DEFAULT_CRF, resolveVideoEncode } from './video-compression'
 import type { VideoOptions } from './video-options'
 
 /** How one output format is produced. */
@@ -36,18 +38,19 @@ export interface FfmpegTarget {
   audio: string
   /** Extra arguments the container needs, after the codecs. */
   extra?: readonly string[]
+  /**
+   * Arguments the video encoder needs in *constant-quality* mode, and only then.
+   *
+   * libvpx is the reason this is separate from {@link extra}: it reads `-crf` as
+   * an upper bound unless `-b:v 0` is also given, so a WebM asked for constant
+   * quality needs the pair. Emitting `-b:v 0` unconditionally, which is what
+   * carrying it in `extra` amounts to, silently overrides the `-b:v` a target
+   * size or a chosen bitrate just set: ffmpeg takes the last one it is given.
+   * That made three of the four sizing methods do nothing on WebM.
+   */
+  constantQuality?: readonly string[]
   mimeType: string
 }
-
-/**
- * The quality ffmpeg encodes video at when the job names no bitrate.
- *
- * 23 is x264's own default and the middle of the useful range: 18 is visually
- * lossless and four times the size, 28 is where blocking starts to show on
- * motion. libvpx uses the same scale for `-crf` but needs `-b:v 0` alongside it
- * to mean "constant quality", which is what the WebM entry below carries.
- */
-const DEFAULT_CRF = '23'
 
 /** The preset that trades a little size for a lot of time, which is the right way round here. */
 const DEFAULT_PRESET = 'veryfast'
@@ -83,7 +86,8 @@ export const FFMPEG_TARGETS: Readonly<Partial<Record<FormatId, FfmpegTarget>>> =
     // Opus rather than the Vorbis ffmpeg would pick on its own: every current
     // browser decodes Opus, and Safari refuses Vorbis in WebM.
     audio: 'libopus',
-    extra: ['-b:v', '0', '-pix_fmt', 'yuv420p'],
+    extra: ['-pix_fmt', 'yuv420p'],
+    constantQuality: ['-b:v', '0'],
     mimeType: 'video/webm',
   },
   avi: { video: 'libx264', audio: 'libmp3lame', mimeType: 'video/x-msvideo' },
@@ -124,6 +128,14 @@ export interface FfmpegJob {
   keepVideo: boolean
   video?: VideoOptions
   audio?: AudioOptions
+  /**
+   * How long the source runs, in seconds, where the caller could find out.
+   *
+   * Only the target-size method needs it, and only that method fails without
+   * it: see `resolveVideoEncode`. A parameter and not a probe, because this
+   * module is pure. `runFfmpeg` asks ffmpeg itself and passes the answer down.
+   */
+  durationSeconds?: number
 }
 
 /**
@@ -136,17 +148,25 @@ export interface FfmpegJob {
 export function ffmpegArgs(job: FfmpegJob): string[] {
   const target = ffmpegTargetFor(job.to)
   const wantsVideo = job.keepVideo && target.video !== null
+  const audioBitrate = resolveAudioBitrate(job.audio, channelsFor(job.audio))
+
+  // Resolved once, here, so that the sizing method and the audio rate it has to
+  // make room for are decided together rather than in two places that could
+  // disagree about how many bits the sound costs.
+  const encode = resolveVideoEncode(job.video, {
+    durationSeconds: job.durationSeconds ?? 0,
+    audioBitrate,
+  })
 
   const args = ['-i', job.input]
 
   if (wantsVideo) {
-    args.push('-c:v', target.video as string, ...videoQuality(job.video))
+    args.push('-c:v', target.video as string, ...videoQuality(encode, target))
 
-    const scale = scaleFilter(job.video)
+    const scale = scaleFilter(encode)
     if (scale !== null) args.push('-vf', scale)
 
-    const frameRate = job.video?.frameRate
-    if (isPositive(frameRate)) args.push('-r', String(frameRate))
+    if (isPositive(encode.frameRate)) args.push('-r', String(encode.frameRate))
   } else {
     // Explicit, not implied. ffmpeg copies a video stream into an MP3 quite
     // happily — as an attached picture at best, as an unplayable file at worst.
@@ -155,7 +175,7 @@ export function ffmpegArgs(job: FfmpegJob): string[] {
 
   args.push('-c:a', target.audio)
   if (target.audio !== 'pcm_s16le' && target.audio !== 'flac') {
-    args.push('-b:a', String(resolveAudioBitrate(job.audio, channelsFor(job.audio))))
+    args.push('-b:a', String(audioBitrate))
   }
 
   if (target.extra !== undefined) args.push(...target.extra)
@@ -166,19 +186,41 @@ export function ffmpegArgs(job: FfmpegJob): string[] {
 }
 
 /**
- * How hard to compress the picture.
+ * How hard to compress the picture, in ffmpeg's own vocabulary.
  *
- * A bitrate when the job named one — which is what "compress to this size"
- * becomes — and constant quality otherwise, because a target bitrate applied to
- * a video that did not need it wastes space on an easy scene and starves a hard
- * one.
+ * Three shapes, one per answer `resolveVideoEncode` can give:
+ *
+ * - a fixed `-b:v`, which is what a target size and a chosen bitrate both become
+ * - `-crf` with `-maxrate` and a `-bufsize` of twice it: *constrained quality*,
+ *   x264's documented way to say "as good as you can, but never above this".
+ *   The buffer has to be larger than the ceiling, or the encoder cannot spend a
+ *   burst on a hard scene and the picture stutters instead.
+ * - `-crf` alone, which is constant quality and the right default: a fixed rate
+ *   applied to a video that did not need it wastes bits on an easy scene and
+ *   starves a hard one.
  */
-function videoQuality(options: VideoOptions | undefined): string[] {
-  const bitrate = options?.bitrate
+function videoQuality(encode: ResolvedVideoEncode, target: FfmpegTarget): string[] {
+  if (isPositive(encode.bitrate)) {
+    return ['-b:v', String(Math.round(encode.bitrate)), '-preset', DEFAULT_PRESET]
+  }
 
-  if (isPositive(bitrate)) return ['-b:v', String(Math.round(bitrate)), '-preset', DEFAULT_PRESET]
+  const quality = ['-crf', String(encode.crf ?? DEFAULT_CRF), ...(target.constantQuality ?? [])]
 
-  return ['-crf', DEFAULT_CRF, '-preset', DEFAULT_PRESET]
+  if (isPositive(encode.maxBitrate)) {
+    const ceiling = Math.round(encode.maxBitrate)
+
+    return [
+      ...quality,
+      '-maxrate',
+      String(ceiling),
+      '-bufsize',
+      String(ceiling * 2),
+      '-preset',
+      DEFAULT_PRESET,
+    ]
+  }
+
+  return [...quality, '-preset', DEFAULT_PRESET]
 }
 
 /**
@@ -189,9 +231,9 @@ function videoQuality(options: VideoOptions | undefined): string[] {
  * requires and `-1` does not guarantee. `force_original_aspect_ratio=decrease`
  * makes a two-axis request a box to fit inside rather than a stretch.
  */
-export function scaleFilter(options: VideoOptions | undefined): string | null {
-  const width = positiveInteger(options?.width)
-  const height = positiveInteger(options?.height)
+export function scaleFilter(size: { width?: number; height?: number } | undefined): string | null {
+  const width = positiveInteger(size?.width)
+  const height = positiveInteger(size?.height)
 
   if (width === undefined && height === undefined) return null
   if (width !== undefined && height !== undefined) {

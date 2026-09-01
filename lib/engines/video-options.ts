@@ -10,6 +10,8 @@
  * comparable output.
  */
 
+import type { VideoCompression } from './video-compression'
+
 /** Bits per second below which a video is unwatchable at any size. */
 export const MIN_BITRATE = 50_000
 
@@ -52,6 +54,17 @@ export interface VideoOptions {
    * no encoder for the profile asked for.
    */
   hardware?: boolean
+  /**
+   * Which sizing method the user chose, and its one setting.
+   *
+   * Absent means "no method" and not "a bad one": a plain container conversion
+   * asks for no compression at all, and the fields above are then the whole
+   * story. When it is present it is the *newer* answer and overrides whichever
+   * of {@link width}, {@link height} and {@link bitrate} it speaks to — see
+   * `resolveVideoEncode` in `./video-compression`, which is the one place that
+   * reconciles the two and the only place either engine reads.
+   */
+  compression?: VideoCompression
 }
 
 /** The bitrate this job should encode at, in bits per second. */

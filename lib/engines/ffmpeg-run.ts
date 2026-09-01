@@ -56,6 +56,72 @@ const NO_DEADLINE = -1
 /** How many of ffmpeg's own log lines to keep for a failure message. */
 const KEPT_LOG_LINES = 12
 
+/**
+ * The line ffmpeg prints about every input it opens.
+ *
+ * `Duration: 00:01:23.45, start: 0.000000, bitrate: 1234 kb/s` — the hours are
+ * not padded to two digits on a long file, which is why the pattern counts them
+ * loosely, and the fractional seconds are always there but are matched as
+ * optional so a build that drops them still parses.
+ */
+const DURATION_LINE = /Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/
+
+/**
+ * The running time named in ffmpeg's own log lines, in seconds, or `null` when
+ * none of them said.
+ *
+ * `N/A` is what ffmpeg prints for a stream whose container carries no duration
+ * at all, and it does not match the pattern, so it answers `null` like any
+ * other silence.
+ */
+export function parseDurationSeconds(lines: readonly string[]): number | null {
+  for (const line of lines) {
+    const match = DURATION_LINE.exec(line)
+    if (match === null) continue
+
+    const seconds = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3])
+    if (Number.isFinite(seconds) && seconds > 0) return seconds
+  }
+
+  return null
+}
+
+/**
+ * Asks ffmpeg how long the input runs, without decoding a frame of it.
+ *
+ * `ffmpeg -i <file>` with no output named prints the container's stream summary
+ * and then exits non-zero complaining that no output was given. That refusal is
+ * the whole point: it is the cheapest complete probe the binary offers, it reads
+ * the header and the index and nothing else, and the summary it prints on the
+ * way out carries the `Duration:` line. The exit status is deliberately ignored.
+ *
+ * Only called for a job that needs it, because it is still a WASM call: the
+ * three sizing methods that are not a target size have nothing to ask.
+ */
+export function probeDurationSeconds(core: FfmpegCore, input: string): number | null {
+  const lines: string[] = []
+
+  core.setLogger((message) => {
+    lines.push(message.message)
+  })
+
+  try {
+    core.exec('-hide_banner', '-i', input)
+  } catch {
+    // A build that throws rather than returning a status has still logged
+    // whatever it managed to read, which is what is being asked for.
+  } finally {
+    core.setLogger(() => {})
+  }
+
+  return parseDurationSeconds(lines)
+}
+
+/** Whether this job's sizing method needs the source's running time. */
+function needsDuration(job: Omit<FfmpegJob, 'input' | 'output'>): boolean {
+  return job.video?.compression?.method === 'target-size'
+}
+
 export interface FfmpegRunRequest {
   core: FfmpegCore
   bytes: Uint8Array
@@ -92,16 +158,23 @@ export async function runFfmpeg(request: FfmpegRunRequest): Promise<FfmpegResult
 
   try {
     core.reset()
+    core.FS.writeFile(input, bytes)
+    throwIfAborted(signal)
+
+    // Before the job's own logger is installed, so the probe's stream summary
+    // does not become the tail quoted in a later failure message.
+    const durationSeconds = needsDuration(job)
+      ? (probeDurationSeconds(core, input) ?? undefined)
+      : undefined
+    throwIfAborted(signal)
+
     core.setLogger((message) => keep(log, message))
     // Fractions only: ffmpeg reports a negative value for an input whose
     // duration it could not read, which is honest and is what -1 means here.
     core.setProgress(({ progress }) => onProgress(progress >= 0 ? Math.min(progress, 1) : -1))
 
-    core.FS.writeFile(input, bytes)
-    throwIfAborted(signal)
-
     signal.addEventListener('abort', cancel, { once: true })
-    const status = core.exec(...ffmpegArgs({ ...job, input, output }))
+    const status = core.exec(...ffmpegArgs({ ...job, input, output, durationSeconds }))
 
     // Checked before the status: a cancelled run exits non-zero, and reporting
     // that as a conversion failure would tell the user their file was broken.

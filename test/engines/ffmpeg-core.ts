@@ -36,6 +36,11 @@ export interface FakeFfmpeg extends FfmpegCore {
   deadline: number
   /** What `exec` answers. Non-zero is a failure. */
   status: number
+  /**
+   * What a probe run answers. Non-zero, like the real thing: `ffmpeg -i <file>`
+   * always exits complaining that no output file was given.
+   */
+  probeStatus: number
   /** Runs inside `exec`, where ffmpeg would be encoding. */
   duringExec?: (fake: FakeFfmpeg) => void
   /** The bytes `exec` leaves at the output path. Absent writes four. */
@@ -51,6 +56,7 @@ export function fakeFfmpeg(): FakeFfmpeg {
     resets: 0,
     deadline: -1,
     status: 0,
+    probeStatus: 1,
     logger: () => {},
     progress: () => {},
 
@@ -74,8 +80,16 @@ export function fakeFfmpeg(): FakeFfmpeg {
       fake.execs.push({ args, files: [...fake.files.keys()] })
       fake.duringExec?.(fake)
 
+      // A run whose last argument names a file that already exists is a probe
+      // (`ffmpeg -i <input>`), not a conversion: real ffmpeg refuses it because
+      // no output was named, and it certainly does not write over the input.
+      const destination = args[args.length - 1]
+      const isProbe = destination.startsWith('-') || fake.files.has(destination)
+
+      if (isProbe) return fake.probeStatus
+
       if (fake.status === 0) {
-        fake.files.set(args[args.length - 1], fake.output ?? new Uint8Array([1, 2, 3, 4]))
+        fake.files.set(destination, fake.output ?? new Uint8Array([1, 2, 3, 4]))
       }
 
       return fake.status
