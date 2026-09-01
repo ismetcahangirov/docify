@@ -262,3 +262,26 @@ describe('route — MOV into MP4', () => {
     expect(chosen(route(shrinkMp4, 50 * MB, desktop)).engine).toBe('webcodecs')
   })
 })
+
+describe('route — video into GIF', () => {
+  const mp4ToGif: ConversionTask = { from: 'mp4', to: 'gif', op: 'convert' }
+  const mp3ToGif: ConversionTask = { from: 'mp3', to: 'gif', op: 'convert' }
+
+  it('goes to ffmpeg, which is the only engine with a palette in it', () => {
+    register(realRemux, realWebCodecs, realFfmpeg)
+
+    const result = chosen(route(mp4ToGif, 20 * MB, desktop))
+
+    expect(result.engine).toBe('ffmpeg')
+    expect(result.warnings.map((warning) => warning.code)).toContain('QUALITY_LOSS')
+  })
+
+  it('refuses to make one out of a soundtrack, before anything is downloaded', () => {
+    register(realWebCodecs, realFfmpeg)
+
+    const result = refused(route(mp3ToGif, 5 * MB, desktop))
+
+    expect(result.code).toBe('UNSUPPORTED_PAIR')
+    expect(result.suggestion.length).toBeGreaterThan(0)
+  })
+})
