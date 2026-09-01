@@ -226,6 +226,43 @@ describe('route — the real remux descriptor', () => {
   })
 })
 
+describe('route — MOV into MP4', () => {
+  it('is a stream copy, not a transcode, whenever one will fit', () => {
+    register(realRemux, realWebCodecs, realFfmpeg)
+
+    const result = chosen(route(movToMp4, 100 * MB, desktop))
+
+    expect(result.engine).toBe('remux')
+    // Nothing about the picture changes, so nothing about quality is given up.
+    expect(result.warnings).toEqual([])
+  })
+
+  it('accepts a file far past what the fallback would take', () => {
+    register(realRemux, realFfmpeg)
+
+    // 3x the input against ffmpeg's 4.5x: 400 MB on this desktop rather than
+    // 266 MB, and instant rather than minutes of software encoding.
+    expect(chosen(route(movToMp4, 350 * MB, desktop)).engine).toBe('remux')
+    expect(chosen(route(movToMp4, 300 * MB, desktop)).engine).toBe('remux')
+  })
+
+  it('falls back to a transcode rather than refusing a file it cannot hold', () => {
+    register(realRemux, realWebCodecs)
+
+    // The right way round: too large to copy is a reason to re-encode, not a
+    // reason to send the user away.
+    expect(chosen(route(movToMp4, 450 * MB, desktop)).engine).toBe('webcodecs')
+  })
+
+  it('still leaves a re-encode to the engines that have one', () => {
+    register(realRemux, realWebCodecs)
+
+    // `compress` carries a target size or a quality from the settings panel, and
+    // a copy honours none of them.
+    expect(chosen(route(shrinkMp4, 50 * MB, desktop)).engine).toBe('webcodecs')
+  })
+})
+
 describe('route — video into GIF', () => {
   const mp4ToGif: ConversionTask = { from: 'mp4', to: 'gif', op: 'convert' }
   const mp3ToGif: ConversionTask = { from: 'mp3', to: 'gif', op: 'convert' }

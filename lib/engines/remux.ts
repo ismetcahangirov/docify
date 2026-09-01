@@ -17,6 +17,17 @@
  * second engine. That is why `supports` is a short whitelist rather than a
  * family — MP3, WAV, FLAC and Ogg all need an encoder, so they stay with ffmpeg.
  *
+ * ## What a container change does and does not promise
+ *
+ * MOV and MP4 are the same box structure with a different brand on it, so
+ * changing one into the other is a rewrite of the index and nothing else. What
+ * that promises is the container the user asked for, with the picture and the
+ * sound bit-for-bit unchanged. What it does not promise is a *codec* they can
+ * play everywhere: a MOV holding ProRes becomes an MP4 holding ProRes, which is
+ * a valid MP4 that a phone will still refuse. Changing the codec means decoding
+ * and re-encoding, which is `compress` and the transcode engines — and if the
+ * file is too large for this engine's budget, that is exactly where it goes.
+ *
  * ## Why it needs no capability at all
  *
  * `supports` ignores `Capabilities` on purpose, and that is the substantive
@@ -33,7 +44,7 @@
  */
 
 import { throwIfAborted } from '@/lib/abort'
-import type { Capabilities, ConversionTask, FormatId } from '@/lib/router/types'
+import type { Capabilities, ConversionTask, FormatId, Operation } from '@/lib/router/types'
 
 import type { EngineDescriptor, EngineInput, EngineRunner, ProgressCallback } from './types'
 
@@ -62,17 +73,32 @@ const ISO_SOURCES: ReadonlySet<FormatId> = new Set(['mp4', 'mov'])
 const COPYABLE_AUDIO: ReadonlySet<FormatId> = new Set(['m4a'])
 
 /**
- * Why only `extract`, and not the `convert` that reaches the same pair.
+ * Containers this can write, holding whatever codec the source already had.
  *
- * "Extract the audio" means take what is there; "convert MP4 to M4A" arrives
- * from a settings panel that may have named a bitrate, a sample rate or a
- * channel count. A stream copy honours none of those — it cannot, there is no
- * encoder in the path — so claiming `convert` would silently discard whatever
- * the user chose and hand back a file that ignores the panel they just filled
- * in. That job belongs to an engine that re-encodes, and losing the copy's speed
- * is the price of doing what was asked.
+ * MP4 and MOV, which are the same ISO box structure under two brands. WebM,
+ * MKV and AVI are not that structure at all and mp4box can write none of them.
  */
-const COPYABLE_OPERATION = 'extract'
+const COPYABLE_CONTAINERS: ReadonlySet<FormatId> = new Set(['mp4', 'mov'])
+
+/**
+ * Which operations a copy may claim, and why the list is this short.
+ *
+ * `convert` is "put this in a different container", which is precisely what a
+ * remux is. `extract` is "give me the sound out of this", which is the same
+ * copy with the picture left behind.
+ *
+ * `compress` and `resize` are deliberately absent, and that is the line that
+ * keeps this engine honest. Both arrive from a settings panel carrying a target
+ * size, a quality or a width, and a stream copy honours none of them — it
+ * cannot, there is no encoder in the path. Claiming either would silently
+ * discard what the user just chose and hand back a file that ignores the panel
+ * they filled in. Losing the copy's speed is the price of doing what was asked.
+ *
+ * The same reasoning excludes a `convert` whose source and target are the same
+ * format: there is no container to change, so the job is asking for something
+ * else and an engine that re-encodes should answer it.
+ */
+const COPYABLE_OPERATIONS: ReadonlySet<Operation> = new Set(['convert', 'extract'])
 
 export const descriptor: EngineDescriptor = {
   id: 'remux',
@@ -86,9 +112,13 @@ export const descriptor: EngineDescriptor = {
     // capability can make it impossible.
     void caps
 
-    if (task.op !== COPYABLE_OPERATION) return false
+    if (!COPYABLE_OPERATIONS.has(task.op)) return false
+    if (!ISO_SOURCES.has(task.from)) return false
 
-    return ISO_SOURCES.has(task.from) && COPYABLE_AUDIO.has(task.to)
+    if (task.op === 'extract') return COPYABLE_AUDIO.has(task.to)
+
+    // A container change, and only where there is a container to change.
+    return task.from !== task.to && COPYABLE_CONTAINERS.has(task.to)
   },
 }
 
@@ -108,18 +138,37 @@ export function createRunner(): EngineRunner {
       const { remuxMp4 } = await import('./mp4-remux')
       throwIfAborted(signal)
 
-      const written = await remuxMp4(bytes, { keep: ['audio'] }, signal, onProgress)
+      const extracting = input.task.op === 'extract'
+      const written = await remuxMp4(
+        bytes,
+        // An extraction leaves the picture behind; a container change carries
+        // everything the source had.
+        { keep: extracting ? ['audio'] : ['video', 'audio'] },
+        signal,
+        onProgress,
+      )
 
-      return new Blob([written], { type: 'audio/mp4' })
+      return new Blob([written], { type: mimeTypeFor(input.task.to, extracting) })
     },
   }
 }
 
+/**
+ * What the finished file is labelled.
+ *
+ * All three are the same box structure, and the label is what tells a browser
+ * whether it has been handed a movie or a track: an M4A served as `video/mp4`
+ * opens a black player window with sound coming out of it.
+ */
+function mimeTypeFor(to: FormatId, extracting: boolean): string {
+  if (extracting) return 'audio/mp4'
+
+  return to === 'mov' ? 'video/quicktime' : 'video/mp4'
+}
+
 function onlyFile(input: EngineInput): Blob {
   if (input.files.length !== 1) {
-    throw new Error(
-      `Audio extraction takes one file at a time, but ${input.files.length} were given.`,
-    )
+    throw new Error(`A stream copy takes one file at a time, but ${input.files.length} were given.`)
   }
 
   return input.files[0]
