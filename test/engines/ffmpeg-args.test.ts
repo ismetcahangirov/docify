@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 
+import { resolveAudioBitrate } from '@/lib/engines/audio-options'
 import type { FfmpegJob } from '@/lib/engines/ffmpeg-args'
 import {
   FFMPEG_TARGETS,
@@ -10,6 +11,8 @@ import {
   isFfmpegTarget,
   scaleFilter,
 } from '@/lib/engines/ffmpeg-args'
+import { bitrateForTargetSize, DEFAULT_CRF } from '@/lib/engines/video-compression'
+import type { VideoOptions } from '@/lib/engines/video-options'
 import type { FormatId } from '@/lib/router/types'
 
 const job = (over: Partial<FfmpegJob> = {}): FfmpegJob => ({
@@ -155,5 +158,108 @@ describe('scaleFilter', () => {
 
     expect(filter).toContain('force_original_aspect_ratio=decrease')
     expect(filter).toContain('trunc(iw/2)*2')
+  })
+})
+
+describe('ffmpegArgs — the four sizing methods', () => {
+  const compress = (video: VideoOptions, to: FormatId = 'mp4', durationSeconds = 60) =>
+    ffmpegArgs({
+      input: '/input.mp4',
+      output: `/output.${to}`,
+      from: 'mp4',
+      to,
+      keepVideo: true,
+      video,
+      durationSeconds,
+    })
+
+  it('turns a target size into the bitrate that fills it', () => {
+    const args = compress({ compression: { method: 'target-size', targetBytes: 8 * 1024 * 1024 } })
+
+    const expected = bitrateForTargetSize(8 * 1024 * 1024, {
+      durationSeconds: 60,
+      audioBitrate: resolveAudioBitrate(undefined, 2),
+    })
+
+    expect(valueOf(args, '-b:v')).toBe(String(expected))
+    // A fixed rate and a constant quality are opposite instructions.
+    expect(args).not.toContain('-crf')
+  })
+
+  it('says so rather than overshooting when the running time was never found', () => {
+    expect(() =>
+      ffmpegArgs({
+        input: '/input.mp4',
+        output: '/output.mp4',
+        from: 'mp4',
+        to: 'mp4',
+        keepVideo: true,
+        video: { compression: { method: 'target-size', targetBytes: 8 * 1024 * 1024 } },
+      }),
+    ).toThrow(/how long/i)
+  })
+
+  it('passes a chosen quality straight through as a CRF', () => {
+    const args = compress({ compression: { method: 'quality', crf: 18 } })
+
+    expect(valueOf(args, '-crf')).toBe('18')
+    expect(args).not.toContain('-b:v')
+  })
+
+  it('caps a constant-quality encode with maxrate and twice it as a buffer', () => {
+    const args = compress({ compression: { method: 'max-bitrate', bitrate: 3_000_000 } })
+
+    expect(valueOf(args, '-crf')).toBe(String(DEFAULT_CRF))
+    expect(valueOf(args, '-maxrate')).toBe('3000000')
+    // Smaller than the ceiling and the encoder cannot spend a burst on a hard
+    // scene, which shows up as stutter rather than as a smaller file.
+    expect(valueOf(args, '-bufsize')).toBe('6000000')
+    expect(args).not.toContain('-b:v')
+  })
+
+  it('scales the picture for a resize and lets the rate follow the pixels', () => {
+    const args = compress({ compression: { method: 'resize', width: 1280, height: 720 } })
+
+    expect(valueOf(args, '-vf')).toContain('1280:720')
+    expect(args).not.toContain('-b:v')
+    expect(valueOf(args, '-crf')).toBe(String(DEFAULT_CRF))
+  })
+
+  it('lets a method override the bare fields the job was also carrying', () => {
+    const args = compress({
+      bitrate: 9_000_000,
+      compression: { method: 'quality', crf: 20 },
+    })
+
+    expect(args).not.toContain('-b:v')
+    expect(valueOf(args, '-crf')).toBe('20')
+  })
+
+  it('keeps the frame rate, which is not one of the methods', () => {
+    const args = compress({ frameRate: 24, compression: { method: 'quality', crf: 20 } })
+
+    expect(valueOf(args, '-r')).toBe('24')
+  })
+
+  describe('WebM, where libvpx reads the same flags differently', () => {
+    it('adds the zero target rate that makes -crf mean constant quality', () => {
+      const args = compress({ compression: { method: 'quality', crf: 30 } }, 'webm')
+
+      expect(valueOf(args, '-crf')).toBe('30')
+      expect(valueOf(args, '-b:v')).toBe('0')
+    })
+
+    it('does not overwrite a real bitrate with that zero', () => {
+      // The bug this pair exists to stop: `-b:v 0` in the container's own extra
+      // arguments came after `-b:v <rate>`, and ffmpeg takes the last one it is
+      // given — so three of the four methods silently did nothing on WebM.
+      const args = compress(
+        { compression: { method: 'target-size', targetBytes: 8 * 1024 * 1024 } },
+        'webm',
+      )
+
+      expect(args.filter((argument) => argument === '-b:v')).toHaveLength(1)
+      expect(valueOf(args, '-b:v')).not.toBe('0')
+    })
   })
 })

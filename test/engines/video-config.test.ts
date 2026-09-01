@@ -4,14 +4,17 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   chooseEncoderConfig,
+  encodeBitrate,
   encoderCandidates,
   evenDimension,
   H264_CANDIDATES,
   planVideoEncode,
+  sourceDurationSeconds,
   sourceFrameRate,
   targetSize,
 } from '@/lib/engines/video-config'
-import { BITS_PER_PIXEL_PER_SECOND, MIN_BITRATE } from '@/lib/engines/video-options'
+import { bitrateForCrf, bitrateForTargetSize } from '@/lib/engines/video-compression'
+import { BITS_PER_PIXEL_PER_SECOND, MIN_BITRATE, resolveBitrate } from '@/lib/engines/video-options'
 import type { ConfigSupport, EncoderConfig } from '@/lib/engines/webcodecs-runtime'
 
 const landscape = { width: 1920, height: 1080 }
@@ -228,5 +231,89 @@ describe('planVideoEncode', () => {
     await expect(
       planVideoEncode({ codec: 'avc1', timescale: 90_000 }, samples, undefined, supports()),
     ).rejects.toThrow(/does not say how large/)
+  })
+})
+
+describe('encodeBitrate — the same four methods, for an encoder with no CRF', () => {
+  const size = { width: 1920, height: 1080 }
+  const frameRate = 30
+
+  it('honours a fixed rate as the rate', () => {
+    expect(encodeBitrate({ bitrate: 4_000_000 }, undefined, size, frameRate)).toBe(4_000_000)
+  })
+
+  it('turns a CRF into the rate that scale defines it as', () => {
+    expect(encodeBitrate({ crf: 17 }, undefined, size, frameRate)).toBe(
+      bitrateForCrf(17, size.width, size.height, frameRate),
+    )
+  })
+
+  it('takes the lower of the quality rate and a ceiling, which is the closest it can get', () => {
+    // WebCodecs has no constrained-quality mode, so a maxrate can only be
+    // honoured by encoding at or below it.
+    const capped = encodeBitrate({ crf: 17, maxBitrate: 1_000_000 }, undefined, size, frameRate)
+
+    expect(capped).toBe(1_000_000)
+  })
+
+  it('falls back to the size-derived default when no method was chosen', () => {
+    expect(encodeBitrate({}, undefined, size, frameRate)).toBe(
+      resolveBitrate(undefined, size.width, size.height, frameRate),
+    )
+  })
+})
+
+describe('sourceDurationSeconds', () => {
+  it('adds the samples up and divides by the timescale', () => {
+    const samples = Array.from({ length: 30 }, () => ({ duration: 1000 }))
+
+    expect(sourceDurationSeconds(30_000, samples)).toBe(1)
+  })
+
+  it('answers zero for a track that says nothing', () => {
+    expect(sourceDurationSeconds(0, [{ duration: 10 }])).toBe(0)
+    expect(sourceDurationSeconds(600, [])).toBe(0)
+  })
+})
+
+describe('planVideoEncode — the sizing methods end to end', () => {
+  const format = {
+    codec: 'avc1.64001f',
+    timescale: 30_000,
+    width: 1920,
+    height: 1080,
+  }
+  const samples = Array.from({ length: 300 }, () => ({ duration: 1000 }))
+  const accepts = async (config: EncoderConfig) => ({ supported: true, config })
+
+  it('resizes the picture when the resize method names a size', () => {
+    return expect(
+      planVideoEncode(format, samples, { compression: { method: 'resize', width: 640 } }, accepts),
+    ).resolves.toMatchObject({ width: 640, height: 360 })
+  })
+
+  it('turns a target size into a bitrate using the length it worked out itself', async () => {
+    // 300 samples of 1000 ticks at 30 kHz is ten seconds.
+    const config = await planVideoEncode(
+      format,
+      samples,
+      { compression: { method: 'target-size', targetBytes: 5 * 1024 * 1024 } },
+      accepts,
+    )
+
+    expect(config.bitrate).toBe(
+      bitrateForTargetSize(5 * 1024 * 1024, { durationSeconds: 10, audioBitrate: 0 }),
+    )
+  })
+
+  it('turns a quality into the bitrate that quality is worth', async () => {
+    const config = await planVideoEncode(
+      format,
+      samples,
+      { compression: { method: 'quality', crf: 17 } },
+      accepts,
+    )
+
+    expect(config.bitrate).toBe(bitrateForCrf(17, 1920, 1080, 30))
   })
 })

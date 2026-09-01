@@ -34,8 +34,10 @@
  */
 
 import type { Mp4TrackFormat } from './mp4-media'
+import type { ResolvedVideoEncode } from './video-compression'
+import { bitrateForCrf, resolveVideoEncode } from './video-compression'
 import type { VideoOptions } from './video-options'
-import { prefersHardware, resolveBitrate, resolveFrameRate } from './video-options'
+import { MIN_BITRATE, prefersHardware, resolveBitrate, resolveFrameRate } from './video-options'
 import type { ConfigSupport, EncoderConfig } from './webcodecs-runtime'
 
 /**
@@ -53,13 +55,20 @@ export function evenDimension(value: number): number {
   return Math.max(2, Math.round(value / 2) * 2)
 }
 
-/** The pixel size to encode at, from the source's and whatever the job asked for. */
+/**
+ * The pixel size to encode at, from the source's and whatever the job asked for.
+ *
+ * Takes a plain `{ width?, height? }` rather than a `VideoOptions` because the
+ * size may have come from the resize *method* instead of the bare fields, and
+ * `resolveVideoEncode` is what reconciles the two. Everything a `VideoOptions`
+ * would add here is something this function does not read.
+ */
 export function targetSize(
   source: { width: number; height: number },
-  options: VideoOptions | undefined,
+  requested: { width?: number; height?: number } | undefined,
 ): { width: number; height: number } {
-  const width = positive(options?.width)
-  const height = positive(options?.height)
+  const width = positive(requested?.width)
+  const height = positive(requested?.height)
 
   if (width === undefined && height === undefined) {
     return { width: evenDimension(source.width), height: evenDimension(source.height) }
@@ -168,6 +177,52 @@ export async function chooseEncoderConfig(
   )
 }
 
+/**
+ * How long the track runs, in seconds.
+ *
+ * The sum of the sample durations over the timescale, which is the only place an
+ * MP4 states it that does not require trusting a header the file may not have
+ * updated. Zero for a track with no samples, which is what a target size is told
+ * about rather than guessing around.
+ */
+export function sourceDurationSeconds(
+  timescale: number,
+  samples: readonly { duration: number }[],
+): number {
+  if (timescale <= 0) return 0
+
+  return samples.reduce((total, sample) => total + sample.duration, 0) / timescale
+}
+
+/**
+ * The bitrate to hand `VideoEncoder`, from whichever sizing method was chosen.
+ *
+ * This is where the one real difference between the two engines is absorbed:
+ * WebCodecs has no constant-quality mode at all, so a CRF has to become a number
+ * of bits per second before the encoder ever sees it — `bitrateForCrf` is that
+ * translation, and it is the scale's own definition rather than a guess. A
+ * ceiling with it becomes a `min`, which is the closest a fixed-rate encoder can
+ * come to constrained quality.
+ */
+export function encodeBitrate(
+  encode: ResolvedVideoEncode,
+  options: VideoOptions | undefined,
+  size: { width: number; height: number },
+  frameRate: number,
+): number {
+  if (encode.bitrate !== undefined) {
+    return Math.max(MIN_BITRATE, Math.round(encode.bitrate))
+  }
+
+  if (encode.crf !== undefined) {
+    const quality = bitrateForCrf(encode.crf, size.width, size.height, frameRate)
+
+    return encode.maxBitrate === undefined ? quality : Math.min(quality, encode.maxBitrate)
+  }
+
+  return resolveBitrate(options, size.width, size.height, frameRate)
+}
+
 /** The encoder configuration for one job, negotiated end to end. */
 export async function planVideoEncode(
   source: Mp4TrackFormat,
@@ -179,9 +234,16 @@ export async function planVideoEncode(
     throw new Error('This video does not say how large its picture is, so it cannot be re-encoded.')
   }
 
-  const size = targetSize({ width: source.width, height: source.height }, options)
+  // No audio is carried through this path, so a size target has the whole file
+  // to spend rather than having to leave room for a soundtrack.
+  const encode = resolveVideoEncode(options, {
+    durationSeconds: sourceDurationSeconds(source.timescale, samples),
+    audioBitrate: 0,
+  })
+
+  const size = targetSize({ width: source.width, height: source.height }, encode)
   const frameRate = resolveFrameRate(options, sourceFrameRate(source.timescale, samples))
-  const bitrate = resolveBitrate(options, size.width, size.height, frameRate)
+  const bitrate = encodeBitrate(encode, options, size, frameRate)
 
   return chooseEncoderConfig(encoderCandidates(size, bitrate, frameRate, options), isSupported)
 }
