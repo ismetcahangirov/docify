@@ -26,7 +26,7 @@
 import type { FormatId } from '@/lib/router/types'
 
 import type { AudioOptions } from './audio-options'
-import { resolveAudioBitrate } from './audio-options'
+import { nearestSampleRate, resolveAudioBitrate } from './audio-options'
 import type { ResolvedVideoEncode } from './video-compression'
 import { DEFAULT_CRF, resolveVideoEncode } from './video-compression'
 import type { VideoOptions } from './video-options'
@@ -66,8 +66,48 @@ export interface FfmpegTarget {
    * GIF encoder is not merely useless, it is an unrecognised private option.
    */
   rateControl?: 'rate' | 'palette'
+  /**
+   * Sample rates the audio encoder accepts, or absent for "whatever it is
+   * given".
+   *
+   * Not a nicety. An encoder handed a rate outside its list refuses the job
+   * outright, after the whole file has been read, with a message about an
+   * invalid argument — so a request for 44.1 kHz Ogg has to become the 48 kHz
+   * Opus actually writes rather than a failed conversion. FLAC and PCM take any
+   * rate and are absent from this field for that reason.
+   */
+  sampleRates?: readonly number[]
+  /**
+   * Most channels the audio encoder writes, or absent for no practical limit.
+   *
+   * libmp3lame is mono or stereo and nothing else, so a 5.1 source asked for MP3
+   * has to be downmixed rather than refused.
+   */
+  maxChannels?: number
+  /**
+   * The encoder decides its own size from the audio, so `-b:a` means nothing to
+   * it.
+   *
+   * True for FLAC, which is lossless, and for PCM, which is not compressed at
+   * all. Handing either a bitrate is at best ignored and at worst an error, and
+   * in both cases it is a promise to the user that the format cannot keep.
+   */
+  lossless?: true
   mimeType: string
 }
+
+/**
+ * The sample rates each audio encoder in the table accepts.
+ *
+ * Taken from the encoders themselves rather than from the container: an Ogg file
+ * can carry any rate, but the Opus inside it is defined at five and nothing
+ * else, and it is the encoder that refuses the job.
+ */
+const MP3_RATES: readonly number[] = [8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000]
+const OPUS_RATES: readonly number[] = [8000, 12000, 16000, 24000, 48000]
+const AAC_RATES: readonly number[] = [
+  7350, 8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000, 64000, 88200, 96000,
+]
 
 /**
  * Frames per second for a GIF nobody chose one for.
@@ -129,7 +169,13 @@ export const FFMPEG_TARGETS: Readonly<Partial<Record<FormatId, FfmpegTarget>>> =
     constantQuality: ['-b:v', '0'],
     mimeType: 'video/webm',
   },
-  avi: { video: 'libx264', audio: 'libmp3lame', mimeType: 'video/x-msvideo' },
+  avi: {
+    video: 'libx264',
+    audio: 'libmp3lame',
+    sampleRates: MP3_RATES,
+    maxChannels: 2,
+    mimeType: 'video/x-msvideo',
+  },
   gif: {
     video: 'gif',
     // A GIF has no audio track at all, so there is nothing to encode.
@@ -141,13 +187,27 @@ export const FFMPEG_TARGETS: Readonly<Partial<Record<FormatId, FfmpegTarget>>> =
     extra: ['-loop', '0'],
     mimeType: 'image/gif',
   },
-  mp3: { video: null, audio: 'libmp3lame', mimeType: 'audio/mpeg' },
-  m4a: { video: null, audio: 'aac', extra: ['-movflags', '+faststart'], mimeType: 'audio/mp4' },
-  aac: { video: null, audio: 'aac', mimeType: 'audio/aac' },
-  ogg: { video: null, audio: 'libopus', mimeType: 'audio/ogg' },
+  mp3: {
+    video: null,
+    audio: 'libmp3lame',
+    sampleRates: MP3_RATES,
+    // libmp3lame is mono or stereo and nothing else.
+    maxChannels: 2,
+    mimeType: 'audio/mpeg',
+  },
+  m4a: {
+    video: null,
+    audio: 'aac',
+    sampleRates: AAC_RATES,
+    extra: ['-movflags', '+faststart'],
+    mimeType: 'audio/mp4',
+  },
+  aac: { video: null, audio: 'aac', sampleRates: AAC_RATES, mimeType: 'audio/aac' },
+  ogg: { video: null, audio: 'libopus', sampleRates: OPUS_RATES, mimeType: 'audio/ogg' },
   // 16-bit little-endian PCM: the only WAV anything reads without argument.
-  wav: { video: null, audio: 'pcm_s16le', mimeType: 'audio/wav' },
-  flac: { video: null, audio: 'flac', mimeType: 'audio/flac' },
+  // Uncompressed, so its size is the audio and a bitrate cannot change it.
+  wav: { video: null, audio: 'pcm_s16le', lossless: true, mimeType: 'audio/wav' },
+  flac: { video: null, audio: 'flac', lossless: true, mimeType: 'audio/flac' },
 }
 
 /** Whether this engine can write `format` at all. */
@@ -215,7 +275,7 @@ export interface FfmpegJob {
 export function ffmpegArgs(job: FfmpegJob): string[] {
   const target = ffmpegTargetFor(job.to)
   const wantsVideo = job.keepVideo && target.video !== null
-  const audioBitrate = resolveAudioBitrate(job.audio, channelsFor(job.audio))
+  const audioBitrate = resolveAudioBitrate(job.audio, channelsFor(job.audio, target))
 
   // Resolved once, here, so that the sizing method and the audio rate it has to
   // make room for are decided together rather than in two places that could
@@ -224,6 +284,8 @@ export function ffmpegArgs(job: FfmpegJob): string[] {
     durationSeconds: job.durationSeconds ?? 0,
     audioBitrate,
   })
+
+  const channels = outputChannels(job.audio, target)
 
   const args = ['-i', job.input]
 
@@ -252,9 +314,16 @@ export function ffmpegArgs(job: FfmpegJob): string[] {
     args.push('-an')
   } else {
     args.push('-c:a', target.audio)
-    if (target.audio !== 'pcm_s16le' && target.audio !== 'flac') {
-      args.push('-b:a', String(audioBitrate))
-    }
+
+    // Only where the job actually asked. ffmpeg keeps the source's rate and
+    // channel count otherwise, and restating them from a default would resample
+    // and downmix files nobody asked to change.
+    if (channels !== undefined) args.push('-ac', String(channels))
+
+    const sampleRate = outputSampleRate(job.audio, target)
+    if (sampleRate !== undefined) args.push('-ar', String(sampleRate))
+
+    if (target.lossless !== true) args.push('-b:a', String(audioBitrate))
   }
 
   if (target.extra !== undefined) args.push(...target.extra)
@@ -365,10 +434,48 @@ export function scaleFilter(size: { width?: number; height?: number } | undefine
   return width === undefined ? `scale=-2:${height}` : `scale=${width}:-2`
 }
 
-function channelsFor(options: AudioOptions | undefined): number {
-  const channels = positiveInteger(options?.channels)
+/**
+ * The channel count to write, or `undefined` to keep the source's.
+ *
+ * Clamped to what the encoder can hold rather than passed through: libmp3lame
+ * writes mono or stereo and refuses anything else, so a 5.1 source asked for MP3
+ * is downmixed instead of failing after the file has been read.
+ */
+function outputChannels(
+  options: AudioOptions | undefined,
+  target: FfmpegTarget,
+): number | undefined {
+  const requested = positiveInteger(options?.channels)
+  if (requested === undefined) return undefined
 
-  return channels ?? 2
+  return target.maxChannels === undefined ? requested : Math.min(requested, target.maxChannels)
+}
+
+/**
+ * The sample rate to write, or `undefined` to keep the source's.
+ *
+ * Snapped onto the encoder's own list — see {@link FfmpegTarget.sampleRates}.
+ */
+function outputSampleRate(
+  options: AudioOptions | undefined,
+  target: FfmpegTarget,
+): number | undefined {
+  const requested = positiveInteger(options?.sampleRate)
+  if (requested === undefined) return undefined
+  if (target.sampleRates === undefined) return requested
+
+  return nearestSampleRate(requested, target.sampleRates)
+}
+
+/**
+ * The channel count a derived bitrate is charged for.
+ *
+ * The clamped count where the job named one, so an MP3 asked for from a 5.1
+ * source is priced as the stereo file it will actually be, and two where it
+ * named none — which is what almost every source is.
+ */
+function channelsFor(options: AudioOptions | undefined, target: FfmpegTarget): number {
+  return outputChannels(options, target) ?? 2
 }
 
 function isPositive(value: number | undefined): value is number {
