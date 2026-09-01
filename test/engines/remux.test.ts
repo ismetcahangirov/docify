@@ -195,6 +195,40 @@ describe('the remux descriptor', () => {
     expect(descriptor.supports(task('mp4', 'm4a', 'convert'), desktop)).toBe(false)
     expect(descriptor.supports(task('mp4', 'm4a', 'compress'), desktop)).toBe(false)
   })
+
+  it('claims a container change between the two ISO brands', () => {
+    // MOV and MP4 are the same box structure with a different brand on it, so
+    // the whole conversion is a rewrite of the index.
+    expect(descriptor.supports(task('mov', 'mp4', 'convert'), desktop)).toBe(true)
+    expect(descriptor.supports(task('mp4', 'mov', 'convert'), desktop)).toBe(true)
+  })
+
+  it('claims it on a device with no codecs, which is the point of a copy', () => {
+    expect(descriptor.supports(task('mov', 'mp4', 'convert'), codecless)).toBe(true)
+  })
+
+  it('leaves the containers that are not the ISO structure alone', () => {
+    for (const format of ['webm', 'mkv', 'avi'] as const) {
+      expect(descriptor.supports(task(format, 'mp4', 'convert'), desktop)).toBe(false)
+      expect(descriptor.supports(task('mp4', format, 'convert'), desktop)).toBe(false)
+    }
+  })
+
+  it('does not claim a conversion with no container to change', () => {
+    // Nothing to copy into: the job is asking for something else, and an
+    // engine that re-encodes should answer it.
+    expect(descriptor.supports(task('mp4', 'mp4', 'convert'), desktop)).toBe(false)
+    expect(descriptor.supports(task('mov', 'mov', 'convert'), desktop)).toBe(false)
+  })
+
+  it('never claims an operation that carries settings it cannot honour', () => {
+    // A target size, a quality or a width all mean re-encoding, and a copy has
+    // no encoder in it. Claiming these would silently discard what the user
+    // chose in the panel they just filled in.
+    for (const op of ['compress', 'resize', 'crop', 'rotate'] as const) {
+      expect(descriptor.supports(task('mov', 'mp4', op), desktop)).toBe(false)
+    }
+  })
 })
 
 describe('the remux runner, extracting audio', () => {
@@ -274,5 +308,78 @@ describe('the remux runner, extracting audio', () => {
     await expect(
       createRunner().run(input([await movieFile()]), controller.signal, () => {}),
     ).rejects.toMatchObject({ name: 'AbortError' })
+  })
+})
+
+describe('the remux runner, changing the container', () => {
+  const container = (to: FormatId): EngineInput => ({
+    task: task('mov', to, 'convert'),
+    files: [],
+  })
+
+  const convert = async (to: FormatId, media = movie()) => {
+    const source = await movieFile(media)
+
+    return createRunner().run({ ...container(to), files: [source] }, running(), () => {})
+  }
+
+  it('keeps both tracks, which is what a container change means', async () => {
+    const result = await convert('mp4')
+    const read = await readMp4(new Uint8Array(await result.arrayBuffer()), running())
+
+    expect(videoTrack(read)).toBeDefined()
+    expect(audioTrack(read)).toBeDefined()
+  })
+
+  it('copies every picture sample byte for byte, without a codec in the path', async () => {
+    const video = videoSamples(6)
+    const result = await convert('mp4', movie(video, audioSamples(8)))
+    const track = videoTrack(await readMp4(new Uint8Array(await result.arrayBuffer()), running()))
+
+    expect(track?.samples).toHaveLength(video.length)
+    for (const [index, sample] of video.entries()) {
+      expect(Array.from(track?.samples[index]?.data ?? [])).toEqual(Array.from(sample.data))
+      // Both timestamps, because a codec that reorders frames needs both and a
+      // copy that dropped one would silently reorder the picture.
+      expect(track?.samples[index]?.dts).toBe(sample.dts)
+      expect(track?.samples[index]?.cts).toBe(sample.cts)
+      expect(track?.samples[index]?.isSync).toBe(sample.isSync)
+    }
+  })
+
+  it('puts the codec configuration back as the exact box it came out of', async () => {
+    const result = await convert('mp4')
+    const track = videoTrack(await readMp4(new Uint8Array(await result.arrayBuffer()), running()))
+
+    // Nothing in this project knows what an `avcC` contains, and it does not
+    // have to: putting the same bytes back is what makes the copy lossless.
+    expect(Array.from(track?.format.description ?? [])).toEqual(Array.from(AVC_CONFIG))
+    expect(track?.format.codec).toBe('avc1.64001f')
+    expect(track?.format.width).toBe(320)
+    expect(track?.format.height).toBe(240)
+  })
+
+  it('keeps each track in its own timescale rather than normalising them', async () => {
+    const result = await convert('mp4')
+    const read = await readMp4(new Uint8Array(await result.arrayBuffer()), running())
+
+    // Normalising two unrelated timescales to a shared one introduces rounding
+    // into a path whose whole promise is that nothing changes.
+    expect(videoTrack(read)?.format.timescale).toBe(VIDEO_TIMESCALE)
+    expect(audioTrack(read)?.format.timescale).toBe(AUDIO_TIMESCALE)
+  })
+
+  it('labels a QuickTime output as QuickTime and an MP4 as an MP4', async () => {
+    expect((await convert('mp4')).type).toBe('video/mp4')
+    expect((await convert('mov')).type).toBe('video/quicktime')
+  })
+
+  it('carries a silent film across without complaining about the missing sound', async () => {
+    const silent = { tracks: [movie().tracks[0]] }
+    const result = await convert('mp4', silent)
+    const read = await readMp4(new Uint8Array(await result.arrayBuffer()), running())
+
+    expect(videoTrack(read)).toBeDefined()
+    expect(audioTrack(read)).toBeUndefined()
   })
 })
