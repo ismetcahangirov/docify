@@ -13,14 +13,15 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 - [budget-is-affine-and-scoped](entries/budget-is-affine-and-scoped.md) — The memory budget is factor x heldBytes + reserveBytes, and each engine says whether it holds every file of a job at once or one at a time
 - [pdfjs-runs-workerless-and-legacy](entries/pdfjs-runs-workerless-and-legacy.md) — pdf.js runs inside our worker only without its own worker and only as the legacy build — both are deliberate, not workarounds
 - [raster-ceilings-are-two-and-scoped](entries/raster-ceilings-are-two-and-scoped.md) — The raster pixel guard is two different ceilings over three engines — vips is deliberately exempt and canvas/heif deliberately get the browser limit, not the budget one
-- [ci-does-not-run-on-a-conflicting-pr](entries/ci-does-not-run-on-a-conflicting-pr.md) — A PR with no checks at all is usually a merge conflict, not a stuck runner — GitHub never starts CI on one
 - [coep-require-corp-scoped](entries/coep-require-corp-scoped.md) — COEP is require-corp (not credentialless) and is scoped to /convert/* and /tools/* only
 - [no-server-side-processing](entries/no-server-side-processing.md) — All conversion runs client-side; there is deliberately no processing VM
 - [router-gates-before-budget](entries/router-gates-before-budget.md) — The capability gate runs before the memory-budget check, so a rejection never quotes a doomed engine's ceiling
 - [webcodecs-over-ffmpeg](entries/webcodecs-over-ffmpeg.md) — WebCodecs is the primary video path; ffmpeg.wasm is a last-resort fallback
+- [stream-copy-outranks-both-codecs](entries/stream-copy-outranks-both-codecs.md) — A stream copy is its own engine at priority 12, ahead of WebCodecs and ffmpeg — and the webcodecs budget it is compared against is not trustworthy
 
 ## gotcha
 
+- [ci-does-not-run-on-a-conflicting-pr](entries/ci-does-not-run-on-a-conflicting-pr.md) — A PR with no checks at all is usually a merge conflict, not a stuck runner — GitHub never starts CI on one
 - [abort-is-matched-by-name](entries/abort-is-matched-by-name.md) — An abort is identified by name === 'AbortError', never by instanceof — Comlink drops DOMException and jsdom does not make it an Error
 - [cancel-needs-a-macrotask-yield](entries/cancel-needs-a-macrotask-yield.md) — An engine loop that only awaits promises never observes a cancel — the worker's message loop needs a macrotask to run
 - [libheif-is-primary-broken](entries/libheif-is-primary-broken.md) — libheif-js 1.19.8 ships a broken is_primary() that throws ReferenceError on every image
@@ -33,6 +34,8 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## session
 
+- [session-2026-08-31-6c17ae3e](entries/session-2026-08-31-6c17ae3e.md) — Session on 2026-08-31: engines (107 file ops)
+- [session-2026-08-31-93a6a515](entries/session-2026-08-31-93a6a515.md) — Session on 2026-08-31: agent (4 file ops)
 - [session-2026-08-14-12f2e378](entries/session-2026-08-14-12f2e378.md) — Session on 2026-08-14: agent, engines, router (125 file ops)
 - [session-2026-08-14-3d8eb6eb](entries/session-2026-08-14-3d8eb6eb.md) — Session on 2026-08-14: engines, agent (47 file ops)
 - [session-2026-08-14-4d6b83f8](entries/session-2026-08-14-4d6b83f8.md) — Session on 2026-08-14: engines, agent (158 file ops)
