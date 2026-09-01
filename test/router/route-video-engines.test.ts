@@ -10,6 +10,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { descriptor as realFfmpeg } from '@/lib/engines/ffmpeg'
+import { descriptor as realRemux } from '@/lib/engines/remux'
 import { descriptor as realWebCodecs } from '@/lib/engines/webcodecs'
 import { route } from '@/lib/router/route'
 import type { ConversionTask } from '@/lib/router/types'
@@ -171,5 +172,56 @@ describe('route — the real ffmpeg descriptor', () => {
     // than 480 MB.
     expect(chosen(route(mp4ToWebm, 200 * MB, desktop)).engine).toBe('ffmpeg')
     expect(refused(route(mp4ToWebm, 400 * MB, desktop)).code).toBe('FILE_TOO_LARGE')
+  })
+})
+
+describe('route — the real remux descriptor', () => {
+  const extractM4a: ConversionTask = { from: 'mp4', to: 'm4a', op: 'extract' }
+  const extractMp3: ConversionTask = { from: 'mp4', to: 'mp3', op: 'extract' }
+
+  it('wins audio extraction outright, ahead of both codec engines', () => {
+    register(realRemux, realWebCodecs, realFfmpeg)
+
+    const result = chosen(route(extractM4a, 200 * MB, desktop))
+
+    expect(result.engine).toBe('remux')
+    // mp4box and nothing else: the codecs are never loaded because they are
+    // never used.
+    expect(result.loadCost).toBeLessThan(1 * MB)
+  })
+
+  it('wins it on a device with no codecs at all, where nothing else can', () => {
+    register(realRemux, realWebCodecs)
+
+    const codecless = { ...desktop, webCodecsVideo: false, webCodecsAudio: false }
+
+    expect(chosen(route(extractM4a, 50 * MB, codecless)).engine).toBe('remux')
+  })
+
+  it('says nothing about quality, because a stream copy gives none up', () => {
+    register(realRemux, realFfmpeg)
+
+    // MP4 and M4A are both lossy formats, so the pair alone would warn. The
+    // engine is what makes the warning false here.
+    expect(chosen(route(extractM4a, 50 * MB, desktop)).warnings).toEqual([])
+  })
+
+  it('loses every target that has to be re-encoded', () => {
+    register(realRemux, realFfmpeg)
+
+    // No browser and no container copy can produce MP3 out of AAC samples.
+    const result = chosen(route(extractMp3, 50 * MB, desktop))
+
+    expect(result.engine).toBe('ffmpeg')
+    expect(result.warnings.map((warning) => warning.code)).toContain('QUALITY_LOSS')
+  })
+
+  it('holds less than ffmpeg, so it accepts a file the fallback would refuse', () => {
+    register(realRemux, realFfmpeg)
+
+    // 3x the input against ffmpeg's 4.5x: 400 MB on this desktop rather than
+    // 266 MB.
+    expect(chosen(route(extractM4a, 350 * MB, desktop)).engine).toBe('remux')
+    expect(refused(route(extractM4a, 500 * MB, desktop)).code).toBe('FILE_TOO_LARGE')
   })
 })

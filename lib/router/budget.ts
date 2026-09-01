@@ -78,7 +78,7 @@ export const DESKTOP_BUDGET_FLOOR_BYTES = ANDROID_BUDGET_BYTES
  * `Record<EngineId, EngineMemory>` is deliberate: adding an `EngineId` without a
  * model here is a compile error, and a model for an engine that does not exist
  * is one too. That is also why the table lives here rather than on
- * `EngineDescriptor` — four of the nine ids have no descriptor yet, and a
+ * `EngineDescriptor` — two of the ten ids have no descriptor yet, and a
  * descriptor field would turn "nobody wrote a model for the ZIP engine" from a
  * failed build into a silent default on the day it ships.
  *
@@ -87,7 +87,7 @@ export const DESKTOP_BUDGET_FLOOR_BYTES = ANDROID_BUDGET_BYTES
  * `docs/router/memory-budget-measurement.md` is the harness, the corpus and the
  * recorded runs. It also says, row by row, which of the entries below are
  * measured and which are carried over from before it existed: `pdflib` and `zip`
- * are measured, `pdfjs` is half measured, and the other six are not.
+ * are measured, `pdfjs` is half measured, and the other seven are not.
  */
 export const MEMORY: Record<EngineId, EngineMemory> = {
   /**
@@ -189,6 +189,27 @@ export const MEMORY: Record<EngineId, EngineMemory> = {
    * all.
    */
   pdfjs: { factor: 4, holds: 'one-at-a-time', reserveBytes: 32 * MB, bytesPerPixel: 0 },
+  /**
+   * Not measured directly; derived from what the pipeline actually holds.
+   *
+   * A stream copy never decodes, so there is no frame, no bitmap and nothing
+   * whose size the file's own bytes fail to predict — which is why the reserve
+   * and the per-pixel term are both zero, and why this is the one media engine
+   * whose model is arithmetic rather than an estimate. Three copies of the
+   * payload are live at the peak: the samples lifted out of the source, the
+   * container mp4box serialises them back into, and the copy taken off that
+   * stream on the way to a `Blob`. The source buffer itself is released before
+   * the write begins.
+   *
+   * Three is therefore a ceiling on the observed shape rather than a guess at an
+   * unobserved one, and it is 1.5x kinder than `ffmpeg` — the engine that would
+   * otherwise take these pairs on a device with no codecs. It is *not* kinder
+   * than `webcodecs`: a transcode streams frames and holds less of the file at
+   * once. That is the right way round. Where a remux wins is time and fidelity,
+   * and a job too large for this model still routes to a transcode rather than
+   * being refused.
+   */
+  remux: { factor: 3, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
   /** Not measured — no engine ships yet. Streams frames through the hardware
    *  codec; never holds the whole file. */
   webcodecs: { factor: 2.5, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },

@@ -123,6 +123,7 @@ async function loadEngineRunner(engine: EngineId): Promise<EngineRunner> {
   if (engine === 'vips') return (await import('@/lib/engines/vips')).createRunner()
   if (engine === 'pdflib') return (await import('@/lib/engines/pdflib')).createRunner()
   if (engine === 'pdfjs') return (await import('@/lib/engines/pdfjs')).createRunner()
+  if (engine === 'remux') return (await import('@/lib/engines/remux')).createRunner()
   if (engine === 'webcodecs') return (await import('@/lib/engines/webcodecs')).createRunner()
   if (engine === 'ffmpeg') return (await import('@/lib/engines/ffmpeg')).createRunner()
 

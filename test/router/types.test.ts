@@ -101,13 +101,14 @@ describe('ConversionTask', () => {
 })
 
 describe('EngineId', () => {
-  it('is exactly the nine engines in the priority table', () => {
+  it('is exactly the ten engines in the priority table', () => {
     expectTypeOf<EngineId>().toEqualTypeOf<
       | 'canvas'
       | 'vips'
       | 'heif'
       | 'pdflib'
       | 'pdfjs'
+      | 'remux'
       | 'webcodecs'
       | 'ffmpeg'
       | 'zip'

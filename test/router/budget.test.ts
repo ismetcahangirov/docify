@@ -63,7 +63,7 @@ const android: Capabilities = {
 }
 
 /**
- * The nine engines, listed independently of `MEMORY` so the completeness
+ * The ten engines, listed independently of `MEMORY` so the completeness
  * assertion below compares two sources rather than the table against itself.
  */
 const ALL_ENGINES = [
@@ -72,6 +72,7 @@ const ALL_ENGINES = [
   'heif',
   'pdflib',
   'pdfjs',
+  'remux',
   'webcodecs',
   'ffmpeg',
   'zip',
@@ -188,6 +189,7 @@ describe('MEMORY', () => {
       heif: { factor: 5, holds: 'one-at-a-time', reserveBytes: 21 * MB, bytesPerPixel: 8 },
       pdflib: { factor: 4, holds: 'all-at-once', reserveBytes: 32 * MB, bytesPerPixel: 0 },
       pdfjs: { factor: 4, holds: 'one-at-a-time', reserveBytes: 32 * MB, bytesPerPixel: 0 },
+      remux: { factor: 3, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
       webcodecs: { factor: 2.5, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
       ffmpeg: { factor: 4.5, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
       zip: { factor: 3, holds: 'all-at-once', reserveBytes: 0, bytesPerPixel: 0 },
