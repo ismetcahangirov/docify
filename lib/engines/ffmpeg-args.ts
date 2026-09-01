@@ -35,7 +35,13 @@ import type { VideoOptions } from './video-options'
 export interface FfmpegTarget {
   /** The video encoder, or `null` for an audio-only container. */
   video: string | null
-  audio: string
+  /**
+   * The audio encoder, or `null` for a container that cannot hold sound at
+   * all. GIF is the only one: it is a picture format with a frame delay, and
+   * a job that reaches it gets an explicit `-an` rather than whatever ffmpeg
+   * would do with a soundtrack it has nowhere to put.
+   */
+  audio: string | null
   /** Extra arguments the container needs, after the codecs. */
   extra?: readonly string[]
   /**
@@ -49,8 +55,41 @@ export interface FfmpegTarget {
    * That made three of the four sizing methods do nothing on WebM.
    */
   constantQuality?: readonly string[]
+  /**
+   * How the picture's quality is controlled.
+   *
+   * `rate` — the default — is the `-crf` / `-b:v` / `-maxrate` family every
+   * modern codec here understands. `palette` is GIF, which has none of them:
+   * its quality is decided by how many of the 256 available colours are
+   * chosen and how the frames are dithered onto them, and both of those live
+   * in the filter graph rather than in an encoder flag. Handing `-crf` to the
+   * GIF encoder is not merely useless, it is an unrecognised private option.
+   */
+  rateControl?: 'rate' | 'palette'
   mimeType: string
 }
+
+/**
+ * Frames per second for a GIF nobody chose one for.
+ *
+ * A GIF stores a delay per frame in hundredths of a second and every frame
+ * whole, so the frame rate is the single biggest lever on the file's size:
+ * 30 fps is two and a half times the bytes of 12 for motion nobody reads as
+ * smoother in a short loop. Twelve is where the sharing sites sit.
+ */
+export const DEFAULT_GIF_FRAME_RATE = 12
+
+/**
+ * Width in pixels for a GIF nobody chose one for.
+ *
+ * The second lever, and the one a source resolution gets wrong on its own: a
+ * 1080p clip at 256 colours is tens of megabytes and nothing renders it at that
+ * size anyway. 480 is the width a GIF is actually displayed at.
+ */
+export const DEFAULT_GIF_WIDTH = 480
+
+/** Every colour a GIF can hold. Asking for all of them is asking for the best palette. */
+export const GIF_MAX_COLORS = 256
 
 /** The preset that trades a little size for a lot of time, which is the right way round here. */
 const DEFAULT_PRESET = 'veryfast'
@@ -91,6 +130,17 @@ export const FFMPEG_TARGETS: Readonly<Partial<Record<FormatId, FfmpegTarget>>> =
     mimeType: 'video/webm',
   },
   avi: { video: 'libx264', audio: 'libmp3lame', mimeType: 'video/x-msvideo' },
+  gif: {
+    video: 'gif',
+    // A GIF has no audio track at all, so there is nothing to encode.
+    audio: null,
+    rateControl: 'palette',
+    // Loop forever, which is what every GIF in the wild does and what the
+    // muxer's own default happens to be. Stated so it survives a default
+    // changing under us.
+    extra: ['-loop', '0'],
+    mimeType: 'image/gif',
+  },
   mp3: { video: null, audio: 'libmp3lame', mimeType: 'audio/mpeg' },
   m4a: { video: null, audio: 'aac', extra: ['-movflags', '+faststart'], mimeType: 'audio/mp4' },
   aac: { video: null, audio: 'aac', mimeType: 'audio/aac' },
@@ -103,6 +153,23 @@ export const FFMPEG_TARGETS: Readonly<Partial<Record<FormatId, FfmpegTarget>>> =
 /** Whether this engine can write `format` at all. */
 export function isFfmpegTarget(format: FormatId): boolean {
   return FFMPEG_TARGETS[format] !== undefined
+}
+
+/**
+ * Whether `format` has a picture in it.
+ *
+ * Read off the table rather than kept as a second list of video formats
+ * beside it: GIF is a picture format that is not a video container, and a
+ * hand-maintained set is exactly where that distinction gets lost. `false`
+ * for a format this engine cannot write at all.
+ */
+export function ffmpegTargetHoldsVideo(format: FormatId): boolean {
+  return FFMPEG_TARGETS[format]?.video != null
+}
+
+/** Whether `format` can hold sound. `false` for GIF, and for a format we cannot write. */
+export function ffmpegTargetHoldsAudio(format: FormatId): boolean {
+  return FFMPEG_TARGETS[format]?.audio != null
 }
 
 /** What `format` compiles to, or an error naming what the engine does write. */
@@ -160,7 +227,12 @@ export function ffmpegArgs(job: FfmpegJob): string[] {
 
   const args = ['-i', job.input]
 
-  if (wantsVideo) {
+  if (wantsVideo && target.rateControl === 'palette') {
+    // One filter graph replaces the codec flags, the scale filter and `-r` all
+    // at once: the frame rate has to be applied *before* the palette is
+    // generated, or the palette describes frames the output does not contain.
+    args.push('-c:v', target.video as string, '-filter_complex', paletteFilter(encode))
+  } else if (wantsVideo) {
     args.push('-c:v', target.video as string, ...videoQuality(encode, target))
 
     const scale = scaleFilter(encode)
@@ -173,9 +245,16 @@ export function ffmpegArgs(job: FfmpegJob): string[] {
     args.push('-vn')
   }
 
-  args.push('-c:a', target.audio)
-  if (target.audio !== 'pcm_s16le' && target.audio !== 'flac') {
-    args.push('-b:a', String(audioBitrate))
+  if (target.audio === null) {
+    // The mirror of `-vn`, and needed for the same reason: handed a file with a
+    // soundtrack and a container that cannot hold one, ffmpeg fails rather than
+    // dropping it.
+    args.push('-an')
+  } else {
+    args.push('-c:a', target.audio)
+    if (target.audio !== 'pcm_s16le' && target.audio !== 'flac') {
+      args.push('-b:a', String(audioBitrate))
+    }
   }
 
   if (target.extra !== undefined) args.push(...target.extra)
@@ -221,6 +300,49 @@ function videoQuality(encode: ResolvedVideoEncode, target: FfmpegTarget): string
   }
 
   return [...quality, '-preset', DEFAULT_PRESET]
+}
+
+/**
+ * The two-pass palette graph that makes a GIF worth looking at, as one filter
+ * chain.
+ *
+ * A GIF holds 256 colours. ffmpeg's default is to quantise every frame against
+ * a fixed web-safe palette, which turns a face into a poster and a gradient into
+ * bands — it is the single reason converted GIFs look worse than the video they
+ * came from. `palettegen` instead reads the whole clip and chooses the 256
+ * colours *this* clip actually uses; `paletteuse` then maps the frames onto
+ * them.
+ *
+ * That is normally two passes over the file with a palette written to disk in
+ * between. `split` makes it one: the stream is forked, one branch generates the
+ * palette and the other waits to be mapped through it, and ffmpeg buffers what
+ * it needs. One pass matters here more than it does on a workstation — this runs
+ * single-threaded in WebAssembly, and halving the decoding halves the wait.
+ *
+ * The order inside the chain is load-bearing. `fps` and `scale` come *before*
+ * `palettegen`, so the palette describes the frames that will actually be
+ * written; generating it from the full-resolution source and then scaling would
+ * choose colours for pixels that no longer exist. `lanczos` rather than the
+ * default bilinear because a GIF is usually a heavy downscale, and that is where
+ * the difference between the two is visible.
+ *
+ * `dither=bayer` with a scale of 5 is the one choice made for size rather than
+ * for fidelity. The default error-diffusion dither is slightly better per frame
+ * and much worse per file: it produces a different noise pattern in every frame,
+ * so nothing compresses between frames and the GIF can double in size. Bayer is
+ * a fixed pattern, so still areas stay still.
+ */
+export function paletteFilter(encode: ResolvedVideoEncode): string {
+  const frameRate = isPositive(encode.frameRate) ? encode.frameRate : DEFAULT_GIF_FRAME_RATE
+  const width = positiveInteger(encode.width) ?? DEFAULT_GIF_WIDTH
+  const height = positiveInteger(encode.height)
+  const size = height === undefined ? `${width}:-1` : `${width}:${height}`
+
+  return (
+    `fps=${frameRate},scale=${size}:flags=lanczos,split[gifsrc][gifmap];` +
+    `[gifsrc]palettegen=max_colors=${GIF_MAX_COLORS}[gifpalette];` +
+    `[gifmap][gifpalette]paletteuse=dither=bayer:bayer_scale=5`
+  )
 }
 
 /**

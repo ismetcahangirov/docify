@@ -121,3 +121,29 @@ describe('ffmpegModuleUrl', () => {
     expect([...FFMPEG_VENDORED_FILES].sort()).toEqual([FFMPEG_MODULE_FILE, FFMPEG_WASM_FILE].sort())
   })
 })
+
+describe('the ffmpeg descriptor, on GIF', () => {
+  it('claims a video turning into an animation', () => {
+    for (const from of ['mp4', 'webm', 'mov', 'mkv', 'avi'] as const) {
+      expect(descriptor.supports(task(from, 'gif'), desktop)).toBe(true)
+    }
+  })
+
+  it('refuses to make one out of a soundtrack', () => {
+    // A GIF holds nothing but a picture, so a source with none has nothing to
+    // give it. Claiming the pair would spend a 31 MB download on a job that
+    // fails at the last step.
+    for (const from of ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'] as const) {
+      expect(descriptor.supports(task(from, 'gif'), desktop)).toBe(false)
+    }
+  })
+
+  it('does not treat a GIF as something to extract sound from', () => {
+    expect(descriptor.supports(task('mp4', 'gif', 'extract'), desktop)).toBe(false)
+  })
+
+  it('still claims the audio targets it always did', () => {
+    expect(descriptor.supports(task('mp3', 'wav'), desktop)).toBe(true)
+    expect(descriptor.supports(task('mp4', 'mp3', 'extract'), desktop)).toBe(true)
+  })
+})
