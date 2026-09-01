@@ -207,9 +207,13 @@ function codecKind(task: ConversionTask): 'video' | 'audio' | null {
  * most consequential warning first.
  *
  * `QUALITY_LOSS` is deliberately coarse: it reads the format pair, not the
- * settings, so a container remux that an engine could stream-copy losslessly
- * (mkv → mp4) still warns. Narrowing that needs the engine's own answer about
- * whether it will copy or transcode, which is not available at routing time.
+ * settings, so a job an engine will re-encode warns whatever it does with the
+ * bitrate. The one narrowing available at routing time is the engine itself —
+ * `remux` is *defined* as a stream copy, so a pair it won is lossless by
+ * construction and the warning would be false. Every other engine re-encodes,
+ * and for those the pair is still all there is to go on: a codec-level answer
+ * about whether a given file could have been copied needs the file open, which
+ * the router never does.
  */
 function warningsFor(
   engine: EngineDescriptor,
@@ -251,7 +255,7 @@ function warningsFor(
     })
   }
 
-  if (isLossy(task.from) && isLossy(task.to)) {
+  if (engine.id !== 'remux' && isLossy(task.from) && isLossy(task.to)) {
     warnings.push({
       code: 'QUALITY_LOSS',
       message: `${formatName(task.from)} and ${formatName(task.to)} are both lossy formats, so re-encoding gives up a little quality.`,

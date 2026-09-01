@@ -180,7 +180,16 @@ export interface EngineMemory {
 
 /** Every processing backend the router can choose between. */
 export type EngineId =
-  'canvas' | 'vips' | 'heif' | 'pdflib' | 'pdfjs' | 'webcodecs' | 'ffmpeg' | 'zip' | 'libarchive'
+  | 'canvas'
+  | 'vips'
+  | 'heif'
+  | 'pdflib'
+  | 'pdfjs'
+  | 'remux'
+  | 'webcodecs'
+  | 'ffmpeg'
+  | 'zip'
+  | 'libarchive'
 
 /** Operating system family, as detected from the user agent. */
 export type Platform = 'ios' | 'android' | 'desktop'
