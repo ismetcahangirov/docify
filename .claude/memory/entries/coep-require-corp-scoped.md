@@ -76,4 +76,18 @@ through, or it will fail for reasons that have nothing to do with the headers.
   `/tools/*` — the homepage dropzone is the obvious candidate. It would not be
   isolated, on the highest-traffic entry point.
 
-Related: [[webcodecs-over-ffmpeg]], [[no-server-side-processing]]
+## The rule is now enforced by turning a lint rule off
+
+`@next/next/no-html-link-for-pages` fires on every one of these deliberate plain
+anchors, and it started firing the moment `/convert/[pair]` and `/convert`
+became real pages (issue #66). It is switched off in `eslint.config.mjs`, with
+the reasoning written out there — leaving it on would mean an inline disable
+comment on every cross-boundary link and a new one on each link added
+afterwards, which is a convention that survives exactly as long as whoever
+remembers it.
+
+Practically: every link written in `app/convert/*`, `components/blocks/related-tools.tsx`
+and `components/converter/rejection.tsx` is a plain `<a href>`, and none of them
+is marked as an exception, because they are the rule.
+
+Related: [[webcodecs-over-ffmpeg]], [[no-server-side-processing]], [[converter-is-a-deferred-island]]
