@@ -54,12 +54,14 @@ describe('JobCard — what it says about a job', () => {
     }
   })
 
-  it('announces the state change rather than only drawing it', () => {
-    // A job finishing is news, and the user who is not looking at this card is
-    // exactly the one who needs it.
+  it('leaves announcing to the queue rather than being its own live region', () => {
     render(<JobCard job={job({ state: 'done' })} now={START} />)
 
-    expect(slot('job-card-status')).toHaveAttribute('aria-live', 'polite')
+    // The card is deliberately *not* a live region — `QueueAnnouncer` is the
+    // one region for the whole queue (issue #63). A region per card competes
+    // with every other card, and the countdown inside this line would make each
+    // one re-announce itself once a second.
+    expect(slot('job-card-status')).not.toHaveAttribute('aria-live')
   })
 
   it('gives the progress bar a name that says which file it belongs to', () => {
