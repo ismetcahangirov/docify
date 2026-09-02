@@ -229,6 +229,37 @@ export function collectSmallTouchTargets(minSize: number): SmallTouchTarget[] {
     )
   }
 
+  /**
+   * The box a person actually presses to activate `element`.
+   *
+   * A form control is activated by its `<label>` as well as by itself, so the
+   * label's box is the hit area whenever it is the larger of the two. The
+   * pattern this exists for is a visually-hidden input wrapped in a large
+   * clickable region — the dropzone is exactly that: a 1x1 `sr-only` file input
+   * whose label is a 208px-tall zone. Measuring the input alone would report a
+   * 1x1 touch target for a control nobody has ever had trouble hitting, and
+   * "fixing" it would mean giving up the accessible name and the keyboard
+   * behaviour the platform provides for free.
+   */
+  const activatingBox = (element: Element): DOMRect | null => {
+    const labels =
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLSelectElement ||
+      element instanceof HTMLTextAreaElement
+        ? Array.from(element.labels ?? [])
+        : []
+
+    let widest: DOMRect | null = null
+    for (const label of labels) {
+      const rect = label.getBoundingClientRect()
+      if (widest === null || rect.width * rect.height > widest.width * widest.height) {
+        widest = rect
+      }
+    }
+
+    return widest
+  }
+
   const round = (value: number): number => Math.round(value * 10) / 10
 
   const undersized: SmallTouchTarget[] = []
@@ -245,6 +276,9 @@ export function collectSmallTouchTargets(minSize: number): SmallTouchTarget[] {
     // Half a pixel of slack so that a box laid out at exactly the minimum is
     // never failed by sub-pixel rounding.
     if (rect.width >= minSize - 0.5 && rect.height >= minSize - 0.5) continue
+
+    const label = activatingBox(element)
+    if (label !== null && label.width >= minSize - 0.5 && label.height >= minSize - 0.5) continue
 
     if (isInlineProseLink(element)) continue
 
