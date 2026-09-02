@@ -1,0 +1,194 @@
+'use client'
+
+import * as React from 'react'
+
+import { formatMeta } from '@/lib/registry/formats'
+import type { ConversionPair } from '@/lib/registry/pairs'
+import { pairTitle } from '@/lib/registry/pairs'
+import { alternativeTargets } from '@/lib/router/alternatives'
+import { probeCapabilities } from '@/lib/router/capabilities'
+import type { ConversionTask } from '@/lib/router/types'
+import { cn } from '@/lib/utils'
+
+import { Dropzone } from './dropzone'
+import { JobCard } from './job-card'
+import { QueueAnnouncer } from './queue-announcer'
+import { ResultPanel } from './result-panel'
+import { useFileQueue } from './use-file-queue'
+
+/*
+ * The converter itself, assembled (issue #66).
+ *
+ * Everything under `components/converter/` shipped as an independent piece over
+ * EPIC 7 and none of it had a page to live on. This is the island that puts the
+ * dropzone, the queue, the cards, the announcer and the result panel together
+ * and hands them a task.
+ *
+ * ## It is an island, and the page around it is not
+ *
+ * The heading, the explanation, the steps, the questions and the links are
+ * server-rendered static HTML — the whole SEO surface exists before any
+ * JavaScript runs, and would still exist if none of it ever did. This component
+ * is the only part of a conversion page that hydrates, which is what keeps the
+ * first-load bundle within the budget that `pnpm size` enforces.
+ *
+ * ## The task comes from the page, not from the user
+ *
+ * A Docify page converts one pair. `/convert/heic-to-jpg` asks the router for
+ * `heic -> jpg` and nothing else, which is why there is no format picker here:
+ * the choice was made by arriving at this URL, and offering it again would be a
+ * second, worse copy of the catalogue.
+ *
+ * ## Files are converted one after another
+ *
+ * Not in parallel. Each engine is sized against the device's whole memory
+ * budget on the assumption that it has the tab to itself (`lib/router/budget`),
+ * so two large jobs at once is how a routing decision that was correct becomes
+ * an out-of-memory crash.
+ */
+
+export interface ConverterProps {
+  pair: ConversionPair
+}
+
+/** The empty list, hoisted so an idle render does not mint a new array. */
+const NO_ALTERNATIVES: readonly ConversionTask[] = []
+
+function Converter({ pair }: ConverterProps) {
+  const queue = useFileQueue()
+  const { add, run, cancel, remove } = queue
+
+  const from = formatMeta(pair.from)
+  const to = formatMeta(pair.to)
+
+  const task = React.useMemo<ConversionTask>(
+    () => ({ from: pair.from, to: pair.to, op: pair.op }),
+    [pair.from, pair.to, pair.op],
+  )
+
+  const start = React.useCallback((files: readonly File[]) => add([...files]), [add])
+
+  /**
+   * Which jobs have already been handed to the router, and whether one is in
+   * flight.
+   *
+   * Refs rather than state: nothing renders from either, and the scheduler
+   * below has to read the current values from inside an effect that closed over
+   * an older render.
+   */
+  const started = React.useRef(new Set<string>())
+  const busy = React.useRef(false)
+
+  /*
+   * The scheduler: one queued job at a time, started from an effect rather than
+   * from the drop handler.
+   *
+   * The obvious version calls `run` straight after `add`, and it does nothing at
+   * all — `add` dispatches, and the job does not exist in the queue the hook can
+   * see until that dispatch has been committed. Waiting for the render is what
+   * makes the lookup inside `run` succeed.
+   *
+   * One at a time is the other half. Every engine's memory budget is calculated
+   * on the assumption that it has the tab to itself, so two large jobs running
+   * together is how a routing decision that was correct becomes an
+   * out-of-memory crash.
+   *
+   * A job that has been cancelled stays in `started`, so it waits for the user
+   * to ask again rather than restarting itself the moment they stop it.
+   */
+  React.useEffect(() => {
+    if (busy.current) return
+
+    const next = queue.jobs.find((job) => job.state === 'queued' && !started.current.has(job.id))
+    if (next === undefined) return
+
+    started.current.add(next.id)
+    busy.current = true
+    // `run` never rejects: every failure is already a state the list shows.
+    void run(next.id, task).finally(() => {
+      busy.current = false
+    })
+  }, [queue.jobs, run, task])
+
+  const retry = React.useCallback(
+    (id: string) => {
+      // Already in `started`, and deliberately so — this is the user asking,
+      // not the scheduler picking it back up.
+      void run(id, task)
+    },
+    [run, task],
+  )
+
+  /**
+   * What else this device could do with the file, worked out only once a job
+   * has actually been refused.
+   *
+   * In an effect rather than during render because it calls
+   * `probeCapabilities()`, which reads `navigator` and therefore cannot run on
+   * the server. Measured against the refused file's own size, since the memory
+   * budget is most of what decides whether an alternative is viable.
+   */
+  const [alternatives, setAlternatives] = React.useState(NO_ALTERNATIVES)
+  const refused = queue.jobs.find(
+    (job) => job.state === 'failed' && job.failure?.code !== undefined,
+  )
+  const refusedSize = refused?.file.size
+
+  React.useEffect(() => {
+    if (refusedSize === undefined) {
+      setAlternatives(NO_ALTERNATIVES)
+
+      return
+    }
+
+    setAlternatives(alternativeTargets(task, refusedSize, probeCapabilities()))
+  }, [refusedSize, task])
+
+  return (
+    <div data-slot="converter" className="flex min-w-0 flex-col gap-6">
+      <QueueAnnouncer jobs={queue.jobs} />
+
+      <Dropzone
+        onFiles={start}
+        accept={`${from.mime},${from.extension}`}
+        label={`Drop your ${from.name} files here`}
+        hint={`They are converted to ${to.name} on this device. Nothing is uploaded, and there is no limit on how many you add.`}
+      />
+
+      {queue.jobs.length > 0 && (
+        <ul
+          data-slot="converter-queue"
+          aria-label={`${pairTitle(pair)} queue`}
+          className="flex list-none flex-col gap-3"
+        >
+          {queue.jobs.map((job) => (
+            <li key={job.id} className="min-w-0">
+              <JobCard
+                job={job}
+                task={task}
+                alternatives={alternatives}
+                onCancel={cancel}
+                onRetry={retry}
+                onRemove={remove}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <ResultPanel jobs={queue.jobs} to={pair.to} />
+
+      {/*
+       * The claim the product is built on, next to the control that would break
+       * it. Rendered by the island rather than by the page because it is a
+       * statement about what this widget does with the file it was given.
+       */}
+      <p className={cn('text-body text-fg-dark-mut')}>
+        Every conversion runs in this tab. No {from.name} file is sent anywhere, and closing the
+        page is enough to remove every trace of it.
+      </p>
+    </div>
+  )
+}
+
+export { Converter }

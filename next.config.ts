@@ -25,6 +25,21 @@ const ISOLATED_ROUTES = ['/convert/:path*', '/tools/:path*']
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  /*
+   * `radix-ui` is an umbrella package that re-exports every primitive from one
+   * barrel, and a bundler that cannot see through it ships all of them. The
+   * cost is not theoretical: importing `Slot` alone for `SectionBlock` added
+   * 76 kB gzipped to the first load of every route that used it, which is most
+   * of the 120 kB budget spent on one polymorphic wrapper.
+   *
+   * `optimizePackageImports` rewrites the barrel import into a direct one at
+   * build time. `lucide-react` is already on Next's own default list; naming it
+   * here as well makes the intent explicit rather than dependent on that list
+   * staying as it is.
+   */
+  experimental: {
+    optimizePackageImports: ['radix-ui', 'lucide-react'],
+  },
   async headers() {
     return ISOLATED_ROUTES.map((source) => ({
       source,

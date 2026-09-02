@@ -88,7 +88,7 @@ function RelatedTools({ className, variant, pair, ...props }: RelatedToolsProps)
     >
       <div className="flex min-w-0 flex-col gap-2">
         <p className={cn('text-eyebrow uppercase', muted)}>Related converters</p>
-        <h2 id={headingId} className="text-h2 uppercase">
+        <h2 id={headingId} className="text-h2 break-words hyphens-auto uppercase">
           Other ways to convert {formatMeta(pair.from).name}
         </h2>
       </div>
@@ -123,6 +123,9 @@ function RelatedTools({ className, variant, pair, ...props }: RelatedToolsProps)
           data-slot="related-tools-hub"
           href={HUB_HREF}
           className={cn(
+            // A 44x44px hit area on an inline link, with the padding cancelled
+            // by a negative margin so the text still starts at the gutter.
+            '-mx-2 inline-flex min-h-11 min-w-11 items-center px-2',
             'underline underline-offset-4',
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current',
           )}
