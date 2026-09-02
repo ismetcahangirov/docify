@@ -137,6 +137,9 @@ function JobCard({
       data-slot="job-card"
       data-state={job.state}
       aria-labelledby={headingId}
+      // The card's contents change under the user while this is true, which is
+      // exactly what `aria-busy` tells assistive technology to expect.
+      aria-busy={isRunning(job.state)}
       className={cn(cardVariants({ variant, className }))}
       {...props}
     >
@@ -156,13 +159,15 @@ function JobCard({
       </div>
 
       {/*
-       * Announced rather than merely rendered: a job finishing is news, and a
-       * user who is not looking at this card is exactly the one who needs it.
-       * `polite` so it waits for a gap instead of interrupting.
+       * Rendered, not announced. The card used to be its own live region, which
+       * fails at two files: twenty cards is twenty regions competing, and the
+       * countdown below sits inside the region, so each card re-announced itself
+       * once a second for as long as it ran. `./queue-announcer` is now the one
+       * region for the whole queue and coalesces the batch into one sentence
+       * (issue #63).
        */}
       <p
         data-slot="job-card-status"
-        aria-live="polite"
         className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-body"
       >
         {job.state === 'done' && (
