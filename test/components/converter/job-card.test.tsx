@@ -159,11 +159,30 @@ describe('JobCard — when it fails', () => {
     },
   })
 
+  // A failure with a router code is drawn by `./rejection` (issue #62), so the
+  // card is asserted on what reaches the screen rather than on which component
+  // put it there.
   it('says what went wrong and what to do about it', () => {
     render(<JobCard job={failed} now={START} />)
 
-    expect(slot('job-card-failure-message')?.textContent).toMatch(/800 MB/)
-    expect(slot('job-card-failure-suggestion')?.textContent).toMatch(/split the video/)
+    expect(slot('rejection-message')?.textContent).toMatch(/800 MB/)
+    expect(slot('rejection-suggestion')?.textContent).toMatch(/split the video/)
+  })
+
+  it('offers the alternatives it was given, as links to the pages that run them', () => {
+    render(
+      <JobCard
+        job={failed}
+        task={{ from: 'heic', to: 'ico', op: 'convert' }}
+        alternatives={[{ from: 'heic', to: 'jpg', op: 'convert' }]}
+        now={START}
+      />,
+    )
+
+    expect(screen.getByRole('link', { name: /HEIC to JPG/ })).toHaveAttribute(
+      'href',
+      '/convert/heic-to-jpg',
+    )
   })
 
   it('does not lean on colour to say it has failed', () => {
@@ -172,7 +191,7 @@ describe('JobCard — when it fails', () => {
     // only an accent.
     render(<JobCard job={failed} now={START} />)
 
-    expect(slot('job-card-failure-message')?.className).not.toContain('text-err')
+    expect(slot('rejection-message')?.className).not.toContain('text-err')
     expect(slot('job-card-state')?.textContent).toBe('Could not convert')
   })
 

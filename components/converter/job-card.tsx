@@ -11,8 +11,10 @@ import type { QueuedJob } from '@/lib/queue/queue'
 import type { JobState } from '@/lib/queue/state'
 import { isRunning } from '@/lib/queue/state'
 import { formatBytes } from '@/lib/router/copy'
+import type { ConversionTask } from '@/lib/router/types'
 import { cn } from '@/lib/utils'
 
+import { Rejection } from './rejection'
 import { RouteBadge } from './route-badge'
 
 /*
@@ -37,6 +39,15 @@ import { RouteBadge } from './route-badge'
  * words themselves in the ordinary foreground, and the state is named in
  * language rather than in hue. That is also the accessible answer: colour is
  * never the only thing carrying the meaning.
+ *
+ * ## A router refusal is drawn by the component that owns refusals
+ *
+ * A failure carrying a `RejectionCode` came from `route()`, and everything the
+ * app says about one — the title, the rule down the side, the alternatives that
+ * were verified against this device — belongs to `./rejection` (issue #62). The
+ * card delegates rather than growing a second copy that would drift. What is
+ * left here is the other kind: an engine that threw, which has a message and
+ * often no advice at all, and no code to look anything up by.
  *
  * ## Cancel, and what it actually does
  *
@@ -86,6 +97,16 @@ export type JobCardProps = React.ComponentProps<'article'> &
     /** Takes the file out of the queue altogether. */
     onRemove?: (id: string) => void
     /**
+     * The conversion this job was queued for, used only to build the links
+     * under a router refusal. Absent, no alternatives are offered.
+     */
+    task?: ConversionTask
+    /**
+     * Conversions this device would accept instead of the refused one, already
+     * verified by `lib/router/alternatives.ts`.
+     */
+    alternatives?: readonly ConversionTask[]
+    /**
      * The clock, in epoch milliseconds.
      *
      * Passed only by a test. Left out, the card runs its own — see the module
@@ -101,6 +122,8 @@ function JobCard({
   onCancel,
   onRetry,
   onRemove,
+  task,
+  alternatives,
   now,
   ...props
 }: JobCardProps) {
@@ -173,23 +196,40 @@ function JobCard({
         />
       )}
 
-      {job.failure !== undefined && (
-        <div
-          data-slot="job-card-failure"
-          // The rule is the signal, and the words are the meaning. See the
-          // module header for why the text is not red.
-          className="flex min-w-0 flex-col gap-1 border-l-2 border-err pl-4"
-        >
-          <p data-slot="job-card-failure-message" className="text-body">
-            {job.failure.message}
-          </p>
-          {job.failure.suggestion !== undefined && (
-            <p data-slot="job-card-failure-suggestion" className={cn('text-body', muted)}>
-              {job.failure.suggestion}
+      {job.failure !== undefined &&
+        (job.failure.code !== undefined ? (
+          <Rejection
+            variant={variant}
+            task={task}
+            alternatives={alternatives}
+            rejection={{
+              ok: false,
+              code: job.failure.code,
+              message: job.failure.message,
+              // A router rejection always carries one — CLAUDE.md §2.5 makes it
+              // a compile error not to — so the fallback is unreachable through
+              // `route()` and exists only because `JobFailure` types the field
+              // as optional for the engine case below.
+              suggestion: job.failure.suggestion ?? '',
+            }}
+          />
+        ) : (
+          <div
+            data-slot="job-card-failure"
+            // The rule is the signal, and the words are the meaning. See the
+            // module header for why the text is not red.
+            className="flex min-w-0 flex-col gap-1 border-l-2 border-err pl-4"
+          >
+            <p data-slot="job-card-failure-message" className="text-body">
+              {job.failure.message}
             </p>
-          )}
-        </div>
-      )}
+            {job.failure.suggestion !== undefined && (
+              <p data-slot="job-card-failure-suggestion" className={cn('text-body', muted)}>
+                {job.failure.suggestion}
+              </p>
+            )}
+          </div>
+        ))}
 
       <div className="flex flex-wrap items-center gap-2">
         {isRunning(job.state) && onCancel !== undefined && (
