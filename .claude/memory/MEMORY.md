@@ -10,6 +10,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## decision
 
+- [converter-is-a-deferred-island](entries/converter-is-a-deferred-island.md) — The converter loads after the static page, its skeleton is sized to prevent shift, and its scheduler must be an effect
 - [stream-copy-outranks-both-codecs](entries/stream-copy-outranks-both-codecs.md) — A stream copy is its own engine at priority 12, ahead of WebCodecs and ffmpeg — and the webcodecs budget it is compared against is not trustworthy
 - [budget-is-affine-and-scoped](entries/budget-is-affine-and-scoped.md) — The memory budget is factor x heldBytes + reserveBytes, and each engine says whether it holds every file of a job at once or one at a time
 - [pdfjs-runs-workerless-and-legacy](entries/pdfjs-runs-workerless-and-legacy.md) — pdf.js runs inside our worker only without its own worker and only as the legacy build — both are deliberate, not workarounds
@@ -21,6 +22,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## gotcha
 
+- [barrel-imports-cost-a-budget](entries/barrel-imports-cost-a-budget.md) — A single umbrella import cost 76 kB gzipped on every route — pnpm size names the route, never the package
 - [ci-does-not-run-on-a-conflicting-pr](entries/ci-does-not-run-on-a-conflicting-pr.md) — A PR with no checks at all is usually a merge conflict, not a stuck runner — GitHub never starts CI on one
 - [abort-is-matched-by-name](entries/abort-is-matched-by-name.md) — An abort is identified by name === 'AbortError', never by instanceof — Comlink drops DOMException and jsdom does not make it an Error
 - [cancel-needs-a-macrotask-yield](entries/cancel-needs-a-macrotask-yield.md) — An engine loop that only awaits promises never observes a cancel — the worker's message loop needs a macrotask to run
