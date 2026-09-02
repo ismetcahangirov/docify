@@ -35,7 +35,23 @@ import {
  * An explicit list rots, so `route coverage` below fails the moment a static
  * page appears under `app/` without being added here.
  */
-const ROUTES = ['/', '/convert', '/tools'] as const
+const ROUTES = [
+  '/',
+  '/convert',
+  '/tools',
+  /*
+   * Two representatives of `/convert/[pair]`, chosen where the layout differs
+   * rather than at random. They are the concrete URLs the `route coverage`
+   * check below asks for when a dynamic segment is added.
+   *
+   * `heic-to-jpg` is the shortest heading in the catalogue and `mp4-to-mp3` one
+   * of the longest, and the display type is a `clamp()` that reflows on the
+   * word rather than on the character — a heading that fits at 320px is not
+   * evidence that a longer one does.
+   */
+  '/convert/heic-to-jpg',
+  '/convert/mp4-to-mp3',
+] as const
 
 for (const route of ROUTES) {
   test.describe(`${route} at every breakpoint`, () => {
