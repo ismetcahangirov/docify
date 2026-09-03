@@ -135,6 +135,19 @@ export function ogImageUrl(pair: ConversionPair): string {
 }
 
 /**
+ * Where the site-wide card is served from.
+ *
+ * The path `app/opengraph-image.tsx` creates. Needed explicitly because a page
+ * that declares an `openGraph` object of its own does *not* get the file
+ * convention's image merged into it — Next.js treats the declaration as
+ * complete. The hub declared one and shipped without an `og:image` for it,
+ * which the pre-launch audit is what caught.
+ */
+export function siteImageUrl(): string {
+  return absoluteUrl('/opengraph-image')
+}
+
+/**
  * The card for every page that is not about one conversion.
  *
  * The home page, the hub and anything added later inherit it through the App

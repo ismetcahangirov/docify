@@ -106,6 +106,11 @@ jobs:
       # this job rather than a sixth one that would have to rebuild to measure.
       - name: Check the bundle budget
         run: pnpm size
+      # The pre-launch SEO audit reads the 128 HTML files the build produced,
+      # which is the only check here that sees what a crawler sees. Same job for
+      # the same reason: it needs the build, and nothing else does.
+      - name: Run the SEO audit
+        run: pnpm audit:seo
 
   # The Lighthouse gate only runs when something that can change a score
   # changed. It costs three production builds' worth of auditing, and a pull
