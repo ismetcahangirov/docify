@@ -87,9 +87,9 @@ describe('route — rejections', () => {
   })
 
   it('quotes a ceiling the device can actually honour, ignoring codec-blocked engines', () => {
-    // webcodecs is roomier (2.5× the input against ffmpeg's 4.5×) but cannot
-    // encode the audio here. Quoting its 480 MB ceiling would send the user
-    // away to shrink the file and then refuse the 400 MB result as well.
+    // webcodecs is roomier (4× the input against ffmpeg's 4.5×) but cannot
+    // encode the audio here. Quoting its 300 MB ceiling would send the user
+    // away to shrink the file and then refuse the result at 400 MB as well.
     register(webcodecs(), ffmpeg())
     const noAudioCodecs = { ...desktop, webCodecsAudio: false }
 
@@ -98,7 +98,7 @@ describe('route — rejections', () => {
 
     // 1200 MB desktop budget / 4.5 = 267 MB, the only ceiling ffmpeg can honour.
     expect(huge.message).toContain('267 MB')
-    expect(huge.message).not.toContain('480 MB')
+    expect(huge.message).not.toContain('300 MB')
     expect(shrunk.code).toBe('FILE_TOO_LARGE')
     expect(shrunk.message).toContain('267 MB')
   })

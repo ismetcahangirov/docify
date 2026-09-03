@@ -113,8 +113,8 @@ describe('route — the twelve cases the plan requires', () => {
 
     expect(result.code).toBe('FILE_TOO_LARGE')
     expect(result.message).toContain('4.0 GB')
-    // The quoted ceiling is the roomiest candidate's: 1200 MB / 2.5 = 480 MB.
-    expect(result.message).toContain('480 MB')
+    // The quoted ceiling is the roomiest candidate's: 1200 MB / 4 = 300 MB.
+    expect(result.message).toContain('300 MB')
     expect(result.suggestion).toMatch(/split|smaller/i)
   })
 

@@ -73,7 +73,8 @@ Two deliberate compromises, both of which change what a result means:
 | `pdfjs` | **Half measured.** Parsing runs in Node; rendering needs a canvas, so the render term is an estimate — see below |
 | `canvas`, `heif` | **Measured in a browser**, by `browser-memory-measure.mjs` — see "the browser harness". Their `bytesPerPixel` and `heif`'s reserve come from it; their byte factors are the pixel-less fallback and remain unmeasured |
 | `vips` | **Not measured.** It streams scanline regions and never materialises a bitmap, so it charges nothing per pixel and is exempt from the ceiling in the engines |
-| `webcodecs`, `ffmpeg`, `libarchive` | **Not measured.** No engine ships yet, and none of the three has a Node stand-in worth measuring. Their factors and `holds` values are carried over and are as good as the guess that produced them |
+| `webcodecs` | **Not measured — derived.** The engine ships (#47), and its 2.5 did not survive contact with it: the pipeline holds the file rather than streaming it past. The 4 that replaced it (#210) is counted off what is live at the muxing peak, the same way `remux` is, and the count is written out in `lib/router/budget.ts`. Releasing the demuxed source as the decoder consumes it (`lib/engines/mp4-samples.ts`) is what keeps it at four terms rather than five |
+| `ffmpeg`, `libarchive` | **Not measured.** Neither has a Node stand-in worth measuring, and `libarchive` has no engine at all yet. Their factors and `holds` values are carried over and are as good as the guess that produced them |
 
 That harness is `browser-memory-measure.mjs`: Playwright driving a
 cross-origin-isolated page through `performance.measureUserAgentSpecificMemory()`.

@@ -36,6 +36,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## session
 
+- [session-2026-09-02-a06d931f](entries/session-2026-09-02-a06d931f.md) — Session on 2026-09-02: ui, router, registry, seo, app (79 file ops)
 - [session-2026-09-01-e2537969](entries/session-2026-09-01-e2537969.md) — Session on 2026-09-01: engines, ui (46 file ops)
 - [session-2026-08-31-6c17ae3e](entries/session-2026-08-31-6c17ae3e.md) — Session on 2026-08-31: engines (107 file ops)
 - [session-2026-08-31-93a6a515](entries/session-2026-08-31-93a6a515.md) — Session on 2026-08-31: agent (4 file ops)

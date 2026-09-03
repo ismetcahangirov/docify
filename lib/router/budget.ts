@@ -203,16 +203,44 @@ export const MEMORY: Record<EngineId, EngineMemory> = {
    *
    * Three is therefore a ceiling on the observed shape rather than a guess at an
    * unobserved one, and it is 1.5x kinder than `ffmpeg` — the engine that would
-   * otherwise take these pairs on a device with no codecs. It is *not* kinder
-   * than `webcodecs`: a transcode streams frames and holds less of the file at
-   * once. That is the right way round. Where a remux wins is time and fidelity,
-   * and a job too large for this model still routes to a transcode rather than
-   * being refused.
+   * otherwise take these pairs on a device with no codecs. It is kinder than
+   * `webcodecs` too, which is the right way round and was not always so (#210):
+   * a copy never builds a second payload out of the first, so it holds strictly
+   * less than a transcode of the same file and may be handed a larger one. A
+   * job too large to copy is therefore too large to transcode as well, and the
+   * ceiling a rejection quotes is this one — the roomiest any engine here has.
    */
   remux: { factor: 3, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
-  /** Not measured — no engine ships yet. Streams frames through the hardware
-   *  codec; never holds the whole file. */
-  webcodecs: { factor: 2.5, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
+  /**
+   * Not measured directly; derived from what the pipeline holds, the same way
+   * `remux` above is.
+   *
+   * It replaces a 2.5 that was derived from nothing. That number was written
+   * before the engine existed and described a transcode that streamed frames
+   * out of a file it never held; `lib/engines/video-transcode.ts` shipped in
+   * #47 holding a good deal more, and #210 is the correction.
+   *
+   * Four things are live at the muxing peak, each about one copy of the input's
+   * encoded bytes:
+   *
+   * 1. the file itself, which the worker still owns on behalf of its caller;
+   * 2. the encoded samples the encoder produced, which for a transcode that
+   *    does not enlarge the file is at most one more;
+   * 3. the container mp4box serialises them back into;
+   * 4. the copy taken off that stream on the way to a `Blob`.
+   *
+   * The demuxed source is deliberately not a fifth. It is released sample by
+   * sample as the decoder consumes it — `lib/engines/mp4-samples.ts` — so it is
+   * gone before the muxer runs rather than sitting alongside its output. The
+   * decoded frames are not a term either: the queue limits in the transcode
+   * loop hold a handful of surfaces rather than a film's worth of them.
+   *
+   * Four is what that adds up to, and the ordering it produces is the honest
+   * one — `remux` at 3 below a transcode, `ffmpeg` at 4.5 above it, and a
+   * ceiling on this desktop of 300 MB rather than the 480 MB the old entry
+   * promised a device that could not have delivered it.
+   */
+  webcodecs: { factor: 4, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
   /** Not measured — no engine ships yet. Input, output and scratch buffers all
    *  live in MEMFS simultaneously, which is why it is also the last resort. */
   ffmpeg: { factor: 4.5, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },

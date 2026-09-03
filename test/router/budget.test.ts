@@ -190,7 +190,7 @@ describe('MEMORY', () => {
       pdflib: { factor: 4, holds: 'all-at-once', reserveBytes: 32 * MB, bytesPerPixel: 0 },
       pdfjs: { factor: 4, holds: 'one-at-a-time', reserveBytes: 32 * MB, bytesPerPixel: 0 },
       remux: { factor: 3, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
-      webcodecs: { factor: 2.5, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
+      webcodecs: { factor: 4, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
       ffmpeg: { factor: 4.5, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
       zip: { factor: 3, holds: 'all-at-once', reserveBytes: 0, bytesPerPixel: 0 },
       libarchive: { factor: 3, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
@@ -227,6 +227,10 @@ describe('MEMORY', () => {
   it('makes the streaming engines cheaper than the buffering ones', () => {
     // WebCodecs streams frames; ffmpeg.wasm holds input, output and scratch in MEMFS.
     expect(MEMORY.webcodecs.factor).toBeLessThan(MEMORY.ffmpeg.factor)
+    // And a copy is cheaper than a re-encode, which is the ordering #210 was
+    // raised about: a remux never builds a second payload out of the first, so
+    // it cannot cost more than the transcode of the same file that does.
+    expect(MEMORY.remux.factor).toBeLessThan(MEMORY.webcodecs.factor)
     // A decoded RGBA bitmap dwarfs the encoded bytes it came from, and the byte
     // factor is what has to say so for a job whose pixels nobody read.
     expect(MEMORY.canvas.factor).toBeGreaterThan(MEMORY.vips.factor)
@@ -362,8 +366,8 @@ describe('maxInputBytes', () => {
   it('divides the platform budget by the engine expansion factor', () => {
     // 90 MB / 4.5 = exactly 20 MB of ffmpeg input on an iPhone.
     expect(maxInputBytes('ffmpeg', ios)).toBe(20 * MB)
-    // 140 MB / 2.5 = 56 MB of WebCodecs input on Android.
-    expect(maxInputBytes('webcodecs', android)).toBe(56 * MB)
+    // 140 MB / 4 = 35 MB of WebCodecs input on Android.
+    expect(maxInputBytes('webcodecs', android)).toBe(35 * MB)
   })
 
   it('takes the reserve off the top before dividing', () => {
