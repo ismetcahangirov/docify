@@ -23,6 +23,34 @@ const CROSS_ORIGIN_ISOLATION_HEADERS = [
 /** Only these route groups become cross-origin isolated. */
 const ISOLATED_ROUTES = ['/convert/:path*', '/tools/:path*']
 
+/**
+ * What an isolated document is allowed to load.
+ *
+ * `require-corp` does not only block *cross-origin* subresources. A dedicated
+ * worker is held to the owner document's policy, and Chromium refuses to start
+ * one whose script was served without a matching `Cross-Origin-Embedder-Policy`
+ * — same origin or not. Without these headers every conversion page loaded, and
+ * rendered, and then answered a dropped file with a job stuck on "Waiting" and
+ * one line in the console: the worker chunk came back `ERR_BLOCKED_BY_RESPONSE`
+ * and the engines were unreachable. Nothing in the unit suites could see it:
+ * jsdom has no COEP and no worker, and the e2e suites never dropped a file.
+ *
+ * `Cross-Origin-Resource-Policy: same-origin` is the other half. It is what an
+ * isolated document needs in order to fetch the WASM binaries under
+ * `/vendor/`, which `pnpm vendor` copies out of node_modules and which are
+ * fetched by URL rather than bundled.
+ *
+ * Both are applied to assets, never to a document: a `Cross-Origin-Opener-Policy`
+ * belongs on the page and is deliberately not repeated here.
+ */
+const ISOLATED_ASSET_HEADERS = [
+  { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
+  { key: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
+]
+
+/** Everything an isolated page fetches: its own chunks, and the vendored engines. */
+const ISOLATED_ASSET_ROUTES = ['/_next/static/:path*', '/vendor/:path*']
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   /*
@@ -41,10 +69,10 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ['radix-ui', 'lucide-react'],
   },
   async headers() {
-    return ISOLATED_ROUTES.map((source) => ({
-      source,
-      headers: CROSS_ORIGIN_ISOLATION_HEADERS,
-    }))
+    return [
+      ...ISOLATED_ROUTES.map((source) => ({ source, headers: CROSS_ORIGIN_ISOLATION_HEADERS })),
+      ...ISOLATED_ASSET_ROUTES.map((source) => ({ source, headers: ISOLATED_ASSET_HEADERS })),
+    ]
   },
 }
 
