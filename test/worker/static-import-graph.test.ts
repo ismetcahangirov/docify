@@ -3,7 +3,7 @@
  * may be reachable from the worker entry through a *static* import.
  *
  * A bundler decides what lands in a chunk by following static imports and
- * cutting the graph at every `await import()`. `./import-graph` does the same
+ * cutting the graph at every `await import()`. `../support/import-graph` does the same
  * walk over the source on disk, so an accidental `import { createRunner } from
  * './ffmpeg'` fails here — in milliseconds, with a readable message — instead
  * of showing up later as a 32 MB regression in `pnpm size`.
@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { staticGraphOf, valueImportsOf } from './import-graph'
+import { staticGraphOf, valueImportsOf } from '../support/import-graph'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 

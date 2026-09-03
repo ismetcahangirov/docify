@@ -5,7 +5,11 @@
  * It answers one question: which modules would a bundler pull into the chunk it
  * emits for a given entry? That is the transitive closure of *static* imports,
  * cut at every `await import()` — which is exactly the cut that keeps a 32 MB
- * WASM engine out of the worker shell.
+ * WASM engine out of the worker shell, and the same cut that keeps one out of a
+ * page's first-load bundle. It lives under `test/support/` rather than under
+ * `test/worker/` because both guards use it: `test/worker/static-import-graph`
+ * walks out of the worker, `test/app/initial-bundle` walks out of every App
+ * Router entry.
  *
  * Test-support code, not shipped.
  */
@@ -17,6 +21,19 @@ import ts from 'typescript'
 
 /** Not code: a bundler emits these as assets, so they are not graph nodes. */
 const NON_CODE = /\.(css|scss|svg|png|jpe?g|gif|webp|avif|woff2?|ttf|otf)$/i
+
+/**
+ * Whether a specifier names an asset rather than a module.
+ *
+ * Exported because the walker has to tell three things apart, not two: a local
+ * module to follow, an npm package to record, and an asset that is neither. A
+ * stylesheet resolves to `null` the same way a package does, and counting
+ * `./globals.css` as a runtime dependency would make the root layout look like
+ * it imports something from npm.
+ */
+export function isAsset(specifier: string): boolean {
+  return NON_CODE.test(specifier.split('?')[0] ?? specifier)
+}
 
 /** Extensions a bundler tries, in order, for an extensionless specifier. */
 const CANDIDATE_SUFFIXES = ['', '.ts', '.tsx', '.mts', '.js', '/index.ts', '/index.tsx']
@@ -114,6 +131,8 @@ export function staticGraphOf(entry: string, repoRoot: string): Graph {
     files.add(file)
 
     for (const specifier of valueImportsOf(readFileSync(join(repoRoot, file), 'utf8'))) {
+      if (isAsset(specifier)) continue
+
       const local = resolveLocal(specifier, file, repoRoot)
       if (local === null) packages.add(specifier)
       else queue.push(local)
@@ -121,5 +140,28 @@ export function staticGraphOf(entry: string, repoRoot: string): Graph {
   }
 
   files.delete(entry)
+  return { files: [...files].sort(), packages: [...packages].sort() }
+}
+
+/**
+ * The union of the graphs of several entries, with the entries themselves
+ * included.
+ *
+ * `staticGraphOf` drops its own entry, because the question it answers is what
+ * an entry *drags in*. Over a set of entries that is the wrong shape twice: one
+ * entry importing another would vanish from the answer, and a route's own file
+ * is as much a part of what a visitor downloads as anything it imports. So the
+ * entries are put back.
+ */
+export function staticGraphOfAll(entries: string[], repoRoot: string): Graph {
+  const files = new Set<string>(entries)
+  const packages = new Set<string>()
+
+  for (const entry of entries) {
+    const graph = staticGraphOf(entry, repoRoot)
+    for (const file of graph.files) files.add(file)
+    for (const name of graph.packages) packages.add(name)
+  }
+
   return { files: [...files].sort(), packages: [...packages].sort() }
 }

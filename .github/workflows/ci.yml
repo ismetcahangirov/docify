@@ -95,12 +95,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       # Guards the invariant that no WASM binary ships in the initial bundle.
+      # The source half of it — that nothing in the repository imports an engine
+      # eagerly — is asserted in the unit job by test/app/initial-bundle.test.ts.
+      # This half follows every route's first-load set through the manifests,
+      # rather than looking in one directory for a binary that is vendored into
+      # public/ and would never have been emitted there.
       - name: Assert no WASM in the initial bundle
-        run: |
-          if find .next/static/chunks -maxdepth 1 -name '*.wasm' | grep -q .; then
-            echo "::error::A .wasm binary was found in the initial chunk directory. Engines must load via dynamic import()."
-            exit 1
-          fi
+        run: pnpm check:wasm
       # The budget reads the manifest `pnpm build` just wrote, so it belongs in
       # this job rather than a sixth one that would have to rebuild to measure.
       - name: Check the bundle budget
