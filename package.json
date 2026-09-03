@@ -23,6 +23,7 @@
     "e2e": "playwright test",
     "size": "node scripts/bundle-budget/cli.mjs",
     "check:wasm": "node scripts/initial-bundle/cli.mjs",
+    "audit:seo": "node scripts/seo-audit/cli.mjs",
     "prepare": "husky"
   },
   "dependencies": {

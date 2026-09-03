@@ -4,6 +4,7 @@ import { SectionBlock } from '@/components/blocks/section-block'
 import { ALL_FORMATS, formatMeta } from '@/lib/registry/formats'
 import { PAIRS, pairTitle, pairsFrom } from '@/lib/registry/pairs'
 import { convertHref } from '@/lib/registry/slugs'
+import { OG_SIZE, siteCard, siteImageUrl } from '@/lib/seo/og'
 import { absoluteUrl, SITE_NAME } from '@/lib/seo/site'
 
 /*
@@ -32,7 +33,22 @@ import { absoluteUrl, SITE_NAME } from '@/lib/seo/site'
 
 const TITLE = `All ${PAIRS.length} File Converters — Free, In Your Browser | ${SITE_NAME}`
 
-const DESCRIPTION = `Every conversion ${SITE_NAME} performs, grouped by the format you already have. All ${PAIRS.length} run in your browser. Free, and nothing is uploaded.`
+const DESCRIPTION = `Every conversion ${SITE_NAME} performs, grouped by the format you already have. All ${PAIRS.length} of them run inside your own browser. Free, and nothing is uploaded.`
+
+/*
+ * The card is named rather than inherited. A page that declares an `openGraph`
+ * object of its own does not get `app/opengraph-image.tsx` merged into it —
+ * Next.js treats the declaration as complete — so this page shipped a preview
+ * with no image at all until the pre-launch audit read the rendered HTML.
+ */
+const IMAGES = [
+  {
+    url: siteImageUrl(),
+    width: OG_SIZE.width,
+    height: OG_SIZE.height,
+    alt: siteCard().alt,
+  },
+]
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -44,6 +60,13 @@ export const metadata: Metadata = {
     siteName: SITE_NAME,
     title: TITLE,
     description: DESCRIPTION,
+    images: IMAGES,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: TITLE,
+    description: DESCRIPTION,
+    images: IMAGES,
   },
 }
 
