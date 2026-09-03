@@ -32,6 +32,7 @@ import { readMp4 } from './mp4-demux'
 import type { Mp4Media, Mp4Sample, Mp4Track } from './mp4-media'
 import { audioTrack } from './mp4-media'
 import { writeMp4 } from './mp4-mux'
+import { drainSamples, keepOnlyTrack } from './mp4-samples'
 import type { Mp4BoxLoader } from './mp4-runtime'
 import { OPUS_OUTPUT_RATE, type OpusPacket, writeOggOpus } from './ogg-opus'
 import type { ProgressCallback } from './types'
@@ -83,6 +84,11 @@ export async function transcodeAudio(
   const media = await readMp4(bytes, signal, loadMp4Box)
   const source = audioTrack(media)
   if (source === undefined) throw noAudioTrack(media)
+  // The picture, when the job is an extraction from a film: demuxed because the
+  // reader reads whole containers, and useless from here on. It is also the
+  // larger of the two tracks by an order of magnitude, which is what makes
+  // dropping it worth a line.
+  keepOnlyTrack(media, source)
 
   onProgress(DEMUXED)
 
@@ -162,8 +168,14 @@ async function run(
       description: codecDescription(source.format),
     })
 
-    const total = Math.max(source.samples.length, 1)
-    for (const [index, sample] of source.samples.entries()) {
+    // Released packet by packet as the decoder takes them, for the reason
+    // `./mp4-samples` gives: the encoded output below is filling at the same
+    // rate, and both being whole at once is a copy of the file nobody needs.
+    const stream = drainSamples(source)
+    const total = Math.max(stream.total, 1)
+    let done = 0
+
+    for (const sample of stream.samples) {
       throwIfAborted(signal)
       if (failure !== null) throw failure
 
@@ -177,7 +189,8 @@ async function run(
       )
       await drain(decoder, encoder)
 
-      onProgress((index + 1) / total)
+      done += 1
+      onProgress(done / total)
     }
 
     await decoder.flush()

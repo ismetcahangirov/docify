@@ -18,12 +18,18 @@
  *
  * ## Memory
  *
- * Every sample is collected before the promise settles, so the live set is the
- * file's own encoded size plus mp4box's index. That is well inside the 2.5×
- * `MEMORY.webcodecs` allows in `lib/router/budget.ts` — that factor is sized for
- * the decoded frames a transcode holds, which are far larger than this. A job
- * that wanted to stream samples through a codec without ever holding them all
- * would need a different shape, and can have one when there is a caller for it.
+ * Every sample is collected before the promise settles, so what comes back is
+ * one whole copy of the file's payload plus mp4box's index. That is a term in
+ * `MEMORY.webcodecs` and `MEMORY.remux` in `lib/router/budget.ts` rather than
+ * something they absorb, and it is why the transcode paths hand the result
+ * straight to `./mp4-samples` and let go of it as they read it: collecting the
+ * samples and *keeping* them are separate costs, and only the first one is
+ * forced by the shape of this reader.
+ *
+ * Streaming samples out as they are parsed would remove even the first, and
+ * would need a different shape — extraction is armed inside `onReady` and the
+ * caller is not on the stack there. It can have one when there is a caller
+ * whose ceiling depends on it.
  *
  * ## What it does not do
  *

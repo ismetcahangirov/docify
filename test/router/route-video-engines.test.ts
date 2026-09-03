@@ -96,8 +96,8 @@ describe('route — the real WebCodecs descriptor', () => {
   it('takes a file on a phone that ffmpeg would refuse, because it holds less', () => {
     register(realWebCodecs, ffmpeg())
 
-    // 90 MB / 2.5 = 36 MB on an iPhone, against ffmpeg's 90 / 4.5 = 20 MB.
-    expect(chosen(route(shrinkMp4, 30 * MB, iphone)).engine).toBe('webcodecs')
+    // 90 MB / 4 = 22.5 MB on an iPhone, against ffmpeg's 90 / 4.5 = 20 MB.
+    expect(chosen(route(shrinkMp4, 22 * MB, iphone)).engine).toBe('webcodecs')
     // Past that it is the phone's ceiling being reported, not the file's:
     // `DEVICE_TOO_WEAK` is what a mobile browser's fixed allowance produces.
     expect(refused(route(shrinkMp4, 40 * MB, iphone)).code).toBe('DEVICE_TOO_WEAK')
@@ -125,7 +125,7 @@ describe('route — the real WebCodecs descriptor', () => {
 
     const result = refused(route(shrinkMp4, 40 * MB, iphone))
 
-    expect(result.message).toMatch(/36 MB/)
+    expect(result.message).toMatch(/23 MB/)
     expect(result.suggestion.length).toBeGreaterThan(0)
   })
 })
@@ -168,8 +168,8 @@ describe('route — the real ffmpeg descriptor', () => {
   it('holds less than WebCodecs, so it refuses a file the fast path would take', () => {
     register(realFfmpeg)
 
-    // 4.5x the input against WebCodecs' 2.5x: 266 MB on this desktop rather
-    // than 480 MB.
+    // 4.5x the input against WebCodecs' 4x: 266 MB on this desktop rather
+    // than 300 MB.
     expect(chosen(route(mp4ToWebm, 200 * MB, desktop)).engine).toBe('ffmpeg')
     expect(refused(route(mp4ToWebm, 400 * MB, desktop)).code).toBe('FILE_TOO_LARGE')
   })
@@ -246,12 +246,21 @@ describe('route — MOV into MP4', () => {
     expect(chosen(route(movToMp4, 300 * MB, desktop)).engine).toBe('remux')
   })
 
-  it('falls back to a transcode rather than refusing a file it cannot hold', () => {
+  it('is the ceiling a rejection quotes, because no transcode can hold more', () => {
     register(realRemux, realWebCodecs)
 
-    // The right way round: too large to copy is a reason to re-encode, not a
-    // reason to send the user away.
-    expect(chosen(route(movToMp4, 450 * MB, desktop)).engine).toBe('webcodecs')
+    // The correction #210 made. A copy holds strictly less than a re-encode of
+    // the same file — 3x against 4x — so there is no size that is too large to
+    // copy and still small enough to transcode. Falling through to WebCodecs on
+    // a 450 MB file used to "work" only because its factor claimed a headroom
+    // the engine did not have, and the file that reached it killed the tab.
+    expect(chosen(route(movToMp4, 350 * MB, desktop)).engine).toBe('remux')
+
+    const tooLarge = refused(route(movToMp4, 450 * MB, desktop))
+
+    expect(tooLarge.code).toBe('FILE_TOO_LARGE')
+    // 1200 MB / 3, the roomiest of the two, rather than WebCodecs' 300 MB.
+    expect(tooLarge.message).toContain('400 MB')
   })
 
   it('still leaves a re-encode to the engines that have one', () => {

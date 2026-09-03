@@ -16,13 +16,20 @@
  * surface — several megabytes for 1080p, more on a phone — so holding a queue of
  * them is how a transcode kills a tab.
  *
+ * The *encoded* samples are the other half of the same problem, and the one
+ * that is easy to miss: stage 1 produces one whole copy of the file's payload
+ * and stage 3 consumes another, so leaving the first intact while the second
+ * fills would hold the file twice over. `./mp4-samples` is what stops that —
+ * the source is released frame by frame as the decoder swallows it.
+ *
  * ## Backpressure is the memory model
  *
  * Both codecs accept work faster than they do it, and neither pushes back. Left
  * alone, feeding a two-minute clip queues every one of its frames before the
  * first is encoded. So the loop watches `decodeQueueSize` and `encodeQueueSize`
  * and waits, which is what keeps the live set at a handful of frames rather than
- * a film's worth — and what makes `MEMORY.webcodecs`' 2.5× factor true.
+ * a film's worth. That, and the release above, is what makes the factor
+ * `MEMORY.webcodecs` charges in `lib/router/budget.ts` true.
  *
  * ## Timestamps
  *
@@ -45,6 +52,7 @@ import { readMp4 } from './mp4-demux'
 import type { Mp4Media, Mp4Sample, Mp4Track } from './mp4-media'
 import { videoTrack } from './mp4-media'
 import { writeMp4 } from './mp4-mux'
+import { drainSamples, keepOnlyTrack } from './mp4-samples'
 import type { Mp4BoxLoader } from './mp4-runtime'
 import type { ProgressCallback } from './types'
 import { planVideoEncode } from './video-config'
@@ -104,6 +112,10 @@ export async function transcodeVideo(
   const media = await readMp4(bytes, signal, loadMp4Box)
   const source = videoTrack(media)
   if (source === undefined) throw noVideoTrack(media)
+  // Everything the demuxer read that this path will not: a soundtrack, most
+  // often, which is dropped rather than carried (see the note on this
+  // function) and has no business staying resident while the codecs run.
+  keepOnlyTrack(media, source)
 
   onProgress(DEMUXED)
 
@@ -207,15 +219,22 @@ async function run(
       description: codecDescription(source.format),
     })
 
-    const total = source.samples.length
-    for (const [index, sample] of source.samples.entries()) {
+    // Released sample by sample rather than iterated: the encoded output is
+    // accumulating in `samples` above at roughly the rate the source is being
+    // consumed, and holding both whole is the copy `MEMORY.webcodecs` would
+    // otherwise have to price. See `./mp4-samples`.
+    const stream = drainSamples(source)
+    let done = 0
+
+    for (const sample of stream.samples) {
       throwIfAborted(signal)
       if (failure !== null) throw failure
 
       decoder.decode(platform.encodedChunk(toChunkInit(sample, source.format.timescale)))
       await drain(decoder, encoder)
 
-      onProgress((index + 1) / Math.max(total, 1))
+      done += 1
+      onProgress(done / Math.max(stream.total, 1))
     }
 
     await decoder.flush()
