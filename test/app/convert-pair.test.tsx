@@ -10,6 +10,7 @@ import { copyFor } from '@/lib/registry/copy'
 import { PAIR_SLUGS, PAIRS, pairBySlug } from '@/lib/registry/pairs'
 import { relatedTo } from '@/lib/registry/related'
 import { pageMetadata } from '@/lib/seo/metadata'
+import { OG_SIZE, ogCard, ogImageUrl } from '@/lib/seo/og'
 
 /*
  * The /convert/[pair] route (issue #66).
@@ -65,6 +66,34 @@ describe('generateMetadata', () => {
     const meta = await generateMetadata(params(heicToJpg))
 
     expect(meta.openGraph?.url).toBe(meta.alternates?.canonical)
+  })
+
+  it('points Open Graph and Twitter at this pair own card', async () => {
+    // Declared by the page rather than left to the `opengraph-image.tsx` file
+    // convention, which cannot see the pair and so cannot write alt text that
+    // names it — the header of that file has the reasoning. Both networks are
+    // asserted because `twitter:image` is what X reads and it does not fall
+    // back to `og:image` when a `twitter:` block is present.
+    const meta = await generateMetadata(params(heicToJpg))
+    const card = ogCard(pairBySlug(heicToJpg)!)!
+    const expected = [
+      {
+        url: ogImageUrl(pairBySlug(heicToJpg)!),
+        width: OG_SIZE.width,
+        height: OG_SIZE.height,
+        alt: card.alt,
+      },
+    ]
+
+    expect(meta.openGraph?.images).toEqual(expected)
+    expect(meta.twitter?.images).toEqual(expected)
+  })
+
+  it('declares a card large enough for the preview it asks for', async () => {
+    // The page asks for `summary_large_image`, and X refuses that layout for an
+    // image under 300px wide — it falls back to a thumbnail, or to nothing.
+    expect(OG_SIZE.width).toBeGreaterThanOrEqual(1200)
+    expect(OG_SIZE.height).toBeGreaterThanOrEqual(628)
   })
 
   it('answers with nothing for a slug that names no page', async () => {

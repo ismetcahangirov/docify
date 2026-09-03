@@ -28,6 +28,7 @@ import { formatMeta } from '@/lib/registry/formats'
 import type { ConversionPair } from '@/lib/registry/pairs'
 import { convertHref } from '@/lib/registry/slugs'
 
+import { clampToWords } from './clamp'
 import { SITE_NAME, absoluteUrl } from './site'
 
 /** The most a title can carry before a search result truncates it. */
@@ -105,25 +106,5 @@ export function pageDescription(h1: string, intro: string): string {
   const room = MAX_DESCRIPTION_CHARS - DESCRIPTION_TAIL.length
   const lead = `${h1}. ${intro}`
 
-  return `${clamp(lead, room)}${DESCRIPTION_TAIL}`
-}
-
-/**
- * `text` cut to at most `limit` characters, at a word boundary, with an
- * ellipsis where anything was removed.
- *
- * The ellipsis is one character (U+2026) rather than three full stops, because
- * three cost three of the characters the sentence needed.
- */
-function clamp(text: string, limit: number): string {
-  const collapsed = text.replace(/\s+/g, ' ').trim()
-  if (collapsed.length <= limit) return collapsed
-
-  // One character back from the limit, to leave room for the ellipsis itself.
-  const cut = collapsed.slice(0, limit - 1)
-  const lastSpace = cut.lastIndexOf(' ')
-  const words = lastSpace === -1 ? cut : cut.slice(0, lastSpace)
-
-  // A trailing comma or full stop in front of an ellipsis reads as a mistake.
-  return `${words.replace(/[\s,.;:—-]+$/u, '')}…`
+  return `${clampToWords(lead, room)}${DESCRIPTION_TAIL}`
 }

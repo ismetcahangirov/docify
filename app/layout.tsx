@@ -1,13 +1,23 @@
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 
+import { SITE_DESCRIPTION, SITE_NAME, SITE_ORIGIN } from '@/lib/seo/site'
+
 import { fontVariables } from './fonts'
 
 import './globals.css'
 
+/*
+ * `metadataBase` is what turns every relative URL Next.js generates into an
+ * absolute one — the Open Graph image most of all. `og:image` must be absolute
+ * or no crawler can fetch it, and without this the build emits `/opengraph-image
+ * .png` and a warning nobody reads. It is the same literal the canonical URLs
+ * are built from, for the reason `lib/seo/site.ts` gives about deployments.
+ */
 export const metadata: Metadata = {
-  title: 'Docify',
-  description: 'Convert any file — entirely in your browser. No upload, no sign-up.',
+  metadataBase: new URL(SITE_ORIGIN),
+  title: SITE_NAME,
+  description: SITE_DESCRIPTION,
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {

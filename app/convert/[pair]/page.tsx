@@ -8,6 +8,7 @@ import { copyFor } from '@/lib/registry/copy'
 import { formatMeta } from '@/lib/registry/formats'
 import { PAIR_SLUGS, pairBySlug, pairTitle } from '@/lib/registry/pairs'
 import { pageMetadata } from '@/lib/seo/metadata'
+import { OG_SIZE, ogCard, ogImageUrl } from '@/lib/seo/og'
 import { pageSchema } from '@/lib/seo/schema'
 import { SITE_NAME } from '@/lib/seo/site'
 
@@ -62,6 +63,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   if (pair === undefined || meta === undefined) return {}
 
+  // Declared rather than left to the `opengraph-image.tsx` file convention,
+  // which cannot see the pair and so cannot write alt text that names it. The
+  // header of that file has the whole reason.
+  const card = ogCard(pair)
+  const images =
+    card === undefined
+      ? undefined
+      : [{ url: ogImageUrl(pair), width: OG_SIZE.width, height: OG_SIZE.height, alt: card.alt }]
+
   return {
     title: meta.title,
     description: meta.description,
@@ -72,8 +82,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       siteName: SITE_NAME,
       title: meta.title,
       description: meta.description,
+      images,
     },
-    twitter: { card: 'summary_large_image', title: meta.title, description: meta.description },
+    twitter: {
+      card: 'summary_large_image',
+      title: meta.title,
+      description: meta.description,
+      images,
+    },
   }
 }
 
