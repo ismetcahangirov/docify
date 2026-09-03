@@ -126,7 +126,24 @@ describe('robots.txt', () => {
   const rules = robots()
 
   it('lets every crawler read the whole site', () => {
-    expect(rules.rules).toEqual([{ userAgent: '*', allow: '/' }])
+    expect(rules.rules).toContainEqual({ userAgent: '*', allow: '/' })
+  })
+
+  it('says yes to the AI agents by name as well as by wildcard (issue #73)', () => {
+    // Redundant as a rule and not as a statement. `Google-Extended` and
+    // `Applebot-Extended` are opt-out tokens whose absence means yes, so the
+    // decision to let a model read and answer from these pages is otherwise
+    // expressed by leaving a file alone — which nobody can review. See the
+    // header of app/robots.ts for why the answer is yes.
+    const agents = [rules.rules].flat().flatMap((rule) => [rule?.userAgent ?? []].flat())
+
+    for (const agent of ['GPTBot', 'ClaudeBot', 'Google-Extended', 'PerplexityBot']) {
+      expect(agents).toContain(agent)
+    }
+  })
+
+  it('allows each of them everything, rather than a corner of the site', () => {
+    for (const rule of [rules.rules].flat()) expect(rule?.allow).toBe('/')
   })
 
   it('points at the sitemap, which is how the other 125 pages are found', () => {
