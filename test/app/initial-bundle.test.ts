@@ -25,6 +25,12 @@ import { staticGraphOfAll } from '../support/import-graph'
  * download; it is still a bug of the same family, and excluding them would mean
  * a second, quieter rule about which files the invariant applies to.
  *
+ * `opengraph-image` is the one convention deliberately left out. It is rendered
+ * during `next build` and its output is a PNG, so `next/og` — satori, resvg and
+ * two WASM binaries of their own — is a build-time dependency that no visitor
+ * downloads. Walking it would put those in the list below and make this guard
+ * say the opposite of what is true.
+ *
  * ## Why the package list is pinned rather than pattern-matched
  *
  * The worker guard asks whether anything *heavy* leaked, with a regular
@@ -89,6 +95,7 @@ describe('the entries the walk starts from', () => {
       'app/convert/[pair]/page.tsx',
       'app/convert/page.tsx',
       'app/layout.tsx',
+      'app/llms.txt/route.ts',
       'app/page.tsx',
       'app/robots.ts',
       'app/sitemap.ts',
