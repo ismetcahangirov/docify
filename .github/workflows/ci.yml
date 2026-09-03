@@ -107,6 +107,70 @@ jobs:
       - name: Check the bundle budget
         run: pnpm size
 
+  # The Lighthouse gate only runs when something that can change a score
+  # changed. It costs three production builds' worth of auditing, and a pull
+  # request that touches a router test or a memory model cannot move a number in
+  # it. `ui_changed` is computed once, here, so the job below has a single
+  # condition rather than a `paths` filter that would gate the whole workflow.
+  ui-changes:
+    name: ui-changes
+    needs: preflight
+    if: needs.preflight.outputs.has_app == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      ui_changed: ${{ steps.check.outputs.ui_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The merge base has to be in the clone for the diff below to have
+          # something to compare against.
+          fetch-depth: 0
+      - id: check
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: |
+          if [ -z "$BASE" ]; then
+            # A push to main: audit it, since nothing else will.
+            echo "ui_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only "$BASE" "${{ github.sha }}")
+          echo "Changed files:"; echo "$CHANGED"
+
+          if echo "$CHANGED" | grep -qE '^(app/|components/|public/|next\.config\.ts|lighthouserc\.cjs|package\.json)'; then
+            echo "ui_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ui_changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No UI file changed — skipping the Lighthouse audit."
+          fi
+
+  lighthouse:
+    name: lighthouse
+    needs: [preflight, ui-changes]
+    if: needs.preflight.outputs.has_app == 'true' && needs.ui-changes.outputs.ui_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # `lhci autorun` starts the server itself, audits each URL three times and
+      # asserts against lighthouserc.cjs. It exits non-zero on an `error`
+      # assertion and zero on a `warn`, which is the distinction that file makes
+      # deliberately — see the comment above `categories:performance`.
+      - run: pnpm exec lhci autorun
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-report
+          path: .lighthouseci/
+          retention-days: 7
+
   e2e:
     name: e2e
     needs: preflight

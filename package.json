@@ -22,6 +22,7 @@
     "test:watch": "vitest watch",
     "e2e": "playwright test",
     "size": "node scripts/bundle-budget/cli.mjs",
+    "lighthouse": "pnpm build && lhci autorun",
     "check:wasm": "node scripts/initial-bundle/cli.mjs",
     "prepare": "husky"
   },
@@ -45,6 +46,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",
+    "@lhci/cli": "^0.15.1",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/dom": "^10.4.1",
