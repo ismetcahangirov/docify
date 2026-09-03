@@ -25,6 +25,22 @@ export const SCANNED_EXTENSIONS = ['.css', '.ts', '.tsx', '.js', '.jsx', '.mjs',
  */
 export const THEME_FILE = 'app/globals.css'
 
+/**
+ * The one file outside {@link THEME_FILE} that may name a colour.
+ *
+ * The prohibition exists so that a colour is declared once and referred to by
+ * token everywhere else. That argument needs a stylesheet to be true, and the
+ * Open Graph cards are drawn by satori, which resolves no custom properties and
+ * reads no CSS at all: an `--color-ink` in an inline style there is not a token,
+ * it is a string satori does not understand, and the card renders transparent.
+ *
+ * So the palette is transcribed once, in this file, and
+ * `test/seo/og-theme.test.ts` asserts every value in it equals the `@theme`
+ * token of the same name — which is the property the rule was protecting.
+ * Named rather than matched by pattern, for the same reason as above.
+ */
+export const RASTER_PALETTE_FILE = 'lib/seo/og-theme.ts'
+
 /** Hex colour literal — 3, 4, 6 or 8 digits, the lengths CSS actually accepts. */
 const HEX = '#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\\b'
 
@@ -82,6 +98,7 @@ const GLASSMORPHISM =
  *   pattern: RegExp,
  *   message: string,
  *   allowedInTheme?: boolean,
+ *   allowedInRasterPalette?: boolean,
  * }} Rule
  *
  * @type {Rule[]}
@@ -155,6 +172,7 @@ const RULES = [
     languages: ['js'],
     pattern: new RegExp(`\\[[^\\]\\n]*${HEX}[^\\]\\n]*\\]|(['"\`])${HEX}\\1`, 'g'),
     message: `raw hex codes are forbidden — declare the colour in the @theme block of ${THEME_FILE}`,
+    allowedInRasterPalette: true,
   },
 ]
 
@@ -227,6 +245,7 @@ export function findViolations(filePath, source) {
   const language = languageOf(filePath)
   const masked = maskComments(source, language)
   const theme = filePath === THEME_FILE ? themeRange(masked) : null
+  const rasterPalette = filePath === RASTER_PALETTE_FILE
 
   const lineStarts = [0]
   for (let index = 0; index < masked.length; index += 1) {
@@ -242,6 +261,7 @@ export function findViolations(filePath, source) {
     for (const match of masked.matchAll(rule.pattern)) {
       const index = match.index ?? 0
       if (rule.allowedInTheme && theme && index > theme.start && index < theme.end) continue
+      if (rule.allowedInRasterPalette && rasterPalette) continue
 
       let line = lineStarts.length
       while (lineStarts[line - 1] > index) line -= 1

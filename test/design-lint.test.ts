@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { findViolations, THEME_FILE } from '../scripts/design-lint/rules.mjs'
+import { findViolations, RASTER_PALETTE_FILE, THEME_FILE } from '../scripts/design-lint/rules.mjs'
 import { collectFiles, scanSurface, SURFACE_ROOTS } from '../scripts/design-lint/scan.mjs'
 
 /*
@@ -164,6 +164,24 @@ describe('no-raw-hex', () => {
     expect(rulesFor('components/x.css', '@theme {\n  --color-x: #123456;\n}\n')).toEqual([
       'no-raw-hex',
     ])
+  })
+
+  it('allows a hex code in the raster palette, which satori cannot read a token from', () => {
+    // The one exception, and it is named rather than matched. `next/og` renders
+    // with no stylesheet and no custom properties, so a card drawn from tokens
+    // is a card drawn in nothing. test/seo/og-theme.test.ts is what keeps the
+    // transcription honest.
+    expect(rulesFor(RASTER_PALETTE_FILE, "export const OG_INK = '#0d0d0d'")).toEqual([])
+  })
+
+  it('flags the same hex code in any other module under lib/', () => {
+    expect(rulesFor('lib/seo/other.ts', "export const OG_INK = '#0d0d0d'")).toEqual(['no-raw-hex'])
+  })
+
+  it('still flags a blue in the raster palette, which no exception covers', () => {
+    // The exception is about where a colour may be *named*, not about which
+    // colours exist. A monochrome palette is monochrome in every file.
+    expect(rulesFor(RASTER_PALETTE_FILE, "const a = 'bg-blue-500'")).toEqual(['no-banned-hue'])
   })
 
   it('flags a hex code in a Tailwind arbitrary value', () => {
