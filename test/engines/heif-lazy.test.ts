@@ -9,7 +9,7 @@
 // production build; this catches it in milliseconds and says which module did
 // it.
 //
-// The walker is `test/worker/import-graph.ts`, the same one the worker shell's
+// The walker is `test/support/import-graph.ts`, the same one the worker shell's
 // own guard uses: it follows static imports and cuts at every `await import()`,
 // exactly where a bundler cuts a chunk.
 
@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { staticGraphOf, valueImportsOf } from '../worker/import-graph'
+import { staticGraphOf, valueImportsOf } from '../support/import-graph'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 

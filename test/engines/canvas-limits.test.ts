@@ -17,7 +17,7 @@ import { MAX_CANVAS_PIXELS, MAX_CANVAS_SIDE } from '@/lib/engines/canvas-limits'
 import { canvasSize } from '@/lib/engines/pdf-render-plan'
 import { assertBitmapFits } from '@/lib/engines/raster-limits'
 
-import { staticGraphOf } from '../worker/import-graph'
+import { staticGraphOf } from '../support/import-graph'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 

@@ -19,7 +19,7 @@ import {
 import { ENGINES, getEngine } from '@/lib/engines/registry'
 import type { Capabilities, ConversionTask, FormatId, Operation } from '@/lib/router/types'
 
-import { staticGraphOf } from '../worker/import-graph'
+import { staticGraphOf } from '../support/import-graph'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
