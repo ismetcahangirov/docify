@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  type ConversionEvent,
-  OUTCOMES,
-  parseConversionEvent,
-  SIZE_BUCKETS,
-  sizeBucket,
-} from '@/lib/db/events'
+import { type ConversionEvent, OUTCOMES, SIZE_BUCKETS, sizeBucket } from '@/lib/db/events'
+import { parseConversionEvent } from '@/lib/db/parse-event'
 import { PAIR_SLUGS } from '@/lib/registry/pairs'
 
 /*

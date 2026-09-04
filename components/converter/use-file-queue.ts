@@ -13,6 +13,7 @@ import { budgetBytes } from '@/lib/router/budget'
 import { probeCapabilities } from '@/lib/router/capabilities'
 import { route } from '@/lib/router/route'
 import type { Capabilities, ConversionTask, EngineId, RouteFile } from '@/lib/router/types'
+import { reportConversion } from '@/lib/stats/report'
 import { cancelConversion, startConversion } from '@/lib/worker/jobs'
 
 /*
@@ -145,6 +146,11 @@ export function useFileQueue(): FileQueue {
           },
         })
 
+        // A refusal is a conversion that did not happen, which is exactly the
+        // kind of thing the figures should show. Anonymous, and never awaited —
+        // see lib/stats/report.ts.
+        reportConversion(task, job.file.size, 'failure')
+
         return
       }
 
@@ -234,6 +240,7 @@ async function convert(run: ConvertRun): Promise<void> {
     const blob = await result
     markLoaded()
     dispatch({ type: 'advance', id, event: 'succeed', at: Date.now(), patch: { result: blob } })
+    reportConversion(task, file.size, 'success')
   } catch (reason) {
     // A cancel is not a failure: the user asked for it, and the list already
     // moved the job back to `queued` when they did. Dispatching it again is
@@ -252,6 +259,7 @@ async function convert(run: ConvertRun): Promise<void> {
       at: Date.now(),
       patch: { failure: { message: describe(reason) } },
     })
+    reportConversion(task, file.size, 'failure')
   } finally {
     running.delete(id)
   }
