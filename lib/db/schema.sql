@@ -1,12 +1,13 @@
 -- Docify's entire server-side data model.
 --
--- One table of counters. No accounts, no sessions, no request log, and no
+-- Two tables of counters. No accounts, no sessions, no request log, and no
 -- column that could hold a file name, an address or a person — see CLAUDE.md
 -- section 2.1 and the plan's task 10.1. What follows is not a subset of a
 -- larger schema kept elsewhere; it is all of it.
 --
--- Apply it with `psql "$DATABASE_URL" -f lib/db/schema.sql`. Every statement is
--- idempotent, so re-applying it on a deploy is a no-op rather than an error.
+-- Apply it with `pnpm db:migrate`, or with
+-- `psql "$DATABASE_URL" -f lib/db/schema.sql`. Every statement is idempotent,
+-- so re-applying it on a deploy is a no-op rather than an error.
 --
 -- ## Why a row is a group and never a person
 --
@@ -57,3 +58,44 @@ create table if not exists conversion_totals (
 -- would be guessing.
 create index if not exists conversion_totals_day_idx
   on conversion_totals (day desc);
+
+-- ## The second counter: how often each page was opened (issue #102)
+--
+-- The analytics, and all of them. A row means "this page was opened this many
+-- times on this day", and it cannot mean anything narrower, because there is no
+-- column for anything narrower.
+--
+-- ## Why this is not a hosted analytics product
+--
+-- Every one of them counts *visitors*, and counting visitors means telling two
+-- of them apart. The usual mechanism is not a cookie any more — it is a daily
+-- rotating hash of the address and the user agent, which is a pseudonymous
+-- identifier however short its life. This file says, forty lines above, that it
+-- holds no IP address hashed or otherwise. Adopting a product that computes one
+-- somewhere else would make that sentence true about the database and false
+-- about the system.
+--
+-- So the answer here is narrower and honest: page views, not visitors. Two
+-- people opening a page and one person opening it twice are the same row, and
+-- there is no way to ask which happened. That is a real limit — it means
+-- "sessions", "bounce rate" and "returning visitors" are questions this schema
+-- cannot answer, ever — and it is the point rather than a shortcoming.
+--
+-- What it does answer is the only question the 124 conversion pages were built
+-- to raise: which of them anybody reaches. Search Console answers the same
+-- question for visitors arriving from Google; this answers it for everybody.
+--
+--   page   one of the site's own route paths, checked against the same list
+--          app/sitemap.ts publishes before the write (lib/db/parse-view.ts).
+--          Free text in a `text` column is how a counter becomes a log.
+--   day    a date, never a timestamp, for the reason given above.
+create table if not exists page_totals (
+  page text not null,
+  day date not null,
+  total bigint not null default 0,
+
+  primary key (page, day),
+
+  constraint page_totals_total_non_negative
+    check (total >= 0)
+);

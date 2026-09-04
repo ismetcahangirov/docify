@@ -16,6 +16,17 @@ import { OUTCOMES, SIZE_BUCKETS } from '@/lib/db/events'
  * guarding is not "the DDL is valid" — Neon will say so — but "the DDL declares
  * nothing that could identify anybody". A column that does not exist cannot be
  * filled in by a later route handler, and this file is what stops one appearing.
+ *
+ * ## Why the structural rules are applied per table
+ *
+ * They were written against a single table and asserted against the first one
+ * they found. `page_totals` (issue #102) made that a real gap rather than a
+ * theoretical one: a greedy match across two `create table` statements reads
+ * their columns as one list, and every rule downstream of it becomes vague.
+ *
+ * So the DDL is split into tables first, and each rule runs over each of them.
+ * `TABLES` is the allowlist: a third table fails this file until somebody adds
+ * it here, which is the point. Growing the data model should cost a decision.
  */
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -24,13 +35,23 @@ const schema = readFileSync(join(repoRoot, 'lib', 'db', 'schema.sql'), 'utf8')
 /** The DDL with comments stripped, so prose cannot satisfy a structural test. */
 const ddl = schema.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
 
-/** Every column declared in the one table, in declaration order. */
-const columns = (() => {
-  const body = ddl.match(/create table[^(]*\(([\s\S]*)\)\s*;/i)?.[1] ?? ''
-  return [...body.matchAll(/^\s{2}([a-z_]+)\s+(?:date|text|bigint|timestamptz)/gm)].map(
+/** Every table the data model is allowed to have. */
+const TABLES = ['conversion_totals', 'page_totals'] as const
+
+/** Each table's `create table` body, keyed by name. */
+const bodies = new Map(
+  [...ddl.matchAll(/create table if not exists (\w+)\s*\(([\s\S]*?)\n\)\s*;/g)].map((match) => [
+    match[1],
+    match[2],
+  ]),
+)
+
+/** Every column declared in one table, in declaration order. */
+function columnsOf(table: string): string[] {
+  return [...(bodies.get(table) ?? '').matchAll(/^\s{2}([a-z_]+)\s+(?:date|text|bigint)/gm)].map(
     (match) => match[1],
   )
-})()
+}
 
 /**
  * Words that have no business in an anonymous counter table.
@@ -58,13 +79,9 @@ const FORBIDDEN = [
 ]
 
 describe('lib/db/schema.sql', () => {
-  it('declares exactly one table', () => {
-    expect(ddl.match(/create table/gi) ?? []).toHaveLength(1)
-    expect(ddl).toMatch(/create table if not exists conversion_totals/i)
-  })
-
-  it('declares only the five documented columns', () => {
-    expect(columns).toEqual(['pair', 'outcome', 'size_bucket', 'day', 'total'])
+  it('declares exactly the tables the data model is allowed to have', () => {
+    expect([...bodies.keys()]).toEqual([...TABLES])
+    expect(ddl.match(/create table/gi) ?? []).toHaveLength(TABLES.length)
   })
 
   it('names nothing that could identify anybody', () => {
@@ -75,8 +92,49 @@ describe('lib/db/schema.sql', () => {
     }
   })
 
-  it('keys the counter on the four dimensions, so a row is a group and never a person', () => {
-    expect(ddl).toMatch(/primary key \(pair, outcome, size_bucket, day\)/i)
+  it.each(TABLES)('stores the date only in %s, never a time', (table) => {
+    // A timestamp is a fingerprint on a quiet day; a date is not.
+    expect(bodies.get(table)).toMatch(/^\s{2}day\s+date\b/m)
+  })
+
+  it('declares no time column anywhere', () => {
+    expect(ddl).not.toMatch(/timestamptz|timestamp\b|time\b/i)
+  })
+
+  it.each(TABLES)('counts %s with a non-negative bigint', (table) => {
+    expect(bodies.get(table)).toMatch(/^\s{2}total\s+bigint\s+not null default 0/m)
+    expect(bodies.get(table)).toMatch(/check \(total >= 0\)/i)
+  })
+
+  it.each(TABLES)('declares every column of %s not null, so no row means "unknown"', (table) => {
+    const declarations = [
+      ...(bodies.get(table) ?? '').matchAll(/^\s{2}[a-z_]+\s+(?:date|text|bigint)[^,\n]*/gm),
+    ]
+
+    expect(declarations.length).toBeGreaterThan(0)
+    for (const [declaration] of declarations) expect(declaration).toMatch(/not null/i)
+  })
+
+  it.each(TABLES)('keys %s on its dimensions, so a row is a group and never a person', (table) => {
+    const key = bodies
+      .get(table)
+      ?.match(/primary key \(([^)]*)\)/i)?.[1]
+      .split(',')
+      .map((column) => column.trim())
+
+    // Every column except the counter itself. A key that left one out would
+    // mean rows that differ in a dimension nobody can see.
+    expect(key).toEqual(columnsOf(table).filter((column) => column !== 'total'))
+  })
+
+  it('describes a conversion with the four dimensions and nothing else', () => {
+    expect(columnsOf('conversion_totals')).toEqual([
+      'pair',
+      'outcome',
+      'size_bucket',
+      'day',
+      'total',
+    ])
   })
 
   it('constrains outcome to the two values the client can send', () => {
@@ -89,33 +147,25 @@ describe('lib/db/schema.sql', () => {
     expect(ddl).toMatch(/check \(size_bucket in \('xs', 's', 'm', 'l', 'xl'\)\)/i)
   })
 
-  it('stores the date only, never a time', () => {
-    // A timestamp is a fingerprint on a quiet day; a date is not.
-    expect(ddl).toMatch(/^\s{2}day\s+date\b/m)
-    expect(ddl).not.toMatch(/timestamptz|timestamp\b|time\b/i)
-  })
-
-  it('counts with a non-negative bigint', () => {
-    expect(ddl).toMatch(/^\s{2}total\s+bigint\s+not null default 0/m)
-    expect(ddl).toMatch(/check \(total >= 0\)/i)
-  })
-
-  it('declares every column not null, so no row can mean "unknown"', () => {
-    const body = ddl.match(/create table[^(]*\(([\s\S]*)\)\s*;/i)?.[1] ?? ''
-    const declarations = [...body.matchAll(/^\s{2}[a-z_]+\s+(?:date|text|bigint)[^,\n]*/gm)]
-
-    expect(declarations).toHaveLength(5)
-    for (const [declaration] of declarations) expect(declaration).toMatch(/not null/i)
+  it('describes a page view with a page and a day and nothing else', () => {
+    // No referrer, no entry page, no duration, no visitor of any kind. Two
+    // people opening a page and one person opening it twice are the same row,
+    // and there is deliberately no way to ask which happened.
+    expect(columnsOf('page_totals')).toEqual(['page', 'day', 'total'])
   })
 
   it('is idempotent, so applying it twice is not an error', () => {
-    expect(ddl).toMatch(/create table if not exists/i)
+    expect(ddl.match(/create table/gi) ?? []).toHaveLength(
+      (ddl.match(/create table if not exists/gi) ?? []).length,
+    )
     for (const [statement] of ddl.matchAll(/create index[^;]*/gi)) {
       expect(statement).toMatch(/if not exists/i)
     }
   })
 
   it('indexes what GET /api/stats reads and nothing else', () => {
+    // `page_totals` has no reader on a hot path — `pnpm analytics` runs once,
+    // by hand — and an index added before there is a query to serve is a guess.
     expect(ddl.match(/create index/gi) ?? []).toHaveLength(1)
     expect(ddl).toMatch(/on conversion_totals \(day desc\)/i)
   })

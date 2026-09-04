@@ -140,9 +140,14 @@ describe('the client only ever sends the counter', () => {
       .map((file) => relative(repoRoot, file).split(sep).join('/'))
 
     // CLAUDE.md §2.1 names `sendBeacon` as one of the APIs a file must never
-    // travel on. One module sends anything at all, its payload is asserted
-    // field by field in `test/stats/report.test.ts`, and a second one appearing
-    // here is a review that has to happen.
-    expect(files).toEqual(['lib/stats/report.ts'])
+    // travel on. Two modules send anything at all, and a third appearing here
+    // is a review that has to happen.
+    //
+    // `lib/analytics/report.ts` joined the list in issue #102 and this
+    // assertion is where that was noticed, which is the point of it. Its
+    // payload is one field — a path from the site's own route list — and it is
+    // asserted key by key in `test/analytics/report.test.ts`, the same way
+    // `test/stats/report.test.ts` asserts the counter's three.
+    expect(files).toEqual(['lib/analytics/report.ts', 'lib/stats/report.ts'])
   })
 })

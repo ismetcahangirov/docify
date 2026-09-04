@@ -61,12 +61,15 @@ describe('splitStatements', () => {
 })
 
 describe('readSchema', () => {
-  it('reads lib/db/schema.sql as the two statements it declares', () => {
-    const statements = readSchema()
-
-    expect(statements).toHaveLength(2)
-    expect(statements[0]).toMatch(/^create table if not exists conversion_totals/i)
-    expect(statements[1]).toMatch(/^create index if not exists conversion_totals_day_idx/i)
+  it('reads lib/db/schema.sql as one statement per object it declares', () => {
+    // Named rather than counted, so a `create` that stopped being split out —
+    // or one that appeared without anybody meaning it to — is visible here
+    // rather than as a silently shorter list.
+    expect(readSchema().map((statement) => statement.split('\n')[0].trim())).toEqual([
+      'create table if not exists conversion_totals (',
+      'create index if not exists conversion_totals_day_idx',
+      'create table if not exists page_totals (',
+    ])
   })
 
   it('carries no comment text into what gets sent to the server', () => {
