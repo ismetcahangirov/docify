@@ -7,28 +7,18 @@
  * file name if the only values that reach it come from a list of 125 slugs, a
  * list of five buckets and a list of two outcomes.
  *
- * ## Why the pair is validated against the registry
+ * ## Why the validation is next door
  *
- * `pair` is the one field that *looks* like free text. Left as a string, the
- * route handler would happily persist whatever a client sent — and the first
- * thing an unfriendly client sends to a `text` column is something that should
- * never have been written down. Checking it against `PAIR_SLUGS` closes that:
- * the column's domain is the same 125 values as the site's own routes, so the
- * strongest statement about the database is a structural one. There is nothing
- * in it that was not already public in `app/sitemap.ts`.
- *
- * ## Why a surplus field is a refusal
- *
- * Stripping unknown keys would work, and would be wrong. A client sending
- * `referrer` has misunderstood the contract; answering it with 202 lets the
- * misunderstanding grow until somebody assumes the field is being recorded.
- * A refusal is the only answer that stays true.
+ * This module is the *vocabulary*, and both sides of the wire share it — the
+ * browser builds an event here, the route handler checks one. `PAIR_SLUGS` is
+ * the registry, and the registry is not something a converter page should be
+ * dragging into its client bundle for the sake of one counter. So the check
+ * against it lives in `lib/db/parse-event.ts`, which only the server imports,
+ * and this file stays pure constants and one pure function.
  *
  * Pure, and free of any database import — `lib/db/stats.ts` is what talks to
  * Neon, and everything worth arguing about is decided here first.
  */
-
-import { PAIR_SLUGS } from '@/lib/registry/pairs'
 
 /** How a conversion ended. Two values; there is no third. */
 export const OUTCOMES = ['success', 'failure'] as const
@@ -59,9 +49,6 @@ export interface ConversionEvent {
   bucket: SizeBucket
 }
 
-/** The fields an event may carry. Anything else is a refusal, not a strip. */
-const FIELDS = ['pair', 'outcome', 'bucket'] as const
-
 /**
  * Which bucket a source file of `bytes` falls in.
  *
@@ -76,31 +63,4 @@ export function sizeBucket(bytes: number): SizeBucket {
   const index = BUCKET_CEILINGS.findIndex((ceiling) => bytes < ceiling)
 
   return index === -1 ? SIZE_BUCKETS[SIZE_BUCKETS.length - 1] : SIZE_BUCKETS[index]
-}
-
-/** Whether `value` is one of the members of `allowed`. */
-function isMember<T extends string>(allowed: readonly T[], value: unknown): value is T {
-  return typeof value === 'string' && (allowed as readonly string[]).includes(value)
-}
-
-/**
- * The event `value` describes, or `null` when it describes none.
- *
- * The only way into `lib/db/stats.ts`. A `null` here is the difference between
- * a counter table whose contents are entirely predictable from the sitemap and
- * one whose contents are whatever a client felt like sending.
- */
-export function parseConversionEvent(value: unknown): ConversionEvent | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
-
-  const keys = Object.keys(value)
-  if (keys.length !== FIELDS.length || !FIELDS.every((field) => keys.includes(field))) return null
-
-  const { pair, outcome, bucket } = value as Record<(typeof FIELDS)[number], unknown>
-
-  if (typeof pair !== 'string' || !PAIR_SLUGS.includes(pair)) return null
-  if (!isMember(OUTCOMES, outcome)) return null
-  if (!isMember(SIZE_BUCKETS, bucket)) return null
-
-  return { pair, outcome, bucket }
 }

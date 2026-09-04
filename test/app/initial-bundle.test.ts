@@ -31,6 +31,18 @@ import { staticGraphOfAll } from '../support/import-graph'
  * downloads. Walking it would put those in the list below and make this guard
  * say the opposite of what is true.
  *
+ * ## Why `app/api/` is walked separately rather than not at all
+ *
+ * A route handler under `app/api/` is server code. Whatever it imports, no
+ * browser downloads it, so counting `@neondatabase/serverless` (#84) against
+ * the first paint would be the same lie `opengraph-image` would tell. Dropping
+ * those entries entirely would be a different lie: an engine imported by an API
+ * route is a server-side conversion, which CLAUDE.md §2.1 forbids outright, and
+ * a guard that stopped looking there would be the last thing to notice.
+ *
+ * So there are two walks and two pinned lists. The first is what a visitor
+ * pays for. The second is what the server is allowed to reach.
+ *
  * ## Why the package list is pinned rather than pattern-matched
  *
  * The worker guard asks whether anything *heavy* leaked, with a regular
@@ -85,13 +97,22 @@ function appEntries(directory = join(repoRoot, 'app')): string[] {
 }
 
 const entries = appEntries()
-const graph = staticGraphOfAll(entries, repoRoot)
+
+/** Route handlers under `app/api/`: server-only, and never in a client bundle. */
+const apiEntries = entries.filter((entry) => entry.startsWith('app/api/'))
+
+/** Everything a visitor's first paint can reach. */
+const clientEntries = entries.filter((entry) => !entry.startsWith('app/api/'))
+
+const graph = staticGraphOfAll(clientEntries, repoRoot)
+const apiGraph = staticGraphOfAll(apiEntries, repoRoot)
 
 describe('the entries the walk starts from', () => {
   it('finds every route file the app ships', () => {
     // Asserted rather than assumed: an empty entry list would make every
     // assertion below pass, which is the failure mode a membership guard has.
     expect(entries).toEqual([
+      'app/api/stats/route.ts',
       'app/convert/[pair]/page.tsx',
       'app/convert/page.tsx',
       'app/layout.tsx',
@@ -101,6 +122,14 @@ describe('the entries the walk starts from', () => {
       'app/sitemap.ts',
       'app/tools/page.tsx',
     ])
+  })
+
+  it('splits them into what a visitor downloads and what only the server runs', () => {
+    // `app/llms.txt/route.ts` is a route handler too, and it belongs on the
+    // client side of this line: it renders a document a crawler fetches, not an
+    // API. The split is `app/api/`, not the `route` convention.
+    expect(apiEntries).toEqual(['app/api/stats/route.ts'])
+    expect(clientEntries).toContain('app/llms.txt/route.ts')
   })
 
   it('walks a graph large enough to be believable', () => {
@@ -171,5 +200,25 @@ describe('the initial bundle', () => {
     expect(graph.files).not.toContain('components/converter/converter.tsx')
     expect(graph.files).not.toContain('lib/worker/client.ts')
     expect(graph.files).not.toContain('lib/router/route.ts')
+  })
+})
+
+describe('the API surface', () => {
+  it('costs exactly these dependencies and no others', () => {
+    // Pinned for the same reason as the list above, and read the same way: a
+    // package appearing here is a decision about what a Docify server links
+    // against, and it should read like one in the diff.
+    expect(apiGraph.packages).toEqual(['@neondatabase/serverless', 'node:crypto'])
+  })
+
+  it('reaches no engine, because the server converts nothing', () => {
+    // CLAUDE.md §2.1 as a membership test. An engine module reachable from a
+    // route handler is server-side processing whether or not it ever runs.
+    expect(apiGraph.files.filter((file) => file.startsWith('lib/engines/'))).toEqual([])
+    expect(apiGraph.files).not.toContain('lib/worker/client.ts')
+  })
+
+  it('reaches no component, so nothing it imports can drift into a page', () => {
+    expect(apiGraph.files.filter((file) => file.startsWith('components/'))).toEqual([])
   })
 })
