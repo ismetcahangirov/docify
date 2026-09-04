@@ -4,6 +4,7 @@ import { pipeline } from 'node:stream/promises'
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web'
 
 import { readConfig } from './config.js'
+import { createGuardedFetch } from './guarded-fetch.js'
 import { handleRequest } from './proxy.js'
 
 /**
@@ -24,9 +25,11 @@ import { handleRequest } from './proxy.js'
  *
  * ## Deployment
  *
- * Render, per the plan's task 10.5, and the actual deploy is issue #100. The
- * service must not go up before #88 lands: without the SSRF guard it will
- * happily fetch `http://169.254.169.254/` for anyone who asks.
+ * Render, per the plan's task 10.5. The actual deploy is issue #100.
+ *
+ * The upstream fetch is `createGuardedFetch`, never the global one: the global
+ * `fetch` cannot be told which address to connect to, and that is what closes
+ * DNS rebinding (issue #88, `safe-lookup.ts`).
  */
 
 /** The Web `Request` that a Node request describes. */
@@ -77,11 +80,12 @@ export function start(
   env: Record<string, string | undefined> = process.env,
 ): ReturnType<typeof createServer> {
   const config = readConfig(env)
+  const guardedFetch = createGuardedFetch(config)
 
   const server = createServer((incoming, outgoing) => {
     const origin = `http://${incoming.headers.host ?? 'localhost'}`
 
-    void handleRequest(toWebRequest(incoming, origin), config, fetch)
+    void handleRequest(toWebRequest(incoming, origin), config, guardedFetch)
       .then((response) => send(response, outgoing))
       .catch(() => {
         // Nothing above should throw; if it does, the client gets a status
