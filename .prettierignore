@@ -11,9 +11,3 @@ pnpm-lock.yaml
 # unrelated to the app. Mirrored in the `ignores` list of eslint.config.mjs.
 # See issue #7.
 .claude/
-
-# Markdown is deliberately out of the enforced format surface for now.
-# Prettier realigns every Markdown table, which would rewrite CLAUDE.md,
-# README.md and the plan document wholesale and collide with the branches
-# currently open against EPIC 1. The one-off sweep is tracked in issue #111.
-*.md

@@ -32,7 +32,7 @@ The corpus is generated from a seeded PRNG. Sizes are reproducible to the byte;
 the PDF bytes themselves are not, because pdf-lib stamps a `CreationDate` on
 every document it writes.
 
-The images → PDF scenarios also report the *decoded* pixels they put through
+The images → PDF scenarios also report the _decoded_ pixels they put through
 pdf-lib, and two extra columns derived from them. That is the axis the input
 bytes cannot predict, and the one `lib/engines/raster-limits.ts` bounds — see
 "the decoded-pixel ceiling" below. Only PNG is counted: `embedJpg` never runs a
@@ -42,15 +42,15 @@ decoder, so a JPEG's pixels cost nothing here.
 
 110 files, 714 471 728 bytes.
 
-| Group | What it is | Why |
-| --- | --- | --- |
-| `vector-000..029.pdf` | 8 pages of Helvetica, ~13 kB each | Reports and invoices: tiny files, large object graphs |
-| `scan-000..029.pdf` | 4 pages, one 1224 × 1584 bitmap each, ~15 MB | Photographed paperwork — what a hundred-file merge is made of |
-| `scan-large.pdf` | 20 scanned pages, 78 MB | The single big document |
-| `vector-large.pdf` | 200 text pages, 0.3 MB | Page count without bytes |
-| `photo-000..023.jpg` | 4000 × 3000, 2.4 MB each | Camera output, for images → PDF |
-| `shot-000..011.png` | 1500 × 2000 of grain, 9 MB each | A photograph saved as PNG |
-| `flat-000..011.png` | 1500 × 2000 of gradient, 64 kB each | A screenshot: same pixels, a hundredth of the bytes |
+| Group                 | What it is                                   | Why                                                           |
+| --------------------- | -------------------------------------------- | ------------------------------------------------------------- |
+| `vector-000..029.pdf` | 8 pages of Helvetica, ~13 kB each            | Reports and invoices: tiny files, large object graphs         |
+| `scan-000..029.pdf`   | 4 pages, one 1224 × 1584 bitmap each, ~15 MB | Photographed paperwork — what a hundred-file merge is made of |
+| `scan-large.pdf`      | 20 scanned pages, 78 MB                      | The single big document                                       |
+| `vector-large.pdf`    | 200 text pages, 0.3 MB                       | Page count without bytes                                      |
+| `photo-000..023.jpg`  | 4000 × 3000, 2.4 MB each                     | Camera output, for images → PDF                               |
+| `shot-000..011.png`   | 1500 × 2000 of grain, 9 MB each              | A photograph saved as PNG                                     |
+| `flat-000..011.png`   | 1500 × 2000 of gradient, 64 kB each          | A screenshot: same pixels, a hundredth of the bytes           |
 
 Two deliberate compromises, both of which change what a result means:
 
@@ -66,15 +66,15 @@ Two deliberate compromises, both of which change what a result means:
 
 ## What is measured here and what is not
 
-| Engine | Status |
-| --- | --- |
-| `pdflib` | **Measured**, four operations, below |
-| `zip` | **Measured** through `fflate` directly, which is what the engine will be built on |
-| `pdfjs` | **Half measured.** Parsing runs in Node; rendering needs a canvas, so the render term is an estimate — see below |
-| `canvas`, `heif` | **Measured in a browser**, by `browser-memory-measure.mjs` — see "the browser harness". Their `bytesPerPixel` and `heif`'s reserve come from it; their byte factors are the pixel-less fallback and remain unmeasured |
-| `vips` | **Not measured.** It streams scanline regions and never materialises a bitmap, so it charges nothing per pixel and is exempt from the ceiling in the engines |
-| `webcodecs` | **Not measured — derived.** The engine ships (#47), and its 2.5 did not survive contact with it: the pipeline holds the file rather than streaming it past. The 4 that replaced it (#210) is counted off what is live at the muxing peak, the same way `remux` is, and the count is written out in `lib/router/budget.ts`. Releasing the demuxed source as the decoder consumes it (`lib/engines/mp4-samples.ts`) is what keeps it at four terms rather than five |
-| `ffmpeg`, `libarchive` | **Not measured.** Neither has a Node stand-in worth measuring, and `libarchive` has no engine at all yet. Their factors and `holds` values are carried over and are as good as the guess that produced them |
+| Engine                 | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pdflib`               | **Measured**, four operations, below                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `zip`                  | **Measured** through `fflate` directly, which is what the engine will be built on                                                                                                                                                                                                                                                                                                                                                                                 |
+| `pdfjs`                | **Half measured.** Parsing runs in Node; rendering needs a canvas, so the render term is an estimate — see below                                                                                                                                                                                                                                                                                                                                                  |
+| `canvas`, `heif`       | **Measured in a browser**, by `browser-memory-measure.mjs` — see "the browser harness". Their `bytesPerPixel` and `heif`'s reserve come from it; their byte factors are the pixel-less fallback and remain unmeasured                                                                                                                                                                                                                                             |
+| `vips`                 | **Not measured.** It streams scanline regions and never materialises a bitmap, so it charges nothing per pixel and is exempt from the ceiling in the engines                                                                                                                                                                                                                                                                                                      |
+| `webcodecs`            | **Not measured — derived.** The engine ships (#47), and its 2.5 did not survive contact with it: the pipeline holds the file rather than streaming it past. The 4 that replaced it (#210) is counted off what is live at the muxing peak, the same way `remux` is, and the count is written out in `lib/router/budget.ts`. Releasing the demuxed source as the decoder consumes it (`lib/engines/mp4-samples.ts`) is what keeps it at four terms rather than five |
+| `ffmpeg`, `libarchive` | **Not measured.** Neither has a Node stand-in worth measuring, and `libarchive` has no engine at all yet. Their factors and `holds` values are carried over and are as good as the guess that produced them                                                                                                                                                                                                                                                       |
 
 That harness is `browser-memory-measure.mjs`: Playwright driving a
 cross-origin-isolated page through `performance.measureUserAgentSpecificMemory()`.
@@ -95,25 +95,25 @@ Measured 2026-08-14, Node 22.16.0, Windows 11, `--max-old-space-size=4096`.
 `peak` is `heapUsed + external` above a post-GC baseline. Two consecutive runs of
 the same corpus.
 
-| Scenario | Files | Input MB | Peak MB (run 1 / run 2) | peak+blob/in (run 1 / run 2) |
-| --- | ---: | ---: | ---: | ---: |
-| `merge-vector-30` | 30 | 0.4 | 10.2 / 10.2 | 28.4 / 28.3 |
-| `merge-scan-30` | 30 | 447.4 | 853.0 / 852.8 | **2.91 / 2.91** |
-| `merge-mixed-60` | 60 | 447.8 | 855.8 / 855.8 | **2.91 / 2.91** |
-| `merge-vector-100` | 100 | 1.2 | 24.8 / 25.7 | 20.9 / 21.6 |
-| `images-jpg-24` | 24 | 54.9 | 95.5 / 95.5 | **2.74 / 2.74** |
-| `images-png-12` | 12 | 103.0 | 184.1 / 184.1 | **2.79 / 2.79** |
-| `images-mixed-36` | 36 | 158.0 | 318.2 / 318.2 | **3.01 / 3.01** |
-| `images-flat-png-12` | 12 | 0.7 | 160.2 / 188.9 | **219 / 258** |
-| `organize-scan-large` | 1 | 74.6 | 151.7 / 151.7 | **3.03 / 3.03** |
-| `organize-vector-large` | 1 | 0.3 | 15.7 / 15.6 | 54.4 / 54.1 |
-| `split-scan-large` | 1 | 74.6 | 225.0 / 224.8 | **4.02 / 4.02** |
-| `split-vector-large` | 1 | 0.3 | 43.7 / 39.3 | 150.6 / 135.4 |
-| `archive-scan-30` | 30 | 447.4 | 864.0 / 864.0 | **2.93 / 2.93** |
-| `archive-vector-30` | 30 | 0.4 | 0.9 / 0.9 | **3.42 / 3.42** |
-| `pdfjs-scan-large` | 1 | 74.6 | 77.1 / 77.1 | 1.03 / 1.03 (parse only) |
-| `pdfjs-vector-large` | 1 | 0.3 | 33.4 / 34.4 | (parse only) |
-| `pdfjs-vector-small` | 1 | 0.013 | 17.8 / 17.8 | (parse only) |
+| Scenario                | Files | Input MB | Peak MB (run 1 / run 2) | peak+blob/in (run 1 / run 2) |
+| ----------------------- | ----: | -------: | ----------------------: | ---------------------------: |
+| `merge-vector-30`       |    30 |      0.4 |             10.2 / 10.2 |                  28.4 / 28.3 |
+| `merge-scan-30`         |    30 |    447.4 |           853.0 / 852.8 |              **2.91 / 2.91** |
+| `merge-mixed-60`        |    60 |    447.8 |           855.8 / 855.8 |              **2.91 / 2.91** |
+| `merge-vector-100`      |   100 |      1.2 |             24.8 / 25.7 |                  20.9 / 21.6 |
+| `images-jpg-24`         |    24 |     54.9 |             95.5 / 95.5 |              **2.74 / 2.74** |
+| `images-png-12`         |    12 |    103.0 |           184.1 / 184.1 |              **2.79 / 2.79** |
+| `images-mixed-36`       |    36 |    158.0 |           318.2 / 318.2 |              **3.01 / 3.01** |
+| `images-flat-png-12`    |    12 |      0.7 |           160.2 / 188.9 |                **219 / 258** |
+| `organize-scan-large`   |     1 |     74.6 |           151.7 / 151.7 |              **3.03 / 3.03** |
+| `organize-vector-large` |     1 |      0.3 |             15.7 / 15.6 |                  54.4 / 54.1 |
+| `split-scan-large`      |     1 |     74.6 |           225.0 / 224.8 |              **4.02 / 4.02** |
+| `split-vector-large`    |     1 |      0.3 |             43.7 / 39.3 |                150.6 / 135.4 |
+| `archive-scan-30`       |    30 |    447.4 |           864.0 / 864.0 |              **2.93 / 2.93** |
+| `archive-vector-30`     |    30 |      0.4 |               0.9 / 0.9 |              **3.42 / 3.42** |
+| `pdfjs-scan-large`      |     1 |     74.6 |             77.1 / 77.1 |     1.03 / 1.03 (parse only) |
+| `pdfjs-vector-large`    |     1 |      0.3 |             33.4 / 34.4 |                 (parse only) |
+| `pdfjs-vector-small`    |     1 |    0.013 |             17.8 / 17.8 |                 (parse only) |
 
 `images-flat-png-1`, `-3`, `-6` and `-24` are four more scenarios in the same
 harness. They sweep the job size of the flat-PNG row rather than adding anything
@@ -193,7 +193,7 @@ node docs/router/browser-memory-measure.mjs canvas-    # by prefix
 It builds its images with the generator `memory-corpus.mjs` exports, serves
 them from a local origin, and reads
 `performance.measureUserAgentSpecificMemory()` — the only API that reports what
-a *renderer* holds rather than what the JS heap holds, which is the whole point
+a _renderer_ holds rather than what the JS heap holds, which is the whole point
 here: a decoded `ImageBitmap` is not on the JS heap at all.
 
 Two launch conditions are not negotiable and cost an afternoon to find:
@@ -202,13 +202,13 @@ Two launch conditions are not negotiable and cost an afternoon to find:
    `Cross-Origin-Opener-Policy: same-origin` and
    `Cross-Origin-Embedder-Policy: require-corp` — the pair `next.config.ts`
    already sets on `/convert/*`.
-2. **A process-isolated origin.** Chromium's *old* headless mode does not lock a
+2. **A process-isolated origin.** Chromium's _old_ headless mode does not lock a
    renderer to a site and the call throws `SecurityError` there even though
    `crossOriginIsolated` is `true`. `channel: 'chromium'` selects the new
    headless, which works. Both were tried; the failure is reproducible.
 
 The API is asynchronous and cannot chase a peak the way the Node sampler does,
-so each scenario instead *holds* every allocation of its worst moment — source
+so each scenario instead _holds_ every allocation of its worst moment — source
 blob, decoded bitmap, canvas, encoded output — and measures there. That is the
 moment the engine occupies, and unlike a sampled peak it is reproducible.
 
@@ -222,16 +222,16 @@ arrive over HTTP for that reason.
 
 Measured 2026-08-31, Chromium 142 (Playwright 1.62.1, new headless), Windows 11.
 
-| scenario | in MB | Mpx | peak MB | peak/in | peak B/px |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `canvas-flat-1mpx` | 0.0 | 1.0 | 3.9 | 178.2 | 4.04 |
-| `canvas-flat-2mpx` | 0.0 | 2.0 | 7.7 | 187.0 | 4.02 |
-| `canvas-flat-6mpx` | 0.1 | 6.0 | 22.9 | 205.1 | 4.01 |
-| `canvas-flat-12mpx` | 0.2 | 12.0 | 45.8 | 214.7 | 4.00 |
-| `canvas-flat-24mpx` | 0.4 | 24.0 | 91.6 | 216.1 | 4.00 |
-| `canvas-noise-6mpx` | 17.2 | 6.0 | 22.9 | **1.3** | 4.01 |
-| `heif-module-only` | 0.0 | 0.0 | 20.5 | — | — |
-| `heif-fixture-64` | 0.0 | 0.0 | 20.6 | 43 209 | — |
+| scenario            | in MB |  Mpx | peak MB | peak/in | peak B/px |
+| ------------------- | ----: | ---: | ------: | ------: | --------: |
+| `canvas-flat-1mpx`  |   0.0 |  1.0 |     3.9 |   178.2 |      4.04 |
+| `canvas-flat-2mpx`  |   0.0 |  2.0 |     7.7 |   187.0 |      4.02 |
+| `canvas-flat-6mpx`  |   0.1 |  6.0 |    22.9 |   205.1 |      4.01 |
+| `canvas-flat-12mpx` |   0.2 | 12.0 |    45.8 |   214.7 |      4.00 |
+| `canvas-flat-24mpx` |   0.4 | 24.0 |    91.6 |   216.1 |      4.00 |
+| `canvas-noise-6mpx` |  17.2 |  6.0 |    22.9 | **1.3** |      4.01 |
+| `heif-module-only`  |   0.0 |  0.0 |    20.5 |       — |         — |
+| `heif-fixture-64`   |   0.0 |  0.0 |    20.6 |  43 209 |         — |
 
 Each scenario ran twice, once writing PNG and once writing JPEG; the two agree
 to three significant figures, which is what says the output format is not what
@@ -303,21 +303,21 @@ than off one point. Two consecutive runs, same machine and same Node flags as th
 table above. `peak+blob` is the browser-side peak; `/px` divides it by the
 decoded pixels rather than by the input bytes.
 
-| Scenario | Images | Input MB | Mpx | peak+blob MB (run 1 / run 2) | bytes/px (run 1 / run 2) |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `images-flat-png-1` | 1 | 0.06 | 3.0 | 32.1 / 32.1 | 11.21 / 11.21 |
-| `images-flat-png-3` | 3 | 0.18 | 9.0 | 75.6 / 72.3 | 8.81 / 8.42 |
-| `images-flat-png-6` | 6 | 0.37 | 18.0 | 118.2 / 121.1 | 6.88 / 7.06 |
-| `images-flat-png-12` | 12 | 0.73 | 36.0 | 192.7 / 149.6 | 5.61 / 4.36 |
-| `images-flat-png-24` | 24 | 1.47 | 72.0 | 269.0 / 242.9 | 3.92 / 3.54 |
-| `images-png-12` (grain) | 12 | 103.0 | 36.0 | 287.1 / 287.1 | 8.36 / 8.36 |
+| Scenario                | Images | Input MB |  Mpx | peak+blob MB (run 1 / run 2) | bytes/px (run 1 / run 2) |
+| ----------------------- | -----: | -------: | ---: | ---------------------------: | -----------------------: |
+| `images-flat-png-1`     |      1 |     0.06 |  3.0 |                  32.1 / 32.1 |            11.21 / 11.21 |
+| `images-flat-png-3`     |      3 |     0.18 |  9.0 |                  75.6 / 72.3 |              8.81 / 8.42 |
+| `images-flat-png-6`     |      6 |     0.37 | 18.0 |                118.2 / 121.1 |              6.88 / 7.06 |
+| `images-flat-png-12`    |     12 |     0.73 | 36.0 |                192.7 / 149.6 |              5.61 / 4.36 |
+| `images-flat-png-24`    |     24 |     1.47 | 72.0 |                269.0 / 242.9 |              3.92 / 3.54 |
+| `images-png-12` (grain) |     12 |    103.0 | 36.0 |                287.1 / 287.1 |              8.36 / 8.36 |
 
 Two things to read out of it, both of which decided the constant.
 
 **The per-pixel cost is not constant, and the worst of it is at the bottom.**
 pdf-lib costs ~32 MB before a single pixel is considered — the same allocation
 the 32 MB `reserveBytes` already describes — so one image looks like 11 bytes per
-pixel and twenty-four look like 4. A ceiling has to be right where it *binds*,
+pixel and twenty-four look like 4. A ceiling has to be right where it _binds_,
 which is where the curve crosses the smallest platform budget, not at either end.
 
 **The crossing is at 12 megapixels.** Taking the worse run: 9 Mpx peaks at
@@ -329,11 +329,11 @@ the ceiling at 11.8 Mpx, just inside the crossing.
 
 Checked at the other two budgets rather than assumed to scale:
 
-| Budget | Ceiling at 8 B/px | Measured peak there | Verdict |
-| --- | ---: | ---: | --- |
-| iOS, 90 MB | 11.8 Mpx | ~90 MB (interpolated) | binds exactly |
-| Android / desktop floor, 140 MB | 18.4 Mpx | 118 MB at 18 Mpx | 22 MB of headroom |
-| Desktop cap, 1200 MB | 157 Mpx | ~470 MB extrapolated | conservative by 2.5× |
+| Budget                          | Ceiling at 8 B/px |   Measured peak there | Verdict              |
+| ------------------------------- | ----------------: | --------------------: | -------------------- |
+| iOS, 90 MB                      |          11.8 Mpx | ~90 MB (interpolated) | binds exactly        |
+| Android / desktop floor, 140 MB |          18.4 Mpx |      118 MB at 18 Mpx | 22 MB of headroom    |
+| Desktop cap, 1200 MB            |           157 Mpx |  ~470 MB extrapolated | conservative by 2.5× |
 
 Conservative at the top end is the safe direction: the desktop budget is the one
 platform where an over-tight ceiling costs a user something, and 157 Mpx is a
@@ -368,7 +368,7 @@ the desktop floor.
 When it is absent, `DEFAULT_BUDGET_BYTES` applies, and that is
 `DESKTOP_BUDGET_FLOOR_BYTES` (140 MB) rather than the iOS ceiling. That is a
 deliberate departure from "assume the weakest device", and the reason is that
-this is a *second* bound on an axis the router cannot see, not a replacement for
+this is a _second_ bound on an axis the router cannot see, not a replacement for
 the router's own check — that one already ran, against the real device budget, on
 the job's bytes. Assuming a phone here would refuse, on a workstation, a job
 measured at 118 MB against a 1200 MB allowance. The floor still refuses the
@@ -384,7 +384,7 @@ only pdf-lib's per-pixel cost has been measured.
 
 `canvas` and `heif` are bounded by `assertBitmapFits` instead: at most
 16 384 px on a side and 67.1 Mpx in total, which is what a browser canvas can
-hold before it silently returns a blank surface. That is a *fact* rather than an
+hold before it silently returns a blank surface. That is a _fact_ rather than an
 estimate, it is the same pair of numbers `canvasSize()` in `pdf-render-plan.ts`
 already uses, and it refuses a file no browser could have rendered anyway.
 
@@ -414,12 +414,12 @@ Every one of them is before the allocation it guards, which is the only placemen
 worth having — an out-of-memory inside a browser decoder is a blank tab, not a
 catchable error.
 
-| Engine | Reads the size from | Refuses before |
-| --- | --- | --- |
-| `pdf-from-images` | the PNG `IHDR` | `embedPng` |
-| `canvas` | the PNG `IHDR`, JPEG `SOF0` or WebP `VP8X`/`VP8 ` | `createImageBitmap` |
-| `canvas` (again) | the decoded `ImageBitmap` | `new OffscreenCanvas` |
-| `heif` | libheif's own `get_width`/`get_height` | `new Uint8ClampedArray(w * h * 4)` |
+| Engine            | Reads the size from                               | Refuses before                     |
+| ----------------- | ------------------------------------------------- | ---------------------------------- |
+| `pdf-from-images` | the PNG `IHDR`                                    | `embedPng`                         |
+| `canvas`          | the PNG `IHDR`, JPEG `SOF0` or WebP `VP8X`/`VP8 ` | `createImageBitmap`                |
+| `canvas` (again)  | the decoded `ImageBitmap`                         | `new OffscreenCanvas`              |
+| `heif`            | libheif's own `get_width`/`get_height`            | `new Uint8ClampedArray(w * h * 4)` |
 
 The second canvas row is not redundancy. A browser also decodes BMP, AVIF and,
 on Apple hardware, HEIC, and `lib/engines/raster-size.ts` has no reader for any
@@ -438,8 +438,8 @@ above. These are the holes that are still open:
   its cost scales with page count. `split-vector-large` is 200 pages of 0.3 MB
   peaking at 44 MB, which the model under-predicts by 10 MB.
 - `pdf-render` accumulates every encoded page for the same reason.
-- A `one-at-a-time` engine is budgeted on its largest *input*, and nothing budgets
-  the *outputs* a long batch accumulates. Converting 300 images holds one bitmap
+- A `one-at-a-time` engine is budgeted on its largest _input_, and nothing budgets
+  the _outputs_ a long batch accumulates. Converting 300 images holds one bitmap
   at a time and 300 result blobs by the end. Browsers spill large blobs to disk,
   which is why this is a note rather than a factor, but it is a permission the
   multi-file budget grants and did not grant before.
