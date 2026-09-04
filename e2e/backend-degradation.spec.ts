@@ -11,7 +11,7 @@ import { fixtureFile } from './support/fixture-file'
  * the critical path*, and `test/app/backend-degradation.test.ts` checks that
  * one module at a time. This is the claim the unit suites structurally cannot
  * make: a real page, a real Web Worker, a real engine, a real file — with every
- * request to `/api/stats` failing at the network layer, the way it would if
+ * request to a backend endpoint failing at the network layer, the way it would if
  * Neon were down, the function were cold-starting into an error, or the visitor
  * were behind a filter that blocks the path.
  *
@@ -53,6 +53,16 @@ const SOURCE = fixtureFile(
 /** Chromium's own network-stack log for a request that never completed. */
 const BROWSER_NETWORK_LOG = /^Failed to load resource: net::ERR_/
 
+/**
+ * Every call the app makes to a server, and therefore everything this suite
+ * has to break to be about an unreachable backend.
+ *
+ * Two of them since issue #102: the conversion counter, sent once a job ends,
+ * and the page counter, sent once a page is opened. Breaking only the first
+ * would leave the second working and the claim half-tested.
+ */
+const BACKEND_PATHS = ['/api/stats', '/api/views'] as const
+
 interface PageErrors {
   /** Anything the page threw and nobody caught. Never acceptable. */
   thrown: string[]
@@ -69,7 +79,8 @@ function watchForErrors(page: Page): PageErrors {
     // The browser's own line about the abort is attributed to the URL that
     // failed, so excluding it by URL cannot also hide an error our code logged.
     const isTheAbort =
-      BROWSER_NETWORK_LOG.test(message.text()) && message.location().url.includes('/api/stats')
+      BROWSER_NETWORK_LOG.test(message.text()) &&
+      BACKEND_PATHS.some((path) => message.location().url.includes(path))
 
     if (!isTheAbort) errors.logged.push(message.text())
   })
@@ -80,21 +91,26 @@ function watchForErrors(page: Page): PageErrors {
 }
 
 /**
- * Makes `/api/stats` unreachable, and counts the attempts.
+ * Makes every backend call unreachable, and counts the attempts to each.
  *
- * The count is what stops this suite passing vacuously: an app that had quietly
- * stopped reporting anything would survive a broken endpoint trivially, and
- * would tell us nothing about what happens when a real one breaks.
+ * The counts are what stop this suite passing vacuously: an app that had
+ * quietly stopped reporting anything would survive a broken endpoint trivially,
+ * and would tell us nothing about what happens when a real one breaks.
+ *
+ * Counted per path rather than in total, so a page counter that fired twice
+ * could not stand in for a conversion counter that never fired at all.
  */
-async function breakTheBackend(page: Page): Promise<{ attempts: () => number }> {
-  let attempts = 0
+async function breakTheBackend(page: Page): Promise<{ attempts: (path: string) => number }> {
+  const attempts = new Map<string, number>(BACKEND_PATHS.map((path) => [path, 0]))
 
-  await page.route('**/api/stats**', async (route) => {
-    attempts += 1
-    await route.abort('failed')
-  })
+  for (const path of BACKEND_PATHS) {
+    await page.route(`**${path}**`, async (route) => {
+      attempts.set(path, (attempts.get(path) ?? 0) + 1)
+      await route.abort('failed')
+    })
+  }
 
-  return { attempts: () => attempts }
+  return { attempts: (path) => attempts.get(path) ?? 0 }
 }
 
 test.describe('with the backend unreachable', () => {
@@ -114,9 +130,10 @@ test.describe('with the backend unreachable', () => {
       timeout: 60_000,
     })
 
-    // The counter was attempted and failed, so the assertion above is about a
-    // broken backend rather than about an app that never calls one.
-    expect(backend.attempts()).toBeGreaterThan(0)
+    // Both counters were attempted and both failed, so the assertion above is
+    // about a broken backend rather than about an app that never calls one.
+    expect(backend.attempts('/api/stats')).toBeGreaterThan(0)
+    expect(backend.attempts('/api/views')).toBeGreaterThan(0)
 
     // No apology appeared next to a conversion that worked. Asserted on the
     // card's own failure block rather than on the words: a conversion page is
@@ -166,6 +183,14 @@ test.describe('the figures endpoint', () => {
     const response = await request.post('/api/stats', {
       data: { pair: 'bmp-to-jpg', outcome: 'success', bucket: 'xs' },
     })
+
+    expect(response.status()).toBe(202)
+  })
+
+  test('accepts a page view it cannot store', async ({ request }) => {
+    // The second counter (#102), held to the same rule: the caller cannot tell
+    // that there is nothing behind it, and must not be able to.
+    const response = await request.post('/api/views', { data: { page: '/convert/bmp-to-jpg' } })
 
     expect(response.status()).toBe(202)
   })

@@ -141,6 +141,20 @@ test.describe('the canvas engine in a real browser', () => {
       bitmap.close()
     })
 
-    expect(requests).toEqual([])
+    // The property under test is that the *canvas engine* fetches nothing: no
+    // WASM, no worker chunk, no asset. It is not that the page is silent.
+    //
+    // The page-view beacon (#102) is scheduled behind `requestIdleCallback`, so
+    // it lands at whatever moment the browser next goes idle — sometimes inside
+    // this window and sometimes after it. Asserting on every request made this
+    // a race the moment the app started making any (#258).
+    //
+    // Excluded by name and only by name. Anything else still fails, and the
+    // second assertion is what stops this exclusion quietly widening later.
+    const ANALYTICS = `${new URL(page.url()).origin}/api/views`
+    const conversionRequests = requests.filter((url) => url !== ANALYTICS)
+
+    expect(conversionRequests).toEqual([])
+    expect(requests.filter((url) => url === ANALYTICS).length).toBeLessThanOrEqual(1)
   })
 })
