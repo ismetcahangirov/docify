@@ -14,14 +14,14 @@ what it found the first time it was run.
 ## Why an audit that reads the output
 
 There were already four SEO guards in this repository before this one, and all
-four assert about the *inputs*:
+four assert about the _inputs_:
 
-| Guard | What it proves |
-| --- | --- |
-| `test/seo/metadata.test.ts` | the title and description **generator** is correct for all 124 pairs |
-| `test/app/sitemap.test.ts` | the **sitemap** lists every page, at the URL each page calls canonical |
-| `test/registry/copy.test.ts` | the **copy** is unique, long enough, and exists for every pair |
-| `scripts/check-content-uniqueness` | no two pages **overlap** by more than 40% of their four-word shingles |
+| Guard                              | What it proves                                                         |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| `test/seo/metadata.test.ts`        | the title and description **generator** is correct for all 124 pairs   |
+| `test/app/sitemap.test.ts`         | the **sitemap** lists every page, at the URL each page calls canonical |
+| `test/registry/copy.test.ts`       | the **copy** is unique, long enough, and exists for every pair         |
+| `scripts/check-content-uniqueness` | no two pages **overlap** by more than 40% of their four-word shingles  |
 
 Every one of them would keep passing if Next.js stopped emitting the canonical
 tag, if a `<meta name="robots">` arrived from somewhere nobody looked, or if a
@@ -39,31 +39,31 @@ place.
 
 Per page, in `scripts/seo-audit/rules.mjs`:
 
-| Rule | Severity | What fails it |
-| --- | --- | --- |
-| `html-lang` | critical | `<html>` with no `lang` |
-| `viewport` | critical | no viewport meta |
-| `title` | critical | no `<title>` |
-| `title-length` | warning | over 60 characters, so a result truncates it |
-| `description` | critical | an indexable page with no meta description |
-| `description-length` | warning | under 140 (Google rewrites it) or over 160 (it is cut) |
-| `canonical` | critical | absent, or naming an address other than the one the page is served at |
-| `robots` | critical | an indexable page asking for `noindex`, or a `noindex` page not asking |
-| `h1` | critical | no `<h1>`, or more than one |
-| `heading-order` | warning | a level skipped, `h1` straight to `h3` |
-| `open-graph` | critical | a missing `og:title`, `og:description`, `og:image` or `og:url` |
-| `open-graph` | warning | `og:url` disagreeing with the canonical |
-| `twitter` | warning | no `twitter:card`, so a link previews as a bare title |
-| `structured-data` | critical | a conversion page with no JSON-LD, JSON-LD that does not parse, or missing one of `SoftwareApplication`, `HowTo`, `FAQPage`, `BreadcrumbList` |
-| `dead-end` | critical | an indexable page that links nowhere else on the site |
+| Rule                 | Severity | What fails it                                                                                                                                 |
+| -------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `html-lang`          | critical | `<html>` with no `lang`                                                                                                                       |
+| `viewport`           | critical | no viewport meta                                                                                                                              |
+| `title`              | critical | no `<title>`                                                                                                                                  |
+| `title-length`       | warning  | over 60 characters, so a result truncates it                                                                                                  |
+| `description`        | critical | an indexable page with no meta description                                                                                                    |
+| `description-length` | warning  | under 140 (Google rewrites it) or over 160 (it is cut)                                                                                        |
+| `canonical`          | critical | absent, or naming an address other than the one the page is served at                                                                         |
+| `robots`             | critical | an indexable page asking for `noindex`, or a `noindex` page not asking                                                                        |
+| `h1`                 | critical | no `<h1>`, or more than one                                                                                                                   |
+| `heading-order`      | warning  | a level skipped, `h1` straight to `h3`                                                                                                        |
+| `open-graph`         | critical | a missing `og:title`, `og:description`, `og:image` or `og:url`                                                                                |
+| `open-graph`         | warning  | `og:url` disagreeing with the canonical                                                                                                       |
+| `twitter`            | warning  | no `twitter:card`, so a link previews as a bare title                                                                                         |
+| `structured-data`    | critical | a conversion page with no JSON-LD, JSON-LD that does not parse, or missing one of `SoftwareApplication`, `HowTo`, `FAQPage`, `BreadcrumbList` |
+| `dead-end`           | critical | an indexable page that links nowhere else on the site                                                                                         |
 
 Across the whole set:
 
-| Rule | Severity | What fails it |
-| --- | --- | --- |
-| `broken-link` | critical | an internal link to a URL the build did not produce |
-| `duplicate-title` | critical | two indexable pages with the same `<title>` |
-| `duplicate-description` | critical | two indexable pages with the same description |
+| Rule                    | Severity | What fails it                                       |
+| ----------------------- | -------- | --------------------------------------------------- |
+| `broken-link`           | critical | an internal link to a URL the build did not produce |
+| `duplicate-title`       | critical | two indexable pages with the same `<title>`         |
+| `duplicate-description` | critical | two indexable pages with the same description       |
 
 ### What a `noindex` page is not asked for
 
@@ -169,7 +169,7 @@ No critical findings across 128 pages.
 
 The rules are unit-tested against synthetic HTML in `test/seo-audit.test.ts` —
 on strings rather than on fixture files, because the suite has to be able to
-describe a *failing* page, and a fixture that failed would have to be excluded
+describe a _failing_ page, and a fixture that failed would have to be excluded
 from the real audit. An exclusion is the hole the gate exists to close.
 
 ---

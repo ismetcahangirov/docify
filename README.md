@@ -25,15 +25,15 @@ Docify does none of that. The conversion engines run inside your browser as WebA
 
 ## Why it's different
 
-|  | Typical online converter | Docify |
-|---|---|---|
-| Where files are processed | Their servers | **Your device** |
-| File upload required | Yes | **No** |
-| Account required | Usually | **No** |
-| Daily conversion limit | Yes (minutes/quota) | **No** |
-| Hardware acceleration | Paid tier only | **Free, always** |
-| Works offline | No | **Yes**, after first load |
-| Privacy | Depends on their policy | **Structurally guaranteed** |
+|                           | Typical online converter | Docify                      |
+| ------------------------- | ------------------------ | --------------------------- |
+| Where files are processed | Their servers            | **Your device**             |
+| File upload required      | Yes                      | **No**                      |
+| Account required          | Usually                  | **No**                      |
+| Daily conversion limit    | Yes (minutes/quota)      | **No**                      |
+| Hardware acceleration     | Paid tier only           | **Free, always**            |
+| Works offline             | No                       | **Yes**, after first load   |
+| Privacy                   | Depends on their policy  | **Structurally guaranteed** |
 
 ## Features
 
@@ -72,18 +72,18 @@ If a file genuinely can't be handled on your device, Docify tells you exactly wh
 
 ## Tech stack
 
-| Layer | Technology |
-|---|---|
-| Framework | Next.js 15 (App Router), React 19, TypeScript |
-| Styling | Tailwind CSS v4, shadcn/ui |
-| Image | wasm-vips, libheif-js, Canvas / OffscreenCanvas |
-| PDF | pdf-lib, pdf.js |
-| Video / Audio | WebCodecs + mp4box.js, ffmpeg.wasm |
-| Archives | fflate, libarchive.js |
-| Concurrency | Web Workers via Comlink |
-| Testing | Vitest, Testing Library, Playwright |
-| Data | Neon (Postgres) — anonymous aggregate counters only |
-| Hosting | Vercel (app), Render (URL import proxy) |
+| Layer         | Technology                                          |
+| ------------- | --------------------------------------------------- |
+| Framework     | Next.js 15 (App Router), React 19, TypeScript       |
+| Styling       | Tailwind CSS v4, shadcn/ui                          |
+| Image         | wasm-vips, libheif-js, Canvas / OffscreenCanvas     |
+| PDF           | pdf-lib, pdf.js                                     |
+| Video / Audio | WebCodecs + mp4box.js, ffmpeg.wasm                  |
+| Archives      | fflate, libarchive.js                               |
+| Concurrency   | Web Workers via Comlink                             |
+| Testing       | Vitest, Testing Library, Playwright                 |
+| Data          | Neon (Postgres) — anonymous aggregate counters only |
+| Hosting       | Vercel (app), Render (URL import proxy)             |
 
 ## Getting started
 
@@ -156,7 +156,7 @@ docs/          architecture and implementation plans
 
 ## Privacy
 
-Docify has no accounts, no cookies for tracking, and no file storage. The only data that ever reaches a server is an anonymous counter event recording *which conversion type* was performed and whether it succeeded — no file names, no file contents, no IP addresses retained.
+Docify has no accounts, no cookies for tracking, and no file storage. The only data that ever reaches a server is an anonymous counter event recording _which conversion type_ was performed and whether it succeeded — no file names, no file contents, no IP addresses retained.
 
 ## Contributing
 
