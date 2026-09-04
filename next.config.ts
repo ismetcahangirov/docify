@@ -54,6 +54,19 @@ const ISOLATED_ASSET_ROUTES = ['/_next/static/:path*', '/vendor/:path*']
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   /*
+   * Docify has no server-side image pipeline, so it does not have Next's one
+   * either. `sharp` — the native binding that backs `/_next/image` — is denied
+   * in `pnpm-workspace.yaml`, and this is the other half of that decision
+   * (issue #114): with the optimiser off, the route is not served at all and a
+   * `next/image` added later fails visibly here rather than at runtime on a
+   * deployment.
+   *
+   * It changes nothing today. Nothing in the tree imports `next/image`, and
+   * `next/og` — which does render the Open Graph cards — rasterises with satori
+   * and resvg-wasm and never touches sharp.
+   */
+  images: { unoptimized: true },
+  /*
    * `radix-ui` is an umbrella package that re-exports every primitive from one
    * barrel, and a bundler that cannot see through it ships all of them. The
    * cost is not theoretical: importing `Slot` alone for `SectionBlock` added

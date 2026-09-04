@@ -1,7 +1,25 @@
 # pnpm refuses to install while a dependency's build script is neither approved
-# nor denied, so the decision is explicit and checked in.
-#   sharp          — Next.js image optimisation (native binding)
-#   unrs-resolver  — module resolver used by eslint-config-next (native binding)
+# nor denied, so the decision is explicit and checked in. Denying is a decision:
+# the install still exits 0.
+#
+#   sharp          — DENIED. Next's *server-side* image optimisation binding,
+#                    and Docify has no server-side image pipeline (CLAUDE.md
+#                    §2.1). Nothing here imports `next/image`; the two Open
+#                    Graph routes go through `next/og`, which rasterises with
+#                    satori and resvg-wasm and never loads sharp. Approving the
+#                    native build bought a high-severity `pnpm audit --prod`
+#                    finding (GHSA-f88m-g3jw-g9cj — libvips CVEs, patched in
+#                    sharp ≥0.35.0, which Next pins us below) and a native
+#                    compile in all five CI jobs, in exchange for nothing.
+#                    `next.config.ts` sets `images.unoptimized` so the
+#                    consequence is visible where images are configured, and
+#                    `test/app/server-image-pipeline.test.ts` fails if any of
+#                    the three sides of this decision is undone on its own.
+#                    Vercel supplies its own sharp in production regardless.
+#                    Audit triage: docs/ci/dependency-audit.md
+#
+#   unrs-resolver  — APPROVED. Module resolver used by eslint-config-next, and
+#                    a native binding it genuinely needs to resolve at all.
 allowBuilds:
-  sharp: true
+  sharp: false
   unrs-resolver: true

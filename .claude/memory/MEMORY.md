@@ -17,6 +17,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 - [raster-ceilings-are-two-and-scoped](entries/raster-ceilings-are-two-and-scoped.md) — The raster pixel guard is two different ceilings over three engines — vips is deliberately exempt and canvas/heif deliberately get the browser limit, not the budget one
 - [coep-require-corp-scoped](entries/coep-require-corp-scoped.md) — COEP is require-corp (not credentialless) and is scoped to /convert/* and /tools/* only
 - [no-server-side-processing](entries/no-server-side-processing.md) — All conversion runs client-side; there is deliberately no processing VM
+- [sharp-is-denied-not-approved](entries/sharp-is-denied-not-approved.md) — sharp's build script is denied, and that decision has three sides — the deny, images.unoptimized, and the absence of next/image
 - [router-gates-before-budget](entries/router-gates-before-budget.md) — The capability gate runs before the memory-budget check, so a rejection never quotes a doomed engine's ceiling
 - [webcodecs-over-ffmpeg](entries/webcodecs-over-ffmpeg.md) — WebCodecs is the primary video path; ffmpeg.wasm is a last-resort fallback
 
@@ -36,6 +37,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## session
 
+- [session-2026-09-03-c0a3c505](entries/session-2026-09-03-c0a3c505.md) — Session on 2026-09-03: app, seo (29 file ops)
 - [session-2026-09-02-a06d931f](entries/session-2026-09-02-a06d931f.md) — Session on 2026-09-02: ui, router, registry, seo, app (79 file ops)
 - [session-2026-09-01-e2537969](entries/session-2026-09-01-e2537969.md) — Session on 2026-09-01: engines, ui (46 file ops)
 - [session-2026-08-31-6c17ae3e](entries/session-2026-08-31-6c17ae3e.md) — Session on 2026-08-31: engines (107 file ops)
