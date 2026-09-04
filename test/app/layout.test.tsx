@@ -16,7 +16,7 @@ vi.mock('next/font/local', () => ({
 }))
 
 const { archivo, inter, jetbrainsMono } = await import('@/app/fonts')
-const { default: RootLayout } = await import('@/app/layout')
+const { default: RootLayout, metadata } = await import('@/app/layout')
 
 // RootLayout renders <html>/<body>, which Testing Library cannot mount inside a
 // container, so the returned element is inspected directly.
@@ -44,5 +44,16 @@ describe('RootLayout', () => {
     const html = renderRootLayout() as ReactElement<{ lang?: string }>
 
     expect(html.props.lang).toBe('en')
+  })
+})
+
+describe('the root metadata', () => {
+  it('claims no Search Console property when the build has no token', () => {
+    // The state of every local build and every preview deployment. A tag here
+    // would be an ownership claim made by a deployment that does not own the
+    // property; the shape of the value when a token *is* set is covered in
+    // test/seo/verification.test.ts, which can vary the environment.
+    expect(process.env.GOOGLE_SITE_VERIFICATION).toBeUndefined()
+    expect(metadata.verification).toBeUndefined()
   })
 })
