@@ -12,6 +12,7 @@
     "dev": "pnpm vendor && next dev",
     "build": "pnpm vendor && next build",
     "vendor": "node scripts/vendor-wasm-vips/cli.mjs && node scripts/vendor-pdfjs/cli.mjs && node scripts/vendor-ffmpeg/cli.mjs",
+    "db:migrate": "node scripts/db-migrate/cli.mjs",
     "start": "next start",
     "lint": "eslint . && pnpm run lint:design",
     "lint:design": "node scripts/design-lint/cli.mjs",
