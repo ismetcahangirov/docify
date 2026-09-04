@@ -32,12 +32,17 @@
  * the assertions on Windows, run Lighthouse directly into `.lighthouseci/` and
  * then `pnpm exec lhci assert`.
  *
- * ## Why three runs each
+ * ## Why three runs each, and which one is asserted
  *
- * Lighthouse's own recommendation, and for the reason `e2e/support/vitals.ts`
- * takes the best of three: a CI runner is a shared machine, a single run
- * measures whatever else it was doing, and the assertion is made against the
- * *median* run rather than the worst one.
+ * Lighthouse's own recommendation: a CI runner is a shared machine, and a
+ * single run measures whatever else it was doing.
+ *
+ * The run that is *asserted* is set explicitly below, and it has to be. `lhci`
+ * defaults to `optimistic`, which asserts the **best** of the three — so a
+ * gate can be held up by one lucky run while the site is failing on the other
+ * two. Measured here on 2026-09-04: the home page scored 0.97, 0.98 and 0.99
+ * across its three runs, and `optimistic` reported 0.99. `median` is the only
+ * aggregation that answers the question a gate is asking.
  */
 
 /** The three shapes, on the port `pnpm start` uses. */
@@ -60,6 +65,15 @@ module.exports = {
       },
     },
     assert: {
+      /*
+       * The typical run, not the luckiest one. `lhci`'s default is
+       * `optimistic` — the best value across the runs — which is the right
+       * default for a dashboard and the wrong one for a gate: it hides a
+       * regression for as long as any single run still passes. See the note
+       * above `numberOfRuns`.
+       */
+      aggregationMethod: 'median',
+
       assertions: {
         /*
          * Accessibility and SEO are perfect on all three pages today, and a
@@ -74,35 +88,56 @@ module.exports = {
         'categories:seo': ['error', { minScore: 1 }],
 
         /*
-         * Performance is the target rather than the floor, and it is a warning
-         * for a reason that is worth reading rather than working around.
+         * Performance, and it has teeth now (issue #237).
          *
-         * Measured here, three URLs, Lighthouse 12.6 mobile emulation: 0.94 on
-         * the home page, 0.97 on the hub, 0.94 on a conversion page. The whole
-         * shortfall is Total Blocking Time — 240ms, 185ms and 261ms against a
-         * scale where 150ms scores 0.95 — and every millisecond of it is React
-         * hydrating a document that has no interactive component on it at all.
-         * The home page is a heading and three paragraphs; it still ships and
-         * runs the App Router client runtime, because that is what the App
-         * Router does.
+         * It was a warning because the score was 0.94 — one point under — and
+         * the whole shortfall was Total Blocking Time from React hydrating
+         * documents with no interactive component on them. Nothing in this
+         * repository looked able to close that.
          *
-         * Nothing in this repository can close that gap: `pnpm size` already
-         * holds the first load at 103 kB, of which 42 kB is measured as unused,
-         * and all of it is the framework. So the number is asserted as a
-         * warning, which is visible in every run and in the uploaded report,
-         * and the floor underneath it is asserted as three hard limits below.
-         * Issue #237 carries the work that would raise it.
+         * The measurement was the problem, not the app. Those numbers came from
+         * a Windows laptop, because `lhci autorun` cannot complete on Windows
+         * (see the caveat above) and the figures were taken by hand from a
+         * direct Lighthouse run. This gate has never run there. Measured on the
+         * Linux runner it actually runs on, three runs per URL, on 2026-09-04:
+         *
+         *   /                      0.99   TBT  64ms   LCP 2231ms   CLS 0
+         *   /convert               0.98   TBT  ~70ms  LCP 2318ms   CLS 0
+         *   /convert/heic-to-jpg   0.98   TBT  71ms   LCP 2331ms   CLS 0
+         *
+         * TBT is 64-71ms against the 240-261ms the issue recorded. A laptop
+         * running a browser, a dev server, an editor and a language server is
+         * not four times slower than a CI runner in the way Lighthouse's fixed
+         * 4x CPU multiplier assumes, and the difference landed entirely on the
+         * one metric that measures main-thread contention.
+         *
+         * So: `error`, and the threshold stays 0.95. Not 0.98 — the runner's
+         * own spread across three runs of the home page was 0.97 to 0.99, and a
+         * gate set at the top of that band is a gate that fails on a busy
+         * afternoon rather than on a regression. Three points of headroom is
+         * what makes this assertable at all.
          */
-        'categories:performance': ['warn', { minScore: 0.95 }],
+        'categories:performance': ['error', { minScore: 0.95 }],
 
         /*
-         * The floor, and the part with teeth. These are the three metrics
-         * issues #77, #78 and #79 set budgets for, asserted here against
-         * Lighthouse's own methodology rather than against `e2e/vitals.spec.ts`'s
-         * — the two measure differently and both are worth having. The numbers
-         * are Google's "good" thresholds, except CLS, which is this site's own
-         * tighter 0.05 from #78 and is currently 0.000 to 0.001.
+         * The floor underneath the score. These are the metrics issues #77, #78
+         * and #79 set budgets for, asserted against Lighthouse's own
+         * methodology rather than against `e2e/vitals.spec.ts`'s — the two
+         * measure differently and both are worth having. The numbers are
+         * Google's "good" thresholds, except CLS, which is this site's own
+         * tighter 0.05 from #78 and measures 0.000 on all three URLs.
+         *
+         * They stay even though the category score above is now an error. A
+         * score is a weighted average and it can stay green while one metric
+         * walks: LCP on `/convert/heic-to-jpg` is 2331ms against a 2500ms limit,
+         * which is 169ms of headroom and the tightest number on this page. The
+         * score would not notice that closing.
+         *
+         * FCP is new here (#237). It measures 761-765ms across the three URLs,
+         * nowhere near the 1800ms limit, and it was the one Core Web Vital the
+         * floor did not name.
          */
+        'first-contentful-paint': ['error', { maxNumericValue: 1800 }],
         'largest-contentful-paint': ['error', { maxNumericValue: 2500 }],
         'cumulative-layout-shift': ['error', { maxNumericValue: 0.05 }],
         'total-blocking-time': ['error', { maxNumericValue: 300 }],
