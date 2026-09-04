@@ -61,9 +61,10 @@ app does not use the image optimiser.
 Everything is optional. The app builds, deploys and serves every page with none
 of them set — which is what makes a preview deployment usable without secrets.
 
-| Variable       | Environments        | Absent means                                                 |
-| -------------- | ------------------- | ------------------------------------------------------------ |
-| `DATABASE_URL` | Production, Preview | The anonymous counters are skipped; every route still works. |
+| Variable                   | Environments        | Absent means                                                                     |
+| -------------------------- | ------------------- | -------------------------------------------------------------------------------- |
+| `DATABASE_URL`             | Production, Preview | The anonymous counters are skipped; every route still works.                     |
+| `GOOGLE_SITE_VERIFICATION` | Production only     | No Search Console verification tag is rendered — see docs/seo/search-console.md. |
 
 ```bash
 vercel env add DATABASE_URL production
