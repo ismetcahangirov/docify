@@ -1,0 +1,20 @@
+{
+  "name": "@docify/url-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Streams a remote file to the browser so a conversion can start from a URL. Stores nothing.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
