@@ -25,7 +25,8 @@ import { handleRequest } from './proxy.js'
  *
  * ## Deployment
  *
- * Render, per the plan's task 10.5. The actual deploy is issue #100.
+ * Render, per the plan's task 10.5, from `render.yaml` at the repository root.
+ * The runbook is docs/backend/render-deploy.md.
  *
  * The upstream fetch is `createGuardedFetch`, never the global one: the global
  * `fetch` cannot be told which address to connect to, and that is what closes
