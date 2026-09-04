@@ -1,5 +1,6 @@
 import type { ProxyConfig } from './config.js'
 import { limitStream } from './limit-stream.js'
+import { checkUrl } from './url-guard.js'
 
 /**
  * The URL import proxy (issue #87).
@@ -34,12 +35,15 @@ import { limitStream } from './limit-stream.js'
  * error — the same class of bug the COEP comment in `next.config.ts` records
  * about the worker chunk.
  *
- * ## What this file deliberately does not do yet
+ * ## Where the SSRF guard is
  *
- * Guard against SSRF. Scheme checking, private address ranges, DNS rebinding
- * and redirect bounds are issue #88, and this service must not be deployed
- * (#100) before that lands. `fetchImpl` is a parameter, which is where that
- * guard will attach.
+ * In two places, and neither of them is here. `checkUrl` refuses what can be
+ * decided from the URL — scheme, port, credentials, reserved names, literal
+ * private addresses — and it runs below, so a refused URL is a 400 about the
+ * URL rather than a 502 about an upstream. Everything else is inside the
+ * `fetchImpl` this handler is given: `createGuardedFetch` pins the connection
+ * to a vetted address and re-checks every redirect hop. See
+ * `guarded-fetch.ts` and `safe-lookup.ts` (issue #88).
  */
 
 /** What the proxy answers on. */
@@ -135,6 +139,13 @@ export async function handleRequest(
   const target = requestedUrl(request)
   if (target === null) return fail(400, cors)
 
+  // Refused here rather than inside the fetch, so the caller gets a 400 about
+  // the URL it supplied instead of a 502 about an upstream that was never
+  // contacted. The reason is echoed because it is only ever a fact about the
+  // caller's own input — it says nothing about this service's network.
+  const verdict = checkUrl(target)
+  if (!verdict.allowed) return fail(400, { ...cors, 'x-proxy-refused': verdict.reason })
+
   let upstream: Response
   try {
     upstream = await fetchImpl(target.toString(), {
@@ -143,10 +154,23 @@ export async function handleRequest(
       // upstream learns that Docify asked, and not who asked Docify.
       headers: { 'user-agent': USER_AGENT, accept: '*/*' },
       credentials: 'omit',
-      redirect: 'follow',
+      // The guarded fetch follows redirects itself, bounded and re-checking
+      // each hop. Left to the platform, a 302 to http://169.254.169.254/ would
+      // be followed by a client that has never heard of `checkUrl`.
+      redirect: 'manual',
       signal: AbortSignal.timeout(config.timeoutMs),
     })
   } catch (reason) {
+    if (reason instanceof Error && reason.name === 'RefusedUrlError') {
+      // A redirect walked somewhere the first URL did not. Still the caller's
+      // URL, so still a 400.
+      return fail(400, { ...cors, 'x-proxy-refused': 'redirect' })
+    }
+
+    if (reason instanceof Error && reason.name === 'BlockedAddressError') {
+      return fail(400, { ...cors, 'x-proxy-refused': 'address' })
+    }
+
     const timedOut = reason instanceof Error && /Timeout|TimeoutError|aborted/i.test(reason.name)
 
     return fail(timedOut ? 504 : 502, cors)

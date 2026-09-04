@@ -10,10 +10,11 @@ import { type FetchImpl, handleRequest } from '../../../services/url-proxy/src/p
  * gives about `Capabilities`: every assertion below is about what the proxy
  * does with an upstream answer, and none of them should need one.
  *
- * The security half — private address ranges, DNS rebinding, redirect bounds —
- * is issue #88 and is asserted in `ssrf.test.ts` beside this. What is here is
- * the shape of the service: it streams, it never stores, it stops at a
- * ceiling, and it answers only the origins it was told about.
+ * The security half is issue #88 and lives beside this in `ip-ranges.test.ts`,
+ * `url-guard.test.ts` and `guarded-fetch.test.ts`. What that leaves for this
+ * file is how a refusal reaches the caller, and the shape of the service: it
+ * streams, it never stores, it stops at a ceiling, and it answers only the
+ * origins it was told about.
  */
 
 const config: ProxyConfig = {
@@ -259,5 +260,55 @@ describe('what the proxy sends upstream', () => {
     await ask('https://example.com/a.heic', ORIGIN, fetch)
 
     expect(fetch.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal)
+  })
+})
+
+describe('how a refused URL reaches the caller', () => {
+  it.each([
+    ['file:///etc/passwd', 'scheme'],
+    ['ftp://example.com/a', 'scheme'],
+    ['http://localhost/a', 'hostname'],
+    ['http://metadata.google.internal/', 'hostname'],
+    ['http://169.254.169.254/latest/meta-data/', 'address'],
+    ['http://10.0.0.1/a', 'address'],
+    ['http://[::1]/a', 'address'],
+    ['http://example.com:6379/a', 'port'],
+    ['https://victim.example.com@attacker.test/a', 'credentials'],
+  ])('answers %s with 400 and never contacts an upstream', async (target, reason) => {
+    const fetch = upstream('data')
+    const response = await ask(target, ORIGIN, fetch)
+
+    // 400 rather than 502: the URL is the caller's own input, and a 502 would
+    // claim this service tried to reach something it deliberately did not.
+    expect(response.status).toBe(400)
+    expect(response.headers.get('x-proxy-refused')).toBe(reason)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('answers 400 when the guarded fetch refuses a redirect', async () => {
+    const fetch = vi.fn<FetchImpl>(async () => {
+      throw Object.assign(new Error('refused'), { name: 'RefusedUrlError' })
+    })
+    const response = await ask('https://example.com/a.heic', ORIGIN, fetch)
+
+    expect(response.status).toBe(400)
+    expect(response.headers.get('x-proxy-refused')).toBe('redirect')
+  })
+
+  it('answers 400 when a name resolves somewhere it must not', async () => {
+    const fetch = vi.fn<FetchImpl>(async () => {
+      throw Object.assign(new Error('blocked'), { name: 'BlockedAddressError' })
+    })
+    const response = await ask('https://rebind.example.com/a.heic', ORIGIN, fetch)
+
+    expect(response.status).toBe(400)
+    expect(response.headers.get('x-proxy-refused')).toBe('address')
+  })
+
+  it('never follows a redirect on the platform behalf', async () => {
+    const fetch = upstream('data')
+    await ask('https://example.com/a.heic', ORIGIN, fetch)
+
+    expect(fetch.mock.calls[0][1]?.redirect).toBe('manual')
   })
 })
