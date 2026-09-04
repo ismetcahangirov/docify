@@ -1,0 +1,69 @@
+# Render Blueprint for the URL import proxy (issue #100).
+#
+# Render reads this file from the repository root, which is why it is here and
+# not next to the service it describes — `rootDir` is what points it at
+# services/url-proxy. The service is documented in that directory's README; this
+# file only says how to run it.
+#
+# It is the second and last server-side component Docify has. Nothing a visitor
+# chose from their own machine ever reaches it: those files never leave the tab
+# (CLAUDE.md §2.1). This proxy exists for a URL the visitor typed, because a
+# browser cannot fetch one that does not opt in through CORS.
+#
+# `test/services/url-proxy/render-blueprint.test.ts` asserts the values below
+# against the files they are claims about — the health path the proxy serves,
+# the scripts its package.json declares, the origin the app is deployed on.
+#
+# Applying it: Render → New → Blueprint → pick this repository. Rolling it back
+# or moving it to another account is the same three steps, which is the reason
+# to keep the service described in the repository rather than in a dashboard.
+services:
+  - type: web
+    name: docify-url-proxy
+    runtime: node
+    # Free is the right plan for this. The service holds nothing, so a cold
+    # start costs a boot and no state, and the ceiling that matters — 100 MiB a
+    # transfer — is enforced in the code rather than by the plan. The one real
+    # consequence is documented in docs/backend/render-deploy.md: a free
+    # instance sleeps after 15 minutes of no traffic and the first request after
+    # that waits about a minute.
+    plan: free
+    # The browser calls this service directly, so it wants to be near visitors
+    # rather than near the Vercel deployment. Frankfurt is the closest free
+    # region to where most of the traffic these pages are written for is. One
+    # line to change if that stops being true.
+    region: frankfurt
+    rootDir: services/url-proxy
+    # `--include=dev` is load-bearing. Render sets NODE_ENV=production, and
+    # `npm install` under that skips devDependencies — which is where the
+    # service's only dependency, `typescript`, lives. Without the flag the build
+    # passes locally and fails here with `tsc: not found`.
+    #
+    # `npm install` rather than `npm ci`: the service has no lockfile of its
+    # own, because it has no runtime dependencies to lock.
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    # Answered before the origin allowlist (services/url-proxy/src/proxy.ts), so
+    # a misconfigured ALLOWED_ORIGINS does not make a healthy service look dead.
+    healthCheckPath: /healthz
+    # A deploy is a decision, not a side effect of a merge. The application is
+    # on Vercel and moves with `main`; this service changes about once a year and
+    # is the piece with a network reachable from inside a hosting provider.
+    autoDeploy: false
+    envVars:
+      # `engines` in services/url-proxy/package.json requires >=22, and the
+      # service uses `AbortSignal.timeout` and `Readable.fromWeb`.
+      - key: NODE_VERSION
+        value: 22
+      # Empty means nobody, by design — an open proxy is somebody else's
+      # bandwidth bill and somebody else's abuse report. This is the one value
+      # that has to be right for the service to do anything at all.
+      - key: ALLOWED_ORIGINS
+        value: https://docify.app
+      # 100 MiB. The same number as the code's default; stated here so it is
+      # visible where the service is operated rather than only where it is
+      # written.
+      - key: MAX_BYTES
+        value: 104857600
+      - key: TIMEOUT_MS
+        value: 30000

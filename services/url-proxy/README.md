@@ -4,7 +4,8 @@ Streams a remote file to the browser so a conversion can start from a URL
 instead of from a drop. It reads bytes and writes them straight back out — it
 **stores nothing**, on disk or in memory.
 
-The deploy is issue #100.
+Deployed to Render from [`render.yaml`](../../render.yaml) at the repository
+root; the runbook is [`docs/backend/render-deploy.md`](../../docs/backend/render-deploy.md).
 
 ---
 
