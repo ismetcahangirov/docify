@@ -10,6 +10,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## decision
 
+- [analytics-count-views-never-visitors](entries/analytics-count-views-never-visitors.md) — The analytics deliberately cannot count visitors — every hosted product identifies one, and the schema says Docify holds no address hashed or otherwise
 - [converter-is-a-deferred-island](entries/converter-is-a-deferred-island.md) — The converter loads after the static page, its skeleton is sized to prevent shift, and its scheduler must be an effect
 - [stream-copy-outranks-both-codecs](entries/stream-copy-outranks-both-codecs.md) — A stream copy is its own engine at priority 12, ahead of WebCodecs and ffmpeg — and the webcodecs budget it is compared against is not trustworthy
 - [budget-is-affine-and-scoped](entries/budget-is-affine-and-scoped.md) — The memory budget is factor x heldBytes + reserveBytes, and each engine says whether it holds every file of a job at once or one at a time
@@ -23,6 +24,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## gotcha
 
+- [build-does-not-run-on-node-24](entries/build-does-not-run-on-node-24.md) — pnpm build crashes on Node 24 with a webpack WasmHash error — package.json's ">=22" says otherwise, and lint/typecheck/test pass regardless
 - [lighthouse-numbers-come-from-ci](entries/lighthouse-numbers-come-from-ci.md) — A Lighthouse score measured on the dev laptop is not the gate's score — and lhci asserts the best run unless told otherwise
 - [barrel-imports-cost-a-budget](entries/barrel-imports-cost-a-budget.md) — A single umbrella import cost 76 kB gzipped on every route — pnpm size names the route, never the package
 - [ci-does-not-run-on-a-conflicting-pr](entries/ci-does-not-run-on-a-conflicting-pr.md) — A PR with no checks at all is usually a merge conflict, not a stuck runner — GitHub never starts CI on one
