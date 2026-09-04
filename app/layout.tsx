@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 
 import { SITE_DESCRIPTION, SITE_NAME, SITE_ORIGIN } from '@/lib/seo/site'
+import { siteVerification } from '@/lib/seo/verification'
 
 import { fontVariables } from './fonts'
 
@@ -13,11 +14,18 @@ import './globals.css'
  * or no crawler can fetch it, and without this the build emits `/opengraph-image
  * .png` and a warning nobody reads. It is the same literal the canonical URLs
  * are built from, for the reason `lib/seo/site.ts` gives about deployments.
+ *
+ * `verification` is the one field here that is read from the environment, and
+ * `undefined` is its normal value: a preview deployment and a local build have
+ * no Search Console token and must not claim ownership of the property. See
+ * `lib/seo/verification.ts` for why it does not live beside the other site
+ * constants.
  */
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_ORIGIN),
   title: SITE_NAME,
   description: SITE_DESCRIPTION,
+  verification: siteVerification(),
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {
