@@ -23,6 +23,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## gotcha
 
+- [lighthouse-numbers-come-from-ci](entries/lighthouse-numbers-come-from-ci.md) — A Lighthouse score measured on the dev laptop is not the gate's score — and lhci asserts the best run unless told otherwise
 - [barrel-imports-cost-a-budget](entries/barrel-imports-cost-a-budget.md) — A single umbrella import cost 76 kB gzipped on every route — pnpm size names the route, never the package
 - [ci-does-not-run-on-a-conflicting-pr](entries/ci-does-not-run-on-a-conflicting-pr.md) — A PR with no checks at all is usually a merge conflict, not a stuck runner — GitHub never starts CI on one
 - [abort-is-matched-by-name](entries/abort-is-matched-by-name.md) — An abort is identified by name === 'AbortError', never by instanceof — Comlink drops DOMException and jsdom does not make it an Error
