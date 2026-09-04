@@ -113,6 +113,7 @@ describe('the entries the walk starts from', () => {
     // assertion below pass, which is the failure mode a membership guard has.
     expect(entries).toEqual([
       'app/api/stats/route.ts',
+      'app/api/views/route.ts',
       'app/convert/[pair]/page.tsx',
       'app/convert/page.tsx',
       'app/layout.tsx',
@@ -128,7 +129,7 @@ describe('the entries the walk starts from', () => {
     // `app/llms.txt/route.ts` is a route handler too, and it belongs on the
     // client side of this line: it renders a document a crawler fetches, not an
     // API. The split is `app/api/`, not the `route` convention.
-    expect(apiEntries).toEqual(['app/api/stats/route.ts'])
+    expect(apiEntries).toEqual(['app/api/stats/route.ts', 'app/api/views/route.ts'])
     expect(clientEntries).toContain('app/llms.txt/route.ts')
   })
 

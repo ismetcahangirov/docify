@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 
+import { PageView } from '@/components/analytics/page-view'
 import { SITE_DESCRIPTION, SITE_NAME, SITE_ORIGIN } from '@/lib/seo/site'
 import { siteVerification } from '@/lib/seo/verification'
 
@@ -40,7 +41,20 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     // an oklch background is not reported as failing — it is reported as
     // *unknown*, which is the one answer an accessibility audit cannot use.
     <html lang="en" className={fontVariables}>
-      <body className="min-h-dvh bg-shell text-fg-light antialiased">{children}</body>
+      <body className="min-h-dvh bg-shell text-fg-light antialiased">
+        {children}
+        {/*
+         * The analytics, all of it, and it renders nothing. It is here rather
+         * than on each page because the alternative is remembering: a page
+         * added later that forgot it would be missing from the figures with
+         * nothing to say that it was.
+         *
+         * Last in the body, after the content, so the one client boundary in
+         * the layout hydrates behind what the visitor is reading. See
+         * components/analytics/page-view.tsx.
+         */}
+        <PageView />
+      </body>
     </html>
   )
 }
