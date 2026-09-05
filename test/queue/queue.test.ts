@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { QueuedJob } from '@/lib/queue/queue'
 import { createJob, queueReducer } from '@/lib/queue/queue'
+import type { JobEvent } from '@/lib/queue/state'
 
 const file = (name = 'holiday.mov') => new File(['x'], name, { type: 'video/quicktime' })
 
@@ -187,6 +188,58 @@ describe('advance', () => {
     // The file is still in the list, which is the whole reason a cancel is not
     // a dead end.
     expect(at(cancelled).file).toBeDefined()
+  })
+
+  it('marks a cancelled job, because `queued` alone cannot say nobody will start it', () => {
+    // The scheduler leaves a cancelled job in its `started` set so it does not
+    // restart itself, which makes it indistinguishable from a fresh drop by
+    // state alone — and a card with no control on it (issue #278).
+    const running = one({ state: 'processing', progress: 0.4, startedAt: NOW })
+
+    const cancelled = queueReducer(running, { type: 'advance', id: 'a', event: 'cancel', at: NOW })
+
+    expect(at(cancelled).cancelled).toBe(true)
+  })
+
+  it('leaves a job that has run all the way through unmarked', () => {
+    // Only a stop earns the mark. A job that started, routed and finished must
+    // never carry it, or every settled card would offer to start itself.
+    const added = queueReducer([], { type: 'add', jobs: one() })
+    const events: JobEvent[] = ['start', 'routed', 'loaded', 'succeed']
+
+    const finished = events.reduce(
+      (jobs, event) => queueReducer(jobs, { type: 'advance', id: 'a', event, at: NOW }),
+      added,
+    )
+
+    expect(at(finished).state).toBe('done')
+    expect(at(finished).cancelled).toBeUndefined()
+  })
+
+  it('clears the mark when a cancelled job is asked to go again', () => {
+    // `retry` from `queued` moves nothing, and exists for exactly this: the
+    // job is in the line again, so the card stops offering to start it.
+    const cancelled = one({ state: 'queued', cancelled: true })
+
+    const requeued = queueReducer(cancelled, {
+      type: 'advance',
+      id: 'a',
+      event: 'retry',
+      at: NOW,
+    })
+
+    expect(at(requeued)).toMatchObject({ state: 'queued' })
+    expect(at(requeued).cancelled).toBeUndefined()
+    expect(at(requeued).file).toBeDefined()
+  })
+
+  it('clears the mark when the scheduler starts a cancelled job', () => {
+    const cancelled = one({ state: 'queued', cancelled: true })
+
+    const started = queueReducer(cancelled, { type: 'advance', id: 'a', event: 'start', at: NOW })
+
+    expect(at(started)).toMatchObject({ state: 'routing' })
+    expect(at(started).cancelled).toBeUndefined()
   })
 
   it('never mutates the job it replaces', () => {

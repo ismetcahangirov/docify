@@ -252,6 +252,39 @@ describe('JobCard — the buttons', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
+  it('offers a start on a cancelled job, which `queued` alone does not ask for', () => {
+    // A cancelled job is `queued` with the file still in the list, and the
+    // scheduler will not pick it up again on its own — so without this the card
+    // says "Waiting" and offers nothing that moves it (issue #278).
+    const onRetry = vi.fn()
+    render(
+      <JobCard job={job({ state: 'queued', cancelled: true })} onRetry={onRetry} now={START} />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start converting holiday clip.mov' }))
+
+    expect(onRetry).toHaveBeenCalledWith('a')
+  })
+
+  it('offers nothing to start on a job that is merely waiting its turn', () => {
+    render(<JobCard job={job({ state: 'queued' })} onRetry={vi.fn()} now={START} />)
+
+    expect(screen.queryByRole('button', { name: /^start/i })).not.toBeInTheDocument()
+  })
+
+  it('offers nothing to start once a cancelled job is running again', () => {
+    // The mark outlives the click only until the job actually moves; a start
+    // button beside a progress bar would be a second worker on one file.
+    for (const state of ['routing', 'loading-engine', 'processing'] as const) {
+      const { unmount } = render(
+        <JobCard job={job({ state, cancelled: true })} onRetry={vi.fn()} now={START} />,
+      )
+
+      expect(screen.queryByRole('button', { name: /^start/i })).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
   it('removes the file from the queue', () => {
     const onRemove = vi.fn()
     render(<JobCard job={job()} onRemove={onRemove} now={START} />)

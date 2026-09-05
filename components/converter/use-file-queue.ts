@@ -89,13 +89,15 @@ export interface FileQueue {
   /** Stops a running job, which returns it to `queued` with the file still there. */
   cancel(id: string): void
   /**
-   * Returns a finished job to `queued` without starting it.
+   * Returns a job to `queued` without starting it — a finished one, or one the
+   * user stopped and now wants after all (issue #278).
    *
    * Starting is the scheduler's job, and deliberately not this one's: whoever
    * owns the "one at a time" rule is the only thing that may start a run, so a
    * retry joins the line rather than jumping it (issue #263).
    */
   retry(id: string): void
+  /** Takes a file out of the list, stopping its conversion if one is running. */
   remove(id: string): void
   /** Drops everything that has finished, leaving whatever is still in flight. */
   clearFinished(): void
@@ -153,7 +155,10 @@ export function useFileQueue(): FileQueue {
   const cancel = React.useCallback(
     (id: string) => {
       const workerJobId = running.current.get(id)
-      if (workerJobId !== undefined) void cancelConversion(workerJobId)
+      // Swallowed: the worker going down is one of the ways a job gets
+      // cancelled in the first place, and an endpoint that dies mid-call would
+      // otherwise raise an unhandled rejection on top of it.
+      if (workerJobId !== undefined) void cancelConversion(workerJobId).catch(() => {})
 
       // Whatever the run is doing — reading the header, waiting on the worker —
       // it is no longer the current one, even if the worker never answers.
@@ -232,6 +237,14 @@ export function useFileQueue(): FileQueue {
   )
 
   const remove = React.useCallback((id: string) => {
+    // The user discarded the file, so whatever is converting it has to stop:
+    // without this the engine works on to the end, and the scheduler's one-job
+    // rule holds the next file behind a job nobody can see any more (issue
+    // #278). Forgetting the run number is what keeps the abort that follows
+    // from being dispatched at a job that is no longer in the list.
+    const workerJobId = running.current.get(id)
+    if (workerJobId !== undefined) void cancelConversion(workerJobId).catch(() => {})
+
     running.current.delete(id)
     runs.current.delete(id)
     dispatch({ type: 'remove', id })

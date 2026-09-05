@@ -37,6 +37,8 @@ interface Changes {
   done: QueuedJob[]
   failed: QueuedJob[]
   cancelled: QueuedJob[]
+  /** Stopped jobs the user has put back in the line (issue #278). */
+  requeued: QueuedJob[]
 }
 
 /**
@@ -59,6 +61,7 @@ export function queueAnnouncement(
 
   if (changes.cancelled.length > 0) return cancelledSentence(changes.cancelled)
   if (changes.started.length > 0) return startedSentence(changes.started)
+  if (changes.requeued.length > 0) return requeuedSentence(changes.requeued)
   if (changes.added.length > 0) return addedSentence(changes.added, after)
 
   return null
@@ -66,8 +69,15 @@ export function queueAnnouncement(
 
 /** Which jobs crossed which line between the two snapshots. */
 function diff(before: readonly QueuedJob[], after: readonly QueuedJob[]): Changes {
-  const was = new Map(before.map((job) => [job.id, job.state]))
-  const changes: Changes = { added: [], started: [], done: [], failed: [], cancelled: [] }
+  const was = new Map(before.map((job) => [job.id, job]))
+  const changes: Changes = {
+    added: [],
+    started: [],
+    done: [],
+    failed: [],
+    cancelled: [],
+    requeued: [],
+  }
 
   for (const job of after) {
     const previous = was.get(job.id)
@@ -77,15 +87,25 @@ function diff(before: readonly QueuedJob[], after: readonly QueuedJob[]): Change
       continue
     }
 
-    if (previous === job.state) continue
+    if (previous.state === job.state) {
+      // A stopped job put back in the line does not change state — `queued` is
+      // where it already was — and it is still the answer to a button the user
+      // pressed. Nothing else about the card moves until its turn comes, so
+      // without this the click is silent (issue #278).
+      if (job.state === 'queued' && previous.cancelled === true && job.cancelled !== true) {
+        changes.requeued.push(job)
+      }
+
+      continue
+    }
 
     if (job.state === 'done') changes.done.push(job)
     else if (job.state === 'failed') changes.failed.push(job)
     // Back to `queued` from a state that was running is the only way a cancel
     // shows up in the list — see the header of `./state` for why there is no
     // `cancelled` state to look for instead.
-    else if (job.state === 'queued' && isRunning(previous)) changes.cancelled.push(job)
-    else if (previous === 'queued' && isRunning(job.state)) changes.started.push(job)
+    else if (job.state === 'queued' && isRunning(previous.state)) changes.cancelled.push(job)
+    else if (previous.state === 'queued' && isRunning(job.state)) changes.started.push(job)
   }
 
   return changes
@@ -127,6 +147,12 @@ function cancelledSentence(cancelled: readonly QueuedJob[]): string {
   return cancelled.length === 1
     ? `Cancelled ${cancelled[0].file.name}. It is back in the queue.`
     : `Cancelled ${count(cancelled.length)}. They are back in the queue.`
+}
+
+function requeuedSentence(requeued: readonly QueuedJob[]): string {
+  return requeued.length === 1
+    ? `${requeued[0].file.name} is waiting its turn.`
+    : `${count(requeued.length)} waiting their turn.`
 }
 
 function startedSentence(started: readonly QueuedJob[]): string {

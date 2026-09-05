@@ -65,7 +65,7 @@ const NO_SETTINGS: JobSettings = {}
 
 function Converter({ pair }: ConverterProps) {
   const queue = useFileQueue()
-  const { add, run, cancel, remove, retry: requeue } = queue
+  const { add, run, cancel, remove: drop, retry: requeue } = queue
 
   const from = formatMeta(pair.from)
   const to = formatMeta(pair.to)
@@ -186,6 +186,21 @@ function Converter({ pair }: ConverterProps) {
       requeue(id)
     },
     [requeue],
+  )
+
+  /**
+   * Taking a file out of the list takes it out of the scheduler's memory too.
+   *
+   * Harmless while ids come from a counter and are never reused, but `started`
+   * is the set of jobs this scheduler has handed to the router, and a job that
+   * is no longer in the queue is not one of them.
+   */
+  const remove = React.useCallback(
+    (id: string) => {
+      started.current.delete(id)
+      drop(id)
+    },
+    [drop],
   )
 
   /**
