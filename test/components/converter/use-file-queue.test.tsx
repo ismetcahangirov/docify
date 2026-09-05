@@ -432,3 +432,175 @@ describe('useFileQueue — trying again', () => {
     expect(result.current.jobs[0].state).toBe('loading-engine')
   })
 })
+
+describe('useFileQueue — a run that is no longer current (issue #264)', () => {
+  /** A file whose header read is settled by hand, so a cancel can land inside it. */
+  function slowFile() {
+    let release!: () => void
+    const header = new Promise<ArrayBuffer>((resolve) => {
+      release = () => resolve(new ArrayBuffer(8))
+    })
+    const slow = file()
+    Object.defineProperty(slow, 'slice', { value: () => ({ arrayBuffer: () => header }) })
+
+    return { file: slow, release: () => act(async () => release()) }
+  }
+
+  /** A worker whose every job is settled separately, in the order it was started. */
+  function multiWorker() {
+    const jobs: { settle: (blob: Blob) => void; reject: (reason: unknown) => void }[] = []
+
+    startConversion.mockImplementation(() => {
+      let settle!: (blob: Blob) => void
+      let reject!: (reason: unknown) => void
+      const result = new Promise<Blob>((resolve, rejectResult) => {
+        settle = resolve
+        reject = rejectResult
+      })
+      jobs.push({ settle, reject })
+
+      return { jobId: `worker-${jobs.length}`, result }
+    })
+
+    return {
+      finish: (index: number, blob: Blob) => act(async () => jobs[index].settle(blob)),
+      abort: (index: number) =>
+        act(async () => {
+          const abort = new Error('The conversion was cancelled.')
+          abort.name = 'AbortError'
+          jobs[index].reject(abort)
+        }),
+    }
+  }
+
+  it('never reaches the worker when the cancel lands while the engine is being chosen', async () => {
+    controllable()
+    const slow = slowFile()
+    const { result } = renderHook(() => useFileQueue())
+
+    act(() => {
+      result.current.add([slow.file])
+    })
+    const id = result.current.jobs[0].id
+
+    let finished = false
+    await act(async () => {
+      void result.current.run(id, jpgToPng).then(() => {
+        finished = true
+      })
+    })
+    expect(result.current.jobs[0].state).toBe('routing')
+
+    act(() => {
+      result.current.cancel(id)
+    })
+    expect(result.current.jobs[0].state).toBe('queued')
+
+    await slow.release()
+
+    // The header came back to a run nobody wants any more: no engine is
+    // chosen, nothing is downloaded, and the scheduler is not held for it.
+    expect(startConversion).not.toHaveBeenCalled()
+    expect(result.current.jobs[0].state).toBe('queued')
+    expect(result.current.jobs[0].engine).toBeUndefined()
+    await waitFor(() => expect(finished).toBe(true))
+  })
+
+  it('drops the result of a cancelled run rather than landing it on the next one', async () => {
+    const worker = multiWorker()
+    const { result } = renderHook(() => useFileQueue())
+
+    act(() => {
+      result.current.add([file()])
+    })
+    const id = result.current.jobs[0].id
+
+    await act(async () => {
+      void result.current.run(id, jpgToPng)
+    })
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      result.current.cancel(id)
+    })
+
+    await act(async () => {
+      void result.current.run(id, jpgToPng)
+    })
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(2))
+    expect(result.current.jobs[0].state).toBe('loading-engine')
+
+    // The first worker job settles late, with the old file. By state alone the
+    // reducer would accept it — the job is running again — which is why the
+    // run has to be identified, not just the job.
+    const stale = new Blob(['stale'])
+    await worker.finish(0, stale)
+
+    expect(result.current.jobs[0].state).toBe('loading-engine')
+    expect(result.current.jobs[0].result).toBeUndefined()
+
+    const fresh = new Blob(['fresh'])
+    await worker.finish(1, fresh)
+
+    await waitFor(() => expect(result.current.jobs[0].state).toBe('done'))
+    expect(result.current.jobs[0].result).toBe(fresh)
+  })
+
+  it('does not count a cancelled run that finishes anyway', async () => {
+    const worker = multiWorker()
+    const { result } = renderHook(() => useFileQueue())
+
+    act(() => {
+      result.current.add([file()])
+    })
+    const id = result.current.jobs[0].id
+
+    await act(async () => {
+      void result.current.run(id, jpgToPng)
+    })
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      result.current.cancel(id)
+    })
+    await worker.finish(0, new Blob(['stale']))
+
+    expect(reportConversion).not.toHaveBeenCalled()
+    expect(result.current.jobs[0].state).toBe('queued')
+  })
+
+  it('ignores a progress tick from a cancelled run once the job is running again', async () => {
+    const reports: ProgressCallback[] = []
+    startConversion.mockImplementation(
+      (_request: ConvertRequest, onProgress?: ProgressCallback) => {
+        if (onProgress !== undefined) reports.push(onProgress)
+
+        return { jobId: `worker-${reports.length}`, result: new Promise<Blob>(() => {}) }
+      },
+    )
+    const { result } = renderHook(() => useFileQueue())
+
+    act(() => {
+      result.current.add([file()])
+    })
+    const id = result.current.jobs[0].id
+
+    await act(async () => {
+      void result.current.run(id, jpgToPng)
+    })
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+    act(() => {
+      result.current.cancel(id)
+    })
+    await act(async () => {
+      void result.current.run(id, jpgToPng)
+    })
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(2))
+
+    // The old worker job is still unwinding and reports once more.
+    act(() => reports[0](0.9))
+
+    expect(result.current.jobs[0].state).toBe('loading-engine')
+    expect(result.current.jobs[0].progress).toBeNull()
+  })
+})
