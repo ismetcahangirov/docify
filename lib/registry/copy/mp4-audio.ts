@@ -75,7 +75,7 @@ export const MP4_AUDIO_COPY: Readonly<Record<string, PairCopy>> = {
       'The sound in an MP4 is almost always AAC, and an M4A is AAC in the same container with the picture removed. Extracting to M4A therefore costs nothing at all — the audio stream is copied across untouched, which no conversion to MP3 or WAV can claim.',
     steps: [
       'Add the MP4 file you need converted, and wait for it to appear in the list.',
-      'Convert. Where the audio is already AAC it is copied rather than re-encoded.',
+      'Convert. The AAC stream is copied straight across, with no encoder anywhere in the path.',
       'Download the M4A, which will play in Apple Music, iTunes and every modern player.',
     ],
     faq: [
@@ -90,6 +90,10 @@ export const MP4_AUDIO_COPY: Readonly<Record<string, PairCopy>> = {
       {
         q: 'Will an M4A play in my car?',
         a: 'Most systems made after about 2010 handle it. Older ones and some cheap players list MP3 only, which is the case where the second generation is worth paying.',
+      },
+      {
+        q: 'What if the soundtrack is not AAC?',
+        a: 'Then the extraction stops and says so. A television capture or a DVD rip often carries AC-3 instead, which an M4A cannot hold — those files convert to MP3 or WAV, where the audio is re-encoded rather than copied.',
       },
       {
         q: 'What is the difference between M4A and MP4?',

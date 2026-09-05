@@ -78,6 +78,20 @@ function esdsBox(audioSpecificConfig: readonly number[]): Uint8Array {
 
 const AAC_CONFIG = esdsBox([0x12, 0x10])
 
+/**
+ * The Dolby configuration boxes, complete and never read.
+ *
+ * A `dac3` payload is the three-byte AC3SpecificBox; a `dec3` is a two-byte
+ * header followed by one three-byte independent substream. Both are here
+ * because a TV capture or a DVD rip carries one, and a container change that
+ * lost it would produce a file no decoder can set itself up for.
+ */
+const AC3_CONFIG = new Uint8Array([0, 0, 0, 11, 0x64, 0x61, 0x63, 0x33, 0x50, 0x11, 0x40])
+
+const EAC3_CONFIG = new Uint8Array([
+  0, 0, 0, 13, 0x64, 0x65, 0x63, 0x33, 0x00, 0x20, 0x50, 0x10, 0x00,
+])
+
 /** Encoded bytes that are not a real frame, and never need to be. */
 const payload = (seed: number, length = 16) => new Uint8Array(length).fill(seed)
 
@@ -136,6 +150,17 @@ const audioMedia = (): Mp4Media => ({
     },
   ],
 })
+
+/** The same audio track, with a codec whose configuration is not an `esds`. */
+const dolbyMedia = (codec: string, config: Uint8Array, descriptionType: string): Mp4Media => {
+  const [track] = audioMedia().tracks
+
+  return {
+    tracks: [
+      { ...track, format: { ...track.format, codec, description: config, descriptionType } },
+    ],
+  }
+}
 
 /** An MP4 written by mp4box itself, with none of our muxer involved. */
 async function buildDirectly(): Promise<Uint8Array> {
@@ -308,6 +333,25 @@ describe('a round trip through both', () => {
     expect(track?.samples).toEqual(original.tracks[0].samples)
   })
 
+  it('carries a Dolby track, whose configuration is neither an `esds` nor a codec we know', async () => {
+    // `dac3` and `dec3` were missing from the recognised set until issue #277,
+    // so an AC-3 track came back with no description at all and was written
+    // into a new container as a sample entry with nothing inside it.
+    for (const [codec, config, type] of [
+      ['ac-3', AC3_CONFIG, 'dac3'],
+      ['ec-3', EAC3_CONFIG, 'dec3'],
+    ] as const) {
+      const original = dolbyMedia(codec, config, type)
+
+      const media = await readMp4(await writeMp4(original, running(), load), running(), load)
+      const track = audioTrack(media)
+
+      expect(track?.format.codec).toBe(codec)
+      expect(track?.format.descriptionType).toBe(type)
+      expect(track?.format.description).toEqual(config)
+    }
+  })
+
   it('carries video and audio together, each in its own timescale', async () => {
     const media: Mp4Media = { tracks: [...videoMedia().tracks, ...audioMedia().tracks] }
 
@@ -339,9 +383,19 @@ describe('sampleEntryType', () => {
     expect(sampleEntryType('mp4a')).toBe('mp4a')
   })
 
-  it('refuses something that is not a codec string at all', () => {
+  it('accepts a code that begins with a full stop, which `.mp3` does', () => {
+    // Four characters, and the first component of the split is empty. Treating
+    // that as a parse failure threw on a real sample entry (issue #277).
+    expect(sampleEntryType('.mp3')).toBe('.mp3')
+  })
+
+  it('says what it found when the string is not a four-character code', () => {
     expect(() => sampleEntryType('h264')).not.toThrow()
-    expect(() => sampleEntryType('mp3')).toThrow(/not a codec/)
-    expect(() => sampleEntryType('')).toThrow(/not a codec/)
+
+    // The code is quoted so the sentence names the thing the user's file
+    // actually holds, and a target that works follows it (CLAUDE.md §2.5).
+    expect(() => sampleEntryType('mp3')).toThrow(/“mp3”/)
+    expect(() => sampleEntryType('mp3')).toThrow(/MP3 or WAV/)
+    expect(() => sampleEntryType('')).toThrow(/MP3 or WAV/)
   })
 })

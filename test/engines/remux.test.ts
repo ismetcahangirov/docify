@@ -84,6 +84,15 @@ function esdsBox(audioSpecificConfig: readonly number[]): Uint8Array {
 
 const AAC_CONFIG = esdsBox([0x12, 0x10])
 
+/**
+ * A complete `dac3` box: the three-byte AC3SpecificBox a Dolby Digital track
+ * carries, header and all.
+ *
+ * Its contents are never read here either. It exists so that the container
+ * change can be asserted to put these exact bytes back, the same way `avcC` is.
+ */
+const AC3_CONFIG = new Uint8Array([0, 0, 0, 11, 0x64, 0x61, 0x63, 0x33, 0x50, 0x11, 0x40])
+
 const payload = (seed: number, length = 24) => new Uint8Array(length).fill(seed)
 
 function videoSamples(count: number): Mp4Sample[] {
@@ -137,6 +146,32 @@ function movie(video = videoSamples(6), audio = audioSamples(8)): Mp4Media {
           language: 'eng',
         },
         samples: audio,
+      },
+    ],
+  }
+}
+
+/**
+ * A TV capture: the same film with an AC-3 soundtrack instead of an AAC one.
+ *
+ * The case issue #277 is about. Nothing in the router can see inside a file, so
+ * a Dolby Digital track reaches the copy path exactly as an AAC one does and
+ * has to be turned away where the file is open.
+ */
+function ac3Movie(): Mp4Media {
+  const [video, audio] = movie().tracks
+
+  return {
+    tracks: [
+      video,
+      {
+        ...audio,
+        format: {
+          ...audio.format,
+          codec: 'ac-3',
+          description: AC3_CONFIG,
+          descriptionType: 'dac3',
+        },
       },
     ],
   }
@@ -349,6 +384,33 @@ describe('the remux runner, extracting audio', () => {
   })
 })
 
+describe('the remux runner, handed audio it cannot copy', () => {
+  it('refuses an AC-3 soundtrack rather than labelling it audio/mp4', async () => {
+    // An M4A is AAC by convention, and a file that says `audio/mp4` while
+    // holding Dolby Digital is one most decoders simply refuse to open. A
+    // rejection is the honest outcome; a file that does not play is not.
+    const source = await movieFile(ac3Movie())
+
+    await expect(createRunner().run(input([source]), running(), () => {})).rejects.toThrow(/AC-3/)
+  })
+
+  it('names a target that has an encoder, because a rejection has to say what to do', async () => {
+    // CLAUDE.md §2.5: the message and the next step, never one without the
+    // other. `convert` is what the catalogue page sends (issue #266).
+    const source = await movieFile(ac3Movie())
+
+    await expect(
+      createRunner().run(input([source], 'm4a', 'convert'), running(), () => {}),
+    ).rejects.toThrow(/MP3 or WAV/)
+  })
+
+  it('still copies an AAC soundtrack, which is the whole point of the path', async () => {
+    const result = await createRunner().run(input([await movieFile()]), running(), () => {})
+
+    expect(result.type).toBe('audio/mp4')
+  })
+})
+
 describe('the remux runner, changing the container', () => {
   const container = (to: FormatId): EngineInput => ({
     task: task('mov', to, 'convert'),
@@ -410,6 +472,17 @@ describe('the remux runner, changing the container', () => {
   it('labels a QuickTime output as QuickTime and an MP4 as an MP4', async () => {
     expect((await convert('mp4')).type).toBe('video/mp4')
     expect((await convert('mov')).type).toBe('video/quicktime')
+  })
+
+  it('carries an AC-3 soundtrack across, box and all, because a MOV may hold one', async () => {
+    // A container change promises the container and never the codec, so the
+    // same track that cannot become an M4A travels into an MP4 untouched — but
+    // only if its `dac3` is recognised as a configuration box on the way in.
+    const result = await convert('mp4', ac3Movie())
+    const track = audioTrack(await readMp4(new Uint8Array(await result.arrayBuffer()), running()))
+
+    expect(track?.format.codec).toBe('ac-3')
+    expect(Array.from(track?.format.description ?? [])).toEqual(Array.from(AC3_CONFIG))
   })
 
   it('carries a silent film across without complaining about the missing sound', async () => {

@@ -41,6 +41,9 @@ const CANCEL_INTERVAL = 500
 /** What a track with no stated language is labelled. ISO 639-2/T for "undetermined". */
 const UNDETERMINED = 'und'
 
+/** Every sample entry code is exactly four characters. See {@link sampleEntryType}. */
+const FOUR_CHARACTER_CODE = 4
+
 /**
  * Writes `media` as a single MP4.
  *
@@ -126,13 +129,26 @@ function trackOptions(track: Mp4Track): Mp4TrackOptions {
  * RFC 6381 defines the string as the sample entry's four-character code
  * followed by codec-specific parameters after a full stop, so the first
  * component *is* the answer. A string with no full stop is already the code.
+ *
+ * A code that *begins* with a full stop is the exception the rule creates:
+ * `.mp3` is a real sample entry, four characters long, whose first component is
+ * empty. Splitting it and refusing the empty half turned a file this can copy
+ * perfectly into a failure (issue #277).
+ *
+ * Anything else is not a code at all, and the sentence for it names what was
+ * found and a target that works — a track whose codec cannot go into an ISO
+ * container has to be re-encoded, and MP3 and WAV are where that happens.
  */
 export function sampleEntryType(codec: string): string {
   const [first] = codec.split('.')
 
-  if (first === undefined || first.length !== 4) {
+  if (codec.length === FOUR_CHARACTER_CODE && first === '') return codec
+
+  if (first === undefined || first.length !== FOUR_CHARACTER_CODE) {
     throw new Error(
-      `"${codec}" is not a codec this container understands, so the track cannot be written.`,
+      `This file holds a track stored as “${codec}”, which is not a four-character code an MP4 ` +
+        'sample entry can carry, so it cannot be copied into a new container. Convert it to MP3 ' +
+        'or WAV instead, which re-encode the audio rather than copy it.',
     )
   }
 

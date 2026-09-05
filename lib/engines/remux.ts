@@ -153,8 +153,12 @@ export function createRunner(): EngineRunner {
       const written = await remuxMp4(
         bytes,
         // An extraction leaves the picture behind; a container change carries
-        // everything the source had.
-        { keep: extracting ? ['audio'] : ['video', 'audio'] },
+        // everything the source had. Only the extraction insists on AAC: it is
+        // the one whose output claims to be an M4A (issue #277).
+        {
+          keep: extracting ? ['audio'] : ['video', 'audio'],
+          audioMustBeAac: extracting,
+        },
         signal,
         onProgress,
       )
