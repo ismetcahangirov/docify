@@ -179,11 +179,19 @@ describe('the initial bundle', () => {
   it('costs exactly these runtime dependencies and no others', () => {
     // The list is pinned, not filtered. Adding a package here is a decision
     // about every visitor's first paint, and it should read like one in the
-    // diff. `next/*` and `react` are the framework; the other three are the
-    // 3 kB of class-name plumbing every component on every page uses.
+    // diff. `next/*` and `react` are the framework; the class-name plumbing is
+    // the 3 kB every component on every page uses.
+    //
+    // `lucide-react` arrived with the home page (#267): the icons in its
+    // popular grid and capability strip. Every component that draws one is a
+    // server component, so what the visitor receives is the inline `<svg>`,
+    // not the package — it is in this graph because the graph is static
+    // imports, and it costs the client bundle nothing. `pnpm size` is what
+    // checks that claim against the built route.
     expect(graph.packages).toEqual([
       'class-variance-authority',
       'clsx',
+      'lucide-react',
       'next/dynamic',
       'next/font/local',
       'next/navigation',

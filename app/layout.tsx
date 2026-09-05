@@ -2,6 +2,8 @@ import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 
 import { PageView } from '@/components/analytics/page-view'
+import { SiteFooter } from '@/components/site/site-footer'
+import { SiteHeader } from '@/components/site/site-header'
 import { SITE_DESCRIPTION, SITE_NAME, SITE_ORIGIN } from '@/lib/seo/site'
 import { siteVerification } from '@/lib/seo/verification'
 
@@ -42,7 +44,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     // *unknown*, which is the one answer an accessibility audit cannot use.
     <html lang="en" className={fontVariables}>
       <body className="min-h-dvh bg-shell text-fg-light antialiased">
+        {/*
+         * The site frame (issue #267). Here and not on each page for the same
+         * reason the analytics is: a page that forgot it would be the one page
+         * with no way home, and nothing would say so.
+         */}
+        <SiteHeader />
         {children}
+        <SiteFooter />
         {/*
          * The analytics, all of it, and it renders nothing. It is here rather
          * than on each page because the alternative is remembering: a page

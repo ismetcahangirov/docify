@@ -20,6 +20,7 @@ import {
   pairsFrom,
   pairsTo,
   pairTitle,
+  popularPairs,
 } from '@/lib/registry/pairs'
 import { parsePairSlug } from '@/lib/registry/slugs'
 import { route } from '@/lib/router/route'
@@ -144,6 +145,26 @@ describe('the pair catalogue', () => {
 
   it('is frozen, so a consumer cannot reorder it for the route that renders it', () => {
     expect(Object.isFrozen(PAIRS)).toBe(true)
+  })
+})
+
+describe('the popular pairs', () => {
+  // The home page leads with these (issue #267): the conversions somebody
+  // arrives at a converter *for*, and nothing from the tail.
+  it('are exactly the high-demand pairs, in catalogue order', () => {
+    const popular = popularPairs()
+
+    expect(popular.length).toBeGreaterThanOrEqual(8)
+    expect(popular.every((pair) => pair.demand === 'high')).toBe(true)
+    expect(popular).toEqual(PAIRS.filter((pair) => pair.demand === 'high'))
+  })
+
+  it('cover every kind of file the catalogue converts', () => {
+    const kinds = new Set(popularPairs().map((pair) => formatMeta(pair.from).kind))
+
+    for (const kind of ['image', 'document', 'video', 'audio'] as const) {
+      expect(kinds.has(kind)).toBe(true)
+    }
   })
 })
 
