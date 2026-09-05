@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Converter } from '@/components/converter/converter'
 import { pairBySlug } from '@/lib/registry/pairs'
+import { startConversion } from '@/lib/worker/jobs'
 
 /*
  * The converter island, composed (issue #66).
@@ -21,8 +22,8 @@ const pair = pairBySlug('heic-to-jpg')!
 
 const converted = new Blob(['jpg'], { type: 'image/jpeg' })
 
-let resolveResult: (blob: Blob) => void
-let rejectResult: (reason: unknown) => void
+let resolveResult: ((blob: Blob) => void) | undefined
+let rejectResult: ((reason: unknown) => void) | undefined
 
 vi.mock('@/lib/worker/jobs', () => ({
   startConversion: vi.fn(() => ({
@@ -75,7 +76,20 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.clearAllMocks()
+  // Otherwise a `waitFor(() => expect(rejectResult).toBeDefined())` in the
+  // next test would be satisfied by this test's leftover resolver.
+  resolveResult = undefined
+  rejectResult = undefined
 })
+
+/** The running job's own settle functions, which the worker stub set on its last call. */
+const settle = () => {
+  if (resolveResult === undefined || rejectResult === undefined) {
+    throw new Error('no conversion has been started')
+  }
+
+  return { resolve: resolveResult, reject: rejectResult }
+}
 
 describe('the converter offers no choice the URL already made', () => {
   it('names the source format in the dropzone', () => {
@@ -134,7 +148,7 @@ describe('dropping files', () => {
     drop(['holiday.heic'])
 
     await waitFor(() => expect(resolveResult).toBeDefined())
-    resolveResult(converted)
+    settle().resolve(converted)
 
     const link = await screen.findByRole('link', { name: 'holiday.jpg' })
     expect(link).toHaveAttribute('download', 'holiday.jpg')
@@ -145,7 +159,7 @@ describe('dropping files', () => {
     drop(['broken.heic'])
 
     await waitFor(() => expect(rejectResult).toBeDefined())
-    rejectResult(new Error('The decoder gave up.'))
+    settle().reject(new Error('The decoder gave up.'))
 
     expect(await screen.findByText('The decoder gave up.')).toBeInTheDocument()
   })
@@ -154,5 +168,55 @@ describe('dropping files', () => {
     render(<Converter pair={pair} />)
 
     expect(screen.queryByRole('region', { name: /results/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('trying again', () => {
+  it('waits its turn behind the job that is running (issue #263)', async () => {
+    render(<Converter pair={pair} />)
+    drop(['broken.heic', 'slow.heic'])
+
+    // The first job fails; the scheduler then starts the second.
+    await waitFor(() => expect(rejectResult).toBeDefined())
+    settle().reject(new Error('The decoder gave up.'))
+    await screen.findByText('The decoder gave up.')
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(2))
+
+    fireEvent.click(screen.getByRole('button', { name: /try converting broken\.heic again/i }))
+
+    // Every engine is budgeted for a tab of its own, so the retry queues up
+    // rather than running alongside the job already in flight.
+    await waitFor(() => expect(screen.queryByText('The decoder gave up.')).not.toBeInTheDocument())
+    expect(startConversion).toHaveBeenCalledTimes(2)
+
+    settle().resolve(converted)
+    await screen.findByRole('link', { name: 'slow.jpg' })
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(3))
+  })
+
+  it('is still taken in turn when the job ahead of it is cancelled instead', async () => {
+    render(<Converter pair={pair} />)
+    drop(['broken.heic', 'slow.heic'])
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+    settle().reject(new Error('The decoder gave up.'))
+    await screen.findByText('The decoder gave up.')
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(2))
+
+    fireEvent.click(screen.getByRole('button', { name: /try converting broken\.heic again/i }))
+    fireEvent.click(screen.getByRole('button', { name: /cancel converting slow\.heic/i }))
+
+    // A cancel ends the running job without a new state for the list to show
+    // — it is already back in `queued` — so this is the one way a run can
+    // finish without a render. The retry must not be left waiting for one.
+    const abort = new Error('The conversion was cancelled.')
+    abort.name = 'AbortError'
+    settle().reject(abort)
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(3))
+    expect((startConversion as ReturnType<typeof vi.fn>).mock.calls[2][0].files[0].name).toBe(
+      'broken.heic',
+    )
   })
 })

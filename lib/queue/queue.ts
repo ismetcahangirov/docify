@@ -166,6 +166,23 @@ function advance(job: QueuedJob, action: Extract<QueueAction, { type: 'advance' 
     return { ...moved, progress: null, startedAt: undefined, endedAt: undefined }
   }
 
+  if (action.event === 'retry') {
+    // Back to `queued`, and the old outcome goes with it. A retried job may
+    // wait its turn behind another one (issue #263), and a "Waiting" card that
+    // still explains a failure looks like a retry that did nothing.
+    return {
+      ...moved,
+      progress: null,
+      startedAt: undefined,
+      endedAt: undefined,
+      result: undefined,
+      failure: undefined,
+      engine: undefined,
+      reason: undefined,
+      warnings: undefined,
+    }
+  }
+
   return moved
 }
 
