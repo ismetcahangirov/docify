@@ -38,6 +38,7 @@ const EVENTS: readonly JobEvent[] = [
 /** Every move that is meant to exist, written out rather than derived. */
 const LEGAL: readonly (readonly [JobState, JobEvent, JobState])[] = [
   ['queued', 'start', 'routing'],
+  ['queued', 'retry', 'queued'],
   ['routing', 'routed', 'loading-engine'],
   ['routing', 'fail', 'failed'],
   ['routing', 'cancel', 'queued'],
@@ -118,6 +119,10 @@ describe('transition', () => {
   it('retries from the beginning, because the device may have changed', () => {
     expect(transition('failed', 'retry')).toBe('queued')
     expect(transition('done', 'retry')).toBe('queued')
+    // And a cancelled job asking for another go, which is already `queued` and
+    // stays there — the move exists so the reducer can clear the mark that
+    // says nobody is running it (issue #278).
+    expect(transition('queued', 'retry')).toBe('queued')
   })
 
   it('agrees with canTransition on every pair', () => {

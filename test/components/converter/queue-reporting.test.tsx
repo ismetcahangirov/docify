@@ -19,7 +19,9 @@ import type { ConvertRequest } from '@/lib/worker/types'
  */
 
 const startConversion = vi.hoisted(() => vi.fn())
-const cancelConversion = vi.hoisted(() => vi.fn())
+// Resolving, like the real one: the hook attaches a `catch` to it so that a
+// worker dying mid-cancel is not an unhandled rejection.
+const cancelConversion = vi.hoisted(() => vi.fn(async () => true))
 const probeCapabilities = vi.hoisted(() => vi.fn())
 const reportConversion = vi.hoisted(() => vi.fn())
 

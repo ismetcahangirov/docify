@@ -22,6 +22,11 @@
  * the user can start it again — a dead end would make them drop the file a
  * second time. It also keeps the state set to the six the UI has to render,
  * rather than seven with one of them a synonym.
+ *
+ * What it is *not* is a way to tell a cancelled job from a file that has only
+ * just been dropped, and the two need different controls on their cards. That
+ * difference is a mark on the job rather than a state of its own — see
+ * `./queue`, which sets it — precisely so that the table stays six states wide.
  */
 
 /** Every state a job can be in. */
@@ -66,7 +71,12 @@ export type JobEvent =
 export const TRANSITIONS: Readonly<
   Record<JobState, Readonly<Partial<Record<JobEvent, JobState>>>>
 > = {
-  queued: { start: 'routing' },
+  // `retry` moves nothing: a queued job is already where a retry would put it.
+  // It exists so that a job the user cancelled — which is `queued`, and which
+  // the scheduler will not pick up again on its own — can say it is back in the
+  // line, and the reducer can drop the mark that made its card offer a start
+  // (issue #278).
+  queued: { start: 'routing', retry: 'queued' },
   routing: { routed: 'loading-engine', fail: 'failed', cancel: 'queued' },
   'loading-engine': { loaded: 'processing', fail: 'failed', cancel: 'queued' },
   processing: { succeed: 'done', fail: 'failed', cancel: 'queued' },

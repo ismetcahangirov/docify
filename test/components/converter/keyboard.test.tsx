@@ -83,6 +83,16 @@ describe('every control the flow renders has a name', () => {
       />,
     ],
     [
+      'JobCard, cancelled',
+      <JobCard
+        key="c"
+        job={{ ...createJob('a', new File(['x'], 'beach.heic')), state: 'queued', cancelled: true }}
+        onRetry={() => {}}
+        onRemove={() => {}}
+        now={0}
+      />,
+    ],
+    [
       'JobCard, failed',
       <JobCard
         key="f"
