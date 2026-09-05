@@ -235,6 +235,13 @@ export const MEMORY: Record<EngineId, EngineMemory> = {
    * decoded frames are not a term either: the queue limits in the transcode
    * loop hold a handful of surfaces rather than a film's worth of them.
    *
+   * The soundtrack the transcode copies through is not a term of its own
+   * either. It is held for the whole job rather than drained, but it is already
+   * counted: an AAC track is single-digit percent of the encoded bytes of the
+   * video it accompanies, so it sits inside term 1 — the file itself — with
+   * room to spare. Carrying it is what stops the transcode returning silence,
+   * and it does not move the factor.
+   *
    * Four is what that adds up to, and the ordering it produces is the honest
    * one — `remux` at 3 below a transcode, `ffmpeg` at 4.5 above it, and a
    * ceiling on this desktop of 300 MB rather than the 480 MB the old entry

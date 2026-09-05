@@ -3,8 +3,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { readMp4 } from '@/lib/engines/mp4-demux'
-import type { Mp4Media } from '@/lib/engines/mp4-media'
-import { videoTrack } from '@/lib/engines/mp4-media'
+import type { Mp4Media, Mp4Sample } from '@/lib/engines/mp4-media'
+import { audioTrack, videoTrack } from '@/lib/engines/mp4-media'
 import { writeMp4 } from '@/lib/engines/mp4-mux'
 import type { Mp4BoxModule } from '@/lib/engines/mp4-runtime'
 import { transcodeVideo } from '@/lib/engines/video-transcode'
@@ -23,9 +23,9 @@ const AVC_CONFIG = new Uint8Array([
   0, 4, 0x68, 0xee, 0x3c, 0xb0,
 ])
 
-/** An MP4 with one video track of `count` frames at 30 fps. */
-async function sourceFile(count = 4, over: Partial<Mp4Media['tracks'][0]['format']> = {}) {
-  const media: Mp4Media = {
+/** One video track of `count` frames at 30 fps, before it is written out. */
+function sourceMedia(count = 4, over: Partial<Mp4Media['tracks'][0]['format']> = {}): Mp4Media {
+  return {
     tracks: [
       {
         id: 1,
@@ -50,6 +50,73 @@ async function sourceFile(count = 4, over: Partial<Mp4Media['tracks'][0]['format
       },
     ],
   }
+}
+
+/** An MP4 with one video track of `count` frames at 30 fps. */
+async function sourceFile(count = 4, over: Partial<Mp4Media['tracks'][0]['format']> = {}) {
+  return writeMp4(sourceMedia(count, over), running(), loadMp4Box)
+}
+
+/** A complete `esds` box wrapping an AudioSpecificConfig for AAC-LC, 44.1 kHz stereo. */
+function esdsBox(audioSpecificConfig: readonly number[]): Uint8Array {
+  const specific = [0x05, audioSpecificConfig.length, ...audioSpecificConfig]
+  const decoder = [0x04, 13 + specific.length, 0x40, 0x15, ...new Array(11).fill(0), ...specific]
+  const syncLayer = [0x06, 1, 0x02]
+  const elementary = [
+    0x03,
+    3 + decoder.length + syncLayer.length,
+    0,
+    0,
+    0,
+    ...decoder,
+    ...syncLayer,
+  ]
+  const payload = [0, 0, 0, 0, ...elementary]
+  const size = 8 + payload.length
+
+  return new Uint8Array([
+    (size >> 24) & 0xff,
+    (size >> 16) & 0xff,
+    (size >> 8) & 0xff,
+    size & 0xff,
+    0x65,
+    0x73,
+    0x64,
+    0x73,
+    ...payload,
+  ])
+}
+
+const AAC_CONFIG = esdsBox([0x12, 0x10])
+const AUDIO_TIMESCALE = 44_100
+
+function audioSamples(count: number): Mp4Sample[] {
+  return Array.from({ length: count }, (_, index) => ({
+    data: new Uint8Array(40).fill(0x80 + index),
+    dts: index * 1024,
+    cts: index * 1024,
+    duration: 1024,
+    isSync: true,
+  }))
+}
+
+/** An MP4 with a picture and an AAC soundtrack, exactly as a camera writes it. */
+async function sourceWithSound(video = 4, audio = audioSamples(6)) {
+  const media = sourceMedia(video)
+  media.tracks.push({
+    id: 2,
+    kind: 'audio',
+    format: {
+      codec: 'mp4a.40.2',
+      timescale: AUDIO_TIMESCALE,
+      description: AAC_CONFIG,
+      descriptionType: 'esds',
+      channelCount: 2,
+      sampleRate: AUDIO_TIMESCALE,
+      language: 'eng',
+    },
+    samples: audio,
+  })
 
   return writeMp4(media, running(), loadMp4Box)
 }
@@ -195,6 +262,63 @@ describe('transcodeVideo', () => {
     expect(codecs.encoderConfig?.width).toBe(320)
     expect(codecs.encoderConfig?.height).toBe(240)
     expect(videoTrack(media)?.format.width).toBe(320)
+  })
+
+  it('carries the soundtrack through untouched, so a transcode is never silent', async () => {
+    // The whole point of the issue: the picture is re-encoded, the sound is
+    // copied. A file that came in with audio and came out without it is a
+    // silent video the user was never warned about.
+    const codecs = fakeVideoCodecs()
+    const audio = audioSamples(6)
+
+    const media = await readMp4(
+      await run(await sourceWithSound(4, audio), codecs),
+      running(),
+      loadMp4Box,
+    )
+    const sound = audioTrack(media)
+
+    expect(sound).toBeDefined()
+    expect(media.tracks).toHaveLength(2)
+    expect(sound?.samples).toHaveLength(audio.length)
+    for (const [index, sample] of audio.entries()) {
+      expect(Array.from(sound?.samples[index]?.data ?? [])).toEqual(Array.from(sample.data))
+      expect(sound?.samples[index]?.duration).toBe(sample.duration)
+    }
+  })
+
+  it('leaves the audio track’s own codec configuration exactly as it found it', async () => {
+    // A stream copy, not a re-encode: no codec ever sees these bytes, so the
+    // `esds` and the timescale that describe them have to survive whole.
+    const codecs = fakeVideoCodecs()
+
+    const media = await readMp4(await run(await sourceWithSound(2), codecs), running(), loadMp4Box)
+    const sound = audioTrack(media)
+
+    expect(sound?.format.codec).toBe('mp4a.40.2')
+    expect(sound?.format.timescale).toBe(AUDIO_TIMESCALE)
+    expect(sound?.format.language).toBe('eng')
+    expect(Array.from(sound?.format.description ?? [])).toEqual(Array.from(AAC_CONFIG))
+  })
+
+  it('never hands the audio samples to a codec', async () => {
+    const codecs = fakeVideoCodecs()
+
+    await run(await sourceWithSound(4, audioSamples(6)), codecs)
+
+    // Four video frames in, four out. The six audio packets went round them.
+    expect(codecs.decoded).toHaveLength(4)
+    expect(codecs.encoded).toHaveLength(4)
+  })
+
+  it('writes a single track for a file that had no sound to begin with', async () => {
+    const codecs = fakeVideoCodecs()
+
+    const media = await readMp4(await run(await sourceFile(3), codecs), running(), loadMp4Box)
+
+    expect(media.tracks).toHaveLength(1)
+    expect(audioTrack(media)).toBeUndefined()
+    expect(videoTrack(media)?.samples).toHaveLength(3)
   })
 
   it('explains a file with sound and no picture', async () => {
