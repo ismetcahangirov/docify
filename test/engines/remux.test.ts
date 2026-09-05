@@ -52,10 +52,23 @@ const AVC_CONFIG = new Uint8Array([
   0, 4, 0x68, 0xee, 0x3c, 0xb0,
 ])
 
-/** A complete `esds` box wrapping an AudioSpecificConfig for AAC-LC, 44.1 kHz stereo. */
-function esdsBox(audioSpecificConfig: readonly number[]): Uint8Array {
+/**
+ * A complete `esds` box wrapping an AudioSpecificConfig.
+ *
+ * `objectType` is the object type indication: `0x40` is MPEG-4 audio, which in
+ * practice means AAC, and `0x6b` is MPEG-1 audio, which is MP3 inside an `mp4a`
+ * sample entry.
+ */
+function esdsBox(audioSpecificConfig: readonly number[], objectType = 0x40): Uint8Array {
   const specific = [0x05, audioSpecificConfig.length, ...audioSpecificConfig]
-  const decoder = [0x04, 13 + specific.length, 0x40, 0x15, ...new Array(11).fill(0), ...specific]
+  const decoder = [
+    0x04,
+    13 + specific.length,
+    objectType,
+    0x15,
+    ...new Array(11).fill(0),
+    ...specific,
+  ]
   const syncLayer = [0x06, 1, 0x02]
   const elementary = [
     0x03,
@@ -173,6 +186,18 @@ function ac3Movie(): Mp4Media {
           descriptionType: 'dac3',
         },
       },
+    ],
+  }
+}
+
+/** The same film with MP3 inside its `mp4a` sample entry, which a `.6b` says. */
+function mp3InMp4Movie(): Mp4Media {
+  const [video, audio] = movie().tracks
+
+  return {
+    tracks: [
+      video,
+      { ...audio, format: { ...audio.format, description: esdsBox([0x12, 0x10], 0x6b) } },
     ],
   }
 }
@@ -402,6 +427,28 @@ describe('the remux runner, handed audio it cannot copy', () => {
     await expect(
       createRunner().run(input([source], 'm4a', 'convert'), running(), () => {}),
     ).rejects.toThrow(/MP3 or WAV/)
+  })
+
+  it('refuses MP3 wearing an `mp4a` sample entry, which the four-character code hides', async () => {
+    // `mp4a` is the entry for everything MPEG-4 describes with an `esds`, not
+    // for AAC alone, so the object type is what settles it.
+    const source = await movieFile(mp3InMp4Movie())
+
+    // Named, not merely refused: every rejection on this path already suggests
+    // MP3, so the assertion has to be about what the file was found to hold.
+    await expect(createRunner().run(input([source]), running(), () => {})).rejects.toThrow(
+      /sound is MP3/,
+    )
+  })
+
+  it('refuses a second soundtrack it cannot copy, not only the first', async () => {
+    // Both audio tracks are copied into the M4A, so one unplayable track is
+    // enough to make the file unplayable.
+    const [video, aac] = movie().tracks
+    const [, ac3] = ac3Movie().tracks
+    const source = await movieFile({ tracks: [video, aac, { ...ac3, id: 3 }] })
+
+    await expect(createRunner().run(input([source]), running(), () => {})).rejects.toThrow(/AC-3/)
   })
 
   it('still copies an AAC soundtrack, which is the whole point of the path', async () => {

@@ -103,11 +103,22 @@ export async function remuxMp4(
 /**
  * The sample entry every AAC track carries, and the only audio an M4A may hold.
  *
- * A prefix rather than a whole codec string: mp4box reports `mp4a.40.2` for
- * AAC-LC, `mp4a.40.5` for HE-AAC and `mp4a` alone where the descriptor was
- * thin, and all three are the same copy.
+ * The four-character code alone, because the parameters after it vary and none
+ * of them changes the answer: mp4box reports `mp4a.40.2` for AAC-LC,
+ * `mp4a.40.5` for HE-AAC and `mp4a` alone where the descriptor was thin, and
+ * all three are the same copy.
  */
 const AAC_SAMPLE_ENTRY = 'mp4a'
+
+/**
+ * The object type indications an `mp4a` may carry that are not AAC after all.
+ *
+ * `mp4a` is the sample entry for everything MPEG-4 describes with an `esds`,
+ * not for AAC alone: `0x6b` is MPEG-1 audio, which is MP3, and `0x69` its
+ * MPEG-2 revision. mp4box reports both as `mp4a.6b` and `mp4a.69`, so the
+ * four-character code on its own does not settle the question.
+ */
+const NOT_AAC_OBJECT_TYPES: ReadonlySet<string> = new Set(['69', '6b'])
 
 /**
  * What to call a codec in a sentence a person reads.
@@ -132,6 +143,8 @@ const AUDIO_CODEC_NAMES: Readonly<Record<string, string>> = {
   lpcm: 'uncompressed PCM',
   mp3: 'MP3',
   '.mp3': 'MP3',
+  'mp4a.69': 'MP3',
+  'mp4a.6b': 'MP3',
   Opus: 'Opus',
   sowt: 'uncompressed PCM',
   twos: 'uncompressed PCM',
@@ -146,24 +159,42 @@ const AUDIO_CODEC_NAMES: Readonly<Record<string, string>> = {
  * place that knows, and the last place that can say so.
  */
 function refuseAudioThatIsNotAac(kept: readonly Mp4Track[]): void {
-  const audio = kept.find((track) => track.kind === 'audio')
-  if (audio === undefined) return
-
-  const { codec } = audio.format
-  if (codec.startsWith(AAC_SAMPLE_ENTRY)) return
+  // Every kept track, not the first one: a file with a second soundtrack copies
+  // both, and one bad track is enough to make the result unplayable.
+  const foreign = kept.find((track) => track.kind === 'audio' && !isAac(track.format.codec))
+  if (foreign === undefined) return
 
   throw new Error(
-    `This file’s sound is ${audioCodecName(codec)}, which an M4A cannot hold, so it cannot be ` +
-      'copied out of the video unchanged. Convert it to MP3 or WAV instead — both re-encode the ' +
-      'audio rather than copy it, so they take any soundtrack.',
+    `This file’s sound is ${audioCodecName(foreign.format.codec)}, which an M4A cannot hold, so ` +
+      'it cannot be copied out of the video unchanged. Convert it to MP3 or WAV instead — both ' +
+      're-encode the audio rather than copy it, so they take any soundtrack.',
   )
 }
 
-/** The whole string first, because `.mp3` splits into an empty component. */
-function audioCodecName(codec: string): string {
-  const [code] = codec.split('.')
+/** A bare `mp4a` with no object type stated is taken at its word. */
+function isAac(codec: string): boolean {
+  const [entry, objectType] = codec.split('.')
+  if (entry !== AAC_SAMPLE_ENTRY) return false
 
-  return AUDIO_CODEC_NAMES[codec] ?? AUDIO_CODEC_NAMES[code ?? ''] ?? codec
+  return objectType === undefined || !NOT_AAC_OBJECT_TYPES.has(objectType.toLowerCase())
+}
+
+/**
+ * Three lookups, narrowing: the whole string, then the sample entry with its
+ * object type, then the sample entry alone.
+ *
+ * The middle one is what makes MP3-in-MP4 readable, because mp4box reports it
+ * as `mp4a.6b.2` — entry, object type, and a decoder-specific byte after it.
+ * The whole string is tried first because `.mp3` splits into an empty
+ * component and is only itself.
+ */
+function audioCodecName(codec: string): string {
+  const [entry = '', objectType] = codec.split('.')
+  const qualified = objectType === undefined ? entry : `${entry}.${objectType.toLowerCase()}`
+
+  return (
+    AUDIO_CODEC_NAMES[codec] ?? AUDIO_CODEC_NAMES[qualified] ?? AUDIO_CODEC_NAMES[entry] ?? codec
+  )
 }
 
 /**
