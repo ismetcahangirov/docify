@@ -69,6 +69,16 @@ const SAMPLES_PER_BATCH = 1000
  * `Mp4TrackFormat.description`. The list is what a sample entry may hold rather
  * than what this project can decode: an `av1C` is copied through a remux
  * perfectly well by a layer that has never heard of AV1.
+ *
+ * A code missing from here is not a warning, it is silent data loss: the track
+ * comes back with no description, the muxer writes a sample entry with nothing
+ * inside it, and the result is a file that parses and does not play. That is
+ * what an AC-3 soundtrack did until issue #277, and it is why the Dolby and
+ * Apple audio boxes are listed even though nothing here reads one.
+ *
+ * `alac` and `dmlp` are ahead of the reader rather than behind it: mp4box
+ * registers no sample entry for either codec, so such a track is dropped before
+ * it reaches this function. They cost nothing and are right the day it does.
  */
 const CONFIGURATION_BOXES: ReadonlySet<string> = new Set([
   'avcC',
@@ -79,6 +89,10 @@ const CONFIGURATION_BOXES: ReadonlySet<string> = new Set([
   'esds',
   'dOps',
   'dfLa',
+  'dac3',
+  'dec3',
+  'alac',
+  'dmlp',
 ])
 
 /**
