@@ -161,6 +161,12 @@ describe('lib/db/schema.sql', () => {
     for (const [statement] of ddl.matchAll(/create index[^;]*/gi)) {
       expect(statement).toMatch(/if not exists/i)
     }
+    // The same rule from the other side. A bare `drop` is the one statement
+    // that turns a second `pnpm db:migrate` into an error, and this file is
+    // where it would have to be added.
+    for (const [statement] of ddl.matchAll(/drop [^;]*/gi)) {
+      expect(statement).toMatch(/if exists/i)
+    }
   })
 
   it('indexes what GET /api/stats reads and nothing else', () => {

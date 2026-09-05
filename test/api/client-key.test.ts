@@ -52,6 +52,14 @@ describe('clientKey', () => {
     expect(clientKey(withHeaders({ 'x-forwarded-for': '203.0.113.8, 198.51.100.2' }))).toBe(direct)
   })
 
+  it('falls through to x-real-ip when x-forwarded-for holds no address at all', () => {
+    // A header of nothing but separators is not an address, and treating it as
+    // one would skip a fallback that does hold the caller.
+    expect(clientKey(withHeaders({ 'x-forwarded-for': ' , ', 'x-real-ip': '203.0.113.9' }))).toBe(
+      clientKey(withHeaders({ 'x-real-ip': '203.0.113.9' })),
+    )
+  })
+
   it('ignores empty entries in x-forwarded-for', () => {
     // A trailing comma would otherwise read as an address of zero length and
     // send the caller to the shared bucket with everybody unidentifiable.

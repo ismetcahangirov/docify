@@ -53,15 +53,24 @@ create table if not exists conversion_totals (
 );
 
 -- GET /api/stats sums every successful row, all time, and counts the distinct
--- pairs among them — `readTotals` in lib/db/stats.ts. The scan it makes is
--- filtered by `outcome` and by nothing else, and the primary key leads with
--- `pair`, so the key is no help to it. One index, for the one query. Adding
--- more before there is a second reader would be guessing.
+-- pairs among them — `readTotals` in lib/db/stats.ts. That is the only query
+-- on a hot path; it filters on `outcome` and on nothing else, and the primary
+-- key leads with `pair`, so the key is no help to it.
+--
+-- What this index buys is worth stating rather than overselling. `outcome` has
+-- two values and `success` is the common one, so on a healthy table the planner
+-- reads every row regardless and the index earns nothing but its write cost. It
+-- starts earning on the only shape under which this query gets slow: a table
+-- that has accumulated far more failures than successes, where the side being
+-- summed is the small one. One index, for the one query. Adding another before
+-- there is a second reader would be guessing.
 --
 -- The index this replaces was on `(day desc)`, written for a "recent days"
 -- read that no query has ever performed. Dropping it first is what makes a
 -- database provisioned before this change lose it on the next `pnpm db:migrate`
--- instead of carrying an index nothing will ever use.
+-- instead of carrying an index nothing will ever use. The drop is removable
+-- once every environment has run `pnpm db:migrate` after issue #271; until
+-- then it is the only way the old index stops existing anywhere.
 drop index if exists conversion_totals_day_idx;
 
 create index if not exists conversion_totals_outcome_idx

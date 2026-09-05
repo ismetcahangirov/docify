@@ -27,7 +27,7 @@
  */
 import { neon } from '@neondatabase/serverless'
 
-import { expectedTables, readSchema, SCHEMA_PATH } from './schema.mjs'
+import { classify, expectedTables, readSchema, SCHEMA_PATH } from './schema.mjs'
 
 /** @param {string} message */
 function fail(message) {
@@ -116,8 +116,9 @@ async function main() {
   // Both lists are derived from the schema rather than written down here. A
   // name kept in two places goes stale in one of them, which is exactly what
   // happened when issue #102 added `page_totals` and this file did not notice.
-  const expected = expectedTables(statements)
-  const missing = expected.filter((table) => !tables.includes(table))
+  // The comparison itself lives in schema.mjs, where a test can reach it
+  // without a database.
+  const { missing, unexpected } = classify(tables, expectedTables(statements))
 
   if (missing.length > 0) {
     const names = missing.join(', ')
@@ -135,7 +136,6 @@ async function main() {
 
   // Named rather than counted: the point of this line is that the database
   // holds the tables the schema declares and nothing somebody added by hand.
-  const unexpected = tables.filter((table) => !expected.includes(table))
   if (unexpected.length > 0) {
     console.log(`  note     unexpected table(s): ${unexpected.join(', ')}`)
     console.log('           lib/db/schema.sql is the whole data model — see CLAUDE.md §2.1.\n')

@@ -93,6 +93,10 @@ describe('vercel.json', () => {
       // The platform default is 300 seconds. Nothing here is a long-running
       // job: the one route increments a counter and answers 202, and a limit
       // that generous only decides how long a runaway invocation bills for.
+      //
+      // The ceiling here is the loose one, because this rule is about any
+      // function the file might ever name. The tighter 10 seconds below is the
+      // rule for `app/api`, where every handler is a single counter write.
       expect(settings.maxDuration).toBeLessThanOrEqual(15)
     }
   })
@@ -110,7 +114,7 @@ describe('vercel.json', () => {
      */
     const routes = readdirSync(join(repoRoot, 'app', 'api'), { recursive: true })
       .map((entry) => String(entry).split(sep).join('/'))
-      .filter((entry) => entry.endsWith('/route.ts'))
+      .filter((entry) => /(?:^|\/)route\.(?:ts|tsx|js|mjs)$/.test(entry))
       .map((entry) => `app/api/${entry}`)
 
     expect(routes.length).toBeGreaterThan(0)

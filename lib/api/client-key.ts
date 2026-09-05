@@ -29,9 +29,15 @@ import { createHash, randomBytes } from 'node:crypto'
  * key per request and never meets the limiter at all.
  *
  * On Vercel the header is normalised before a function sees it, so today the
- * two readings agree. They stop agreeing the moment this runs anywhere else,
- * and a rate limiter that is correct only on one host is a rate limiter with a
- * deployment note nobody will read.
+ * two readings agree. They stop agreeing the moment this runs anywhere else, or
+ * behind another CDN, and a rate limiter that is correct only on one host is a
+ * rate limiter with a deployment note nobody will read.
+ *
+ * The cost of reading the last hop is that it is coarse: behind a CDN the last
+ * entry is that CDN’s egress address, so everybody arriving through it shares a
+ * bucket. That is the right way round for a limiter — a shared bucket limits
+ * people who should not have been limited, where a forgeable one limits nobody
+ * at all — but it is a real cost rather than a free win.
  */
 
 /** Minted per process, never persisted, never logged. */

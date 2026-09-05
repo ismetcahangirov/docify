@@ -1,13 +1,16 @@
 # Provisioning the Neon database
 
-The runbook behind issue #101. It is short because the schema is short: one
-table of anonymous counters, described in full — including what it deliberately
-omits — at the top of [`lib/db/schema.sql`](../../lib/db/schema.sql).
+The runbook behind issue #101. It is short because the schema is short: two
+tables of anonymous counters, described in full — including what they
+deliberately omit — at the top of [`lib/db/schema.sql`](../../lib/db/schema.sql).
 
 ## What the database is for, and what happens without it
 
-`POST /api/stats` increments a counter after a conversion finishes. `GET /api/stats`
-reads recent days back out. That is the entire server-side data model.
+`POST /api/stats` increments a counter after a conversion finishes, and
+`POST /api/views` does the same for a page that was opened. `GET /api/stats`
+reads the all-time totals back out — every successful conversion summed, and
+the number of distinct pairs among them. That is the entire server-side data
+model.
 
 Nothing in the product depends on it. `lib/db/neon.ts` returns `null` when
 `DATABASE_URL` is unset or malformed, every caller treats that as "skip the
@@ -41,8 +44,14 @@ pnpm db:migrate
 ```
 
 `pnpm db:migrate` sends each statement in `lib/db/schema.sql` and then reports
-what the database holds. Every statement is `if not exists`, so running it again
-after a schema change — or twice by accident — is a no-op rather than an error.
+what the database holds. Every statement is idempotent — `if not exists` on what
+the schema creates, `if exists` on what it drops — so running it again after a
+schema change, or twice by accident, is a no-op rather than an error.
+
+It also checks the report against the schema it just sent: a table the file
+declares and the database lacks is a failure that names it, and a table the
+database holds that the file never declares is a note. Both lists are derived
+from `lib/db/schema.sql` itself, so neither goes stale when the schema grows.
 
 To read the current state without writing anything:
 
@@ -53,8 +62,8 @@ pnpm db:migrate --check
 Expected output on a provisioned database:
 
 ```
-  tables   conversion_totals
-  indexes  conversion_totals_day_idx, conversion_totals_pkey
+  tables   conversion_totals, page_totals
+  indexes  conversion_totals_outcome_idx, conversion_totals_pkey, page_totals_pkey
 Schema is applied.
 ```
 
@@ -84,8 +93,9 @@ and there is no separate cache to clear.
 
 ## What is deliberately not here
 
-- **No migration framework.** One table, every statement idempotent. A versions
-  table would be more moving parts than the thing it tracks.
+- **No migration framework.** Two tables of counters, every statement
+  idempotent. A versions table would be more moving parts than the thing it
+  tracks.
 - **No seed data.** A counter starts at zero by construction; there is nothing
   to seed.
 - **No backup policy beyond Neon's own.** The data is aggregate counts that the

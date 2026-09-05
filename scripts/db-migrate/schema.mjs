@@ -123,7 +123,34 @@ export function readSchema() {
  * @returns {string[]}
  */
 export function expectedTables(statements = readSchema()) {
+  // Whitespace-tolerant and schema-qualification-tolerant, because the input is
+  // SQL rather than this repository’s formatting of it: a scanner that only
+  // understands the current layout returns nothing the day a statement is
+  // reformatted, and returns "public" the day one is qualified.
   return statements
-    .map((statement) => /create table if not exists (\w+)/i.exec(statement)?.[1])
+    .map(
+      (statement) => /create\s+table\s+if\s+not\s+exists\s+(?:\w+\.)?(\w+)/i.exec(statement)?.[1],
+    )
     .filter((name) => name !== undefined)
+}
+
+/**
+ * How a database’s tables differ from the ones the schema declares.
+ *
+ * Split out of `cli.mjs` so the comparison can be tested without a Postgres
+ * behind it — it is the comparison issue #271 reports getting wrong, and a rule
+ * that can only be exercised by provisioning a database is a rule nothing
+ * exercises. Neither list is sorted or de-duplicated here: both arrive in the
+ * order their source produced, and printing them in that order is what lets an
+ * operator match the output against the file.
+ *
+ * @param {string[]} present Table names the database reports.
+ * @param {string[]} expected Table names the schema declares.
+ * @returns {{ missing: string[], unexpected: string[] }}
+ */
+export function classify(present, expected) {
+  return {
+    missing: expected.filter((table) => !present.includes(table)),
+    unexpected: present.filter((table) => !expected.includes(table)),
+  }
 }
