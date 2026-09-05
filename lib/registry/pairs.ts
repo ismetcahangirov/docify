@@ -220,6 +220,17 @@ export function pairBySlug(slug: string): ConversionPair | undefined {
   return BY_SLUG.get(slug)
 }
 
+/**
+ * The conversions people arrive at a converter for, in catalogue order.
+ *
+ * What the home page leads with (issue #267): the whole of `HIGH_DEMAND` and
+ * nothing from the tail, so that the first screen answers the questions most
+ * people bring rather than the ones a catalogue happens to start with.
+ */
+export function popularPairs(): readonly ConversionPair[] {
+  return PAIRS.filter((pair) => pair.demand === 'high')
+}
+
 /** Every pair that starts from `format`, in catalogue order. */
 export function pairsFrom(format: FormatId): readonly ConversionPair[] {
   return PAIRS.filter((pair) => pair.from === format)

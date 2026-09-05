@@ -54,13 +54,14 @@ const WCAG_22_AA = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag
 /**
  * Every page shape the site has. The other 123 conversion pages are the last one.
  *
- * `interactive` says whether the page has anything the keyboard can reach. The
- * home page and `/tools` are still the scaffold's placeholders and have no link
- * and no button on them at all — which is a gap of its own, and not one an
- * accessibility suite should paper over by asserting nothing.
+ * `interactive` says whether the page has anything the keyboard can reach.
+ * `/tools` is still the scaffold's placeholder and has no link and no button on
+ * it at all — which is a gap of its own, and not one an accessibility suite
+ * should paper over by asserting nothing. The home page stopped being one in
+ * #267 and now carries the site frame plus a grid of links.
  */
 const PAGES = [
-  { path: '/', label: 'the home page', interactive: false },
+  { path: '/', label: 'the home page', interactive: true },
   { path: '/convert', label: 'the converter hub', interactive: true },
   { path: '/tools', label: 'the tools placeholder', interactive: false },
   { path: '/convert/heic-to-jpg', label: 'a conversion page', interactive: true },
