@@ -56,7 +56,7 @@ const NO_ALTERNATIVES: readonly ConversionTask[] = []
 
 function Converter({ pair }: ConverterProps) {
   const queue = useFileQueue()
-  const { add, run, cancel, remove } = queue
+  const { add, run, cancel, remove, retry: requeue } = queue
 
   const from = formatMeta(pair.from)
   const to = formatMeta(pair.to)
@@ -94,7 +94,9 @@ function Converter({ pair }: ConverterProps) {
    * out-of-memory crash.
    *
    * A job that has been cancelled stays in `started`, so it waits for the user
-   * to ask again rather than restarting itself the moment they stop it.
+   * to ask again rather than restarting itself the moment they stop it. A job
+   * the user asks to try again is taken *out* of `started` (see `retry`), which
+   * is how the request reaches this effect.
    */
   React.useEffect(() => {
     if (busy.current) return
@@ -110,13 +112,21 @@ function Converter({ pair }: ConverterProps) {
     })
   }, [queue.jobs, run, task])
 
+  /**
+   * "Try again" puts the job back in the line; it does not start it.
+   *
+   * Calling `run` from here would bypass `busy`, and a second job alongside the
+   * one in flight is the out-of-memory case the scheduler exists to prevent
+   * (issue #263). Returning the job to `queued` and forgetting that it was ever
+   * started is enough: the effect above sees a queued job it has not started
+   * and takes it in turn, once whatever is running has settled.
+   */
   const retry = React.useCallback(
     (id: string) => {
-      // Already in `started`, and deliberately so — this is the user asking,
-      // not the scheduler picking it back up.
-      void run(id, task)
+      started.current.delete(id)
+      requeue(id)
     },
-    [run, task],
+    [requeue],
   )
 
   /**

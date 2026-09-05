@@ -21,9 +21,11 @@ import type { ConvertRequest } from '@/lib/worker/types'
 const startConversion = vi.hoisted(() => vi.fn())
 const cancelConversion = vi.hoisted(() => vi.fn())
 const probeCapabilities = vi.hoisted(() => vi.fn())
+const reportConversion = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/worker/jobs', () => ({ startConversion, cancelConversion }))
 vi.mock('@/lib/router/capabilities', () => ({ probeCapabilities }))
+vi.mock('@/lib/stats/report', () => ({ reportConversion }))
 
 const desktop: Capabilities = {
   crossOriginIsolated: true,
@@ -340,5 +342,93 @@ describe('useFileQueue — cancelling', () => {
     })
 
     await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(2))
+  })
+})
+
+describe('useFileQueue — trying again', () => {
+  /** A job the router has refused, so it sits in `failed` with no worker involved. */
+  async function failed() {
+    const { result } = renderHook(() => useFileQueue())
+
+    act(() => {
+      result.current.add([file()])
+    })
+    const id = result.current.jobs[0].id
+
+    await act(async () => {
+      await result.current.run(id, impossible)
+    })
+    expect(result.current.jobs[0].state).toBe('failed')
+    vi.clearAllMocks()
+    probeCapabilities.mockReturnValue(desktop)
+
+    return { result, id }
+  }
+
+  it('runs a failed job again, all the way to done (issue #263)', async () => {
+    const worker = controllable()
+    const { result, id } = await failed()
+
+    await act(async () => {
+      void result.current.run(id, jpgToPng)
+    })
+
+    // The state table has no `start` out of `failed`; the run has to go back
+    // through `queued` first, or the reducer drops every event that follows and
+    // the worker converts a file the list never shows moving.
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+    expect(result.current.jobs[0].state).toBe('loading-engine')
+    expect(result.current.jobs[0].failure).toBeUndefined()
+
+    await worker.finish()
+    await waitFor(() => expect(result.current.jobs[0].state).toBe('done'))
+  })
+
+  it('reports the retried conversion exactly once', async () => {
+    const worker = controllable()
+    const { result, id } = await failed()
+
+    await act(async () => {
+      void result.current.run(id, jpgToPng)
+    })
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+    await worker.finish()
+    await waitFor(() => expect(result.current.jobs[0].state).toBe('done'))
+
+    expect(reportConversion).toHaveBeenCalledTimes(1)
+    expect(reportConversion).toHaveBeenCalledWith(jpgToPng, expect.any(Number), 'success')
+  })
+
+  it('retry() returns a finished job to the queue without starting it', async () => {
+    const { result, id } = await failed()
+
+    act(() => {
+      result.current.retry(id)
+    })
+
+    expect(result.current.jobs[0].state).toBe('queued')
+    expect(result.current.jobs[0].file.name).toBe('photo.jpg')
+    expect(startConversion).not.toHaveBeenCalled()
+  })
+
+  it('retry() leaves a running job alone', async () => {
+    controllable()
+    const { result } = renderHook(() => useFileQueue())
+
+    act(() => {
+      result.current.add([file()])
+    })
+    const id = result.current.jobs[0].id
+
+    await act(async () => {
+      void result.current.run(id, jpgToPng)
+    })
+    await waitFor(() => expect(startConversion).toHaveBeenCalled())
+
+    act(() => {
+      result.current.retry(id)
+    })
+
+    expect(result.current.jobs[0].state).toBe('loading-engine')
   })
 })

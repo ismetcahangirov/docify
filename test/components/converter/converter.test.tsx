@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Converter } from '@/components/converter/converter'
 import { pairBySlug } from '@/lib/registry/pairs'
+import { startConversion } from '@/lib/worker/jobs'
 
 /*
  * The converter island, composed (issue #66).
@@ -154,5 +155,30 @@ describe('dropping files', () => {
     render(<Converter pair={pair} />)
 
     expect(screen.queryByRole('region', { name: /results/i })).not.toBeInTheDocument()
+  })
+})
+
+describe('trying again', () => {
+  it('waits its turn behind the job that is running (issue #263)', async () => {
+    render(<Converter pair={pair} />)
+    drop(['broken.heic', 'slow.heic'])
+
+    // The first job fails; the scheduler then starts the second.
+    await waitFor(() => expect(rejectResult).toBeDefined())
+    rejectResult(new Error('The decoder gave up.'))
+    await screen.findByText('The decoder gave up.')
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(2))
+
+    fireEvent.click(screen.getByRole('button', { name: /try converting broken\.heic again/i }))
+
+    // Every engine is budgeted for a tab of its own, so the retry queues up
+    // rather than running alongside the job already in flight.
+    await waitFor(() => expect(screen.queryByText('The decoder gave up.')).not.toBeInTheDocument())
+    expect(startConversion).toHaveBeenCalledTimes(2)
+
+    resolveResult(converted)
+    await screen.findByRole('link', { name: 'slow.jpg' })
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(3))
   })
 })

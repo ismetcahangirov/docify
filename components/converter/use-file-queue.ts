@@ -8,7 +8,7 @@ import type { EngineInput } from '@/lib/engines/types'
 import type { JobPatch, QueueAction, QueuedJob } from '@/lib/queue/queue'
 import { createJob, queueReducer } from '@/lib/queue/queue'
 import type { JobEvent } from '@/lib/queue/state'
-import { isRunning } from '@/lib/queue/state'
+import { isFinished, isRunning } from '@/lib/queue/state'
 import { budgetBytes } from '@/lib/router/budget'
 import { probeCapabilities } from '@/lib/router/capabilities'
 import { route } from '@/lib/router/route'
@@ -78,6 +78,14 @@ export interface FileQueue {
   run(id: string, task: ConversionTask, settings?: JobSettings): Promise<void>
   /** Stops a running job, which returns it to `queued` with the file still there. */
   cancel(id: string): void
+  /**
+   * Returns a finished job to `queued` without starting it.
+   *
+   * Starting is the scheduler's job, and deliberately not this one's: whoever
+   * owns the "one at a time" rule is the only thing that may start a run, so a
+   * retry joins the line rather than jumping it (issue #263).
+   */
+  retry(id: string): void
   remove(id: string): void
   /** Drops everything that has finished, leaving whatever is still in flight. */
   clearFinished(): void
@@ -127,10 +135,18 @@ export function useFileQueue(): FileQueue {
     [advance],
   )
 
+  const retry = React.useCallback((id: string) => advance(id, 'retry'), [advance])
+
   const run = React.useCallback(
     async (id: string, task: ConversionTask, settings: JobSettings = {}) => {
       const job = latest.current.find((candidate) => candidate.id === id)
       if (job === undefined || isRunning(job.state)) return
+
+      // The table has no `start` out of `done` or `failed` — only `retry`, which
+      // goes back to `queued`. Without this step the reducer drops `start` and
+      // every event after it, and the worker converts a file whose card never
+      // moves (issue #263).
+      if (isFinished(job.state)) advance(id, 'retry')
 
       advance(id, 'start')
 
@@ -177,7 +193,7 @@ export function useFileQueue(): FileQueue {
   const remove = React.useCallback((id: string) => dispatch({ type: 'remove', id }), [])
   const clearFinished = React.useCallback(() => dispatch({ type: 'clearFinished' }), [])
 
-  return { jobs, add, run, cancel, remove, clearFinished }
+  return { jobs, add, run, cancel, retry, remove, clearFinished }
 }
 
 /** The starting list, hoisted so `useReducer` is not handed a new array each render. */

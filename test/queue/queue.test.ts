@@ -144,6 +144,34 @@ describe('advance', () => {
     expect(at(restarted).endedAt).toBeUndefined()
   })
 
+  it('forgets the outcome the moment a job is retried, not only when it restarts', () => {
+    // A retried job can wait in `queued` behind whatever is running (issue
+    // #263), and a "Waiting" card that still says "could not convert" reads as
+    // a retry that did nothing.
+    const finished = one({
+      state: 'failed',
+      progress: 1,
+      startedAt: NOW - 10,
+      endedAt: NOW,
+      failure: { message: 'That did not work.' },
+      engine: 'ffmpeg',
+      reason: 'Fallback',
+      warnings: [],
+    })
+
+    const retried = queueReducer(finished, { type: 'advance', id: 'a', event: 'retry', at: NOW })
+
+    expect(at(retried)).toMatchObject({ state: 'queued', progress: null })
+    expect(at(retried).failure).toBeUndefined()
+    expect(at(retried).result).toBeUndefined()
+    expect(at(retried).engine).toBeUndefined()
+    expect(at(retried).reason).toBeUndefined()
+    expect(at(retried).warnings).toBeUndefined()
+    expect(at(retried).startedAt).toBeUndefined()
+    expect(at(retried).endedAt).toBeUndefined()
+    expect(at(retried).file).toBeDefined()
+  })
+
   it('forgets the run when a job is cancelled', () => {
     const running = one({
       state: 'processing',
