@@ -189,6 +189,49 @@ describe('advance', () => {
     expect(at(cancelled).file).toBeDefined()
   })
 
+  it('marks a cancelled job, because `queued` alone cannot say nobody will start it', () => {
+    // The scheduler leaves a cancelled job in its `started` set so it does not
+    // restart itself, which makes it indistinguishable from a fresh drop by
+    // state alone — and a card with no control on it (issue #278).
+    const running = one({ state: 'processing', progress: 0.4, startedAt: NOW })
+
+    const cancelled = queueReducer(running, { type: 'advance', id: 'a', event: 'cancel', at: NOW })
+
+    expect(at(cancelled).cancelled).toBe(true)
+  })
+
+  it('leaves a job nobody has cancelled unmarked', () => {
+    const added = queueReducer([], { type: 'add', jobs: one() })
+
+    expect(at(added).cancelled).toBeUndefined()
+  })
+
+  it('clears the mark when a cancelled job is asked to go again', () => {
+    // `retry` from `queued` moves nothing, and exists for exactly this: the
+    // job is in the line again, so the card stops offering to start it.
+    const cancelled = one({ state: 'queued', cancelled: true })
+
+    const requeued = queueReducer(cancelled, {
+      type: 'advance',
+      id: 'a',
+      event: 'retry',
+      at: NOW,
+    })
+
+    expect(at(requeued)).toMatchObject({ state: 'queued' })
+    expect(at(requeued).cancelled).toBeUndefined()
+    expect(at(requeued).file).toBeDefined()
+  })
+
+  it('clears the mark when the scheduler starts a cancelled job', () => {
+    const cancelled = one({ state: 'queued', cancelled: true })
+
+    const started = queueReducer(cancelled, { type: 'advance', id: 'a', event: 'start', at: NOW })
+
+    expect(at(started)).toMatchObject({ state: 'routing' })
+    expect(at(started).cancelled).toBeUndefined()
+  })
+
   it('never mutates the job it replaces', () => {
     const before = one({ state: 'routing' })
     queueReducer(before, { type: 'advance', id: 'a', event: 'routed', at: NOW })

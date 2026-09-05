@@ -110,6 +110,43 @@ describe('useFileQueue — the list', () => {
 
     expect(result.current.jobs.map((job) => job.file.name)).toEqual(['b.jpg'])
   })
+
+  it('stops the worker when the file taken out was still being converted', async () => {
+    // Otherwise the engine keeps working on a file the user discarded, and the
+    // scheduler waits for it before starting the next one (issue #278).
+    controllable()
+    const { result } = renderHook(() => useFileQueue())
+
+    act(() => {
+      result.current.add([file()])
+    })
+    const id = result.current.jobs[0].id
+
+    await act(async () => {
+      void result.current.run(id, jpgToPng)
+    })
+    await waitFor(() => expect(startConversion).toHaveBeenCalled())
+
+    act(() => {
+      result.current.remove(id)
+    })
+
+    expect(cancelConversion).toHaveBeenCalledWith('worker-1')
+    expect(result.current.jobs).toHaveLength(0)
+  })
+
+  it('asks the worker for nothing when the file taken out was not running', () => {
+    const { result } = renderHook(() => useFileQueue())
+
+    act(() => {
+      result.current.add([file()])
+    })
+    act(() => {
+      result.current.remove(result.current.jobs[0].id)
+    })
+
+    expect(cancelConversion).not.toHaveBeenCalled()
+  })
 })
 
 describe('useFileQueue — running a job', () => {

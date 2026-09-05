@@ -55,6 +55,11 @@ import { RouteBadge } from './route-badge'
  * `queued` with the file still in the list. Nothing here decides whether the
  * cancel arrived in time — that is the state table's answer, and this component
  * renders whatever it says afterwards.
+ *
+ * What the card then owes the user is a way back. A stopped job waits for them
+ * to ask again rather than restarting itself, so "Start" appears on a `queued`
+ * job the reducer has marked `cancelled` — and on no other, since a file that
+ * has simply not had its turn is already going to run (issue #278).
  */
 
 /** What each state is called in front of a person. */
@@ -92,7 +97,13 @@ export type JobCardProps = React.ComponentProps<'article'> &
     job: QueuedJob
     /** Stops a running job. Absent hides the button rather than disabling it. */
     onCancel?: (id: string) => void
-    /** Runs a finished job again. */
+    /**
+     * Puts a job back in the line: a finished one, or one the user stopped.
+     *
+     * One handler for both because they are the same request — the job goes
+     * back to `queued` and the scheduler takes it in turn — and two would be
+     * two chances to wire one of them to a run that jumps the queue.
+     */
     onRetry?: (id: string) => void
     /** Takes the file out of the queue altogether. */
     onRemove?: (id: string) => void
@@ -248,6 +259,25 @@ function JobCard({
             onClick={() => onCancel(job.id)}
           >
             Cancel
+          </Button>
+        )}
+
+        {/*
+         * A job the user stopped is `queued` with nothing coming for it: the
+         * scheduler deliberately does not start it again on its own, so without
+         * this the card reads "Waiting" and offers no control that moves it
+         * (issue #278). A job that is merely waiting its turn carries no mark
+         * and gets no button — it is already going to run.
+         */}
+        {job.state === 'queued' && job.cancelled === true && onRetry !== undefined && (
+          <Button
+            type="button"
+            variant="secondary"
+            data-slot="job-card-start"
+            aria-label={`Start converting ${job.file.name}`}
+            onClick={() => onRetry(job.id)}
+          >
+            Start
           </Button>
         )}
 

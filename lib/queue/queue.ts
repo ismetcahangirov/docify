@@ -61,6 +61,20 @@ export interface QueuedJob {
   startedAt?: number
   /** When it reached `done` or `failed`. */
   endedAt?: number
+  /**
+   * Whether this job is `queued` because the user stopped it, rather than
+   * because it has not had its turn yet.
+   *
+   * There is deliberately no `cancelled` state (`./state` says why), and by
+   * state alone a stopped job is identical to a file that has just been
+   * dropped. They are not the same thing to the person looking at the card:
+   * the scheduler leaves a cancelled job alone until it is asked again, so
+   * that card is the only way back and has to offer one (issue #278).
+   *
+   * Set on `cancel`, and cleared the moment the job is in the line again —
+   * either by `retry` or by the run that starts it.
+   */
+  cancelled?: boolean
 }
 
 /**
@@ -150,6 +164,7 @@ function advance(job: QueuedJob, action: Extract<QueueAction, { type: 'advance' 
       progress: null,
       startedAt: action.at,
       endedAt: undefined,
+      cancelled: undefined,
       result: action.patch?.result,
       failure: action.patch?.failure,
       engine: action.patch?.engine,
@@ -162,14 +177,23 @@ function advance(job: QueuedJob, action: Extract<QueueAction, { type: 'advance' 
 
   if (action.event === 'cancel') {
     // Back to the start, and back to knowing nothing: the engine it had chosen
-    // may not be the one it gets next time.
-    return { ...moved, progress: null, startedAt: undefined, endedAt: undefined }
+    // may not be the one it gets next time. Marked, because nothing will start
+    // it again on its own and its card is what has to offer to.
+    return {
+      ...moved,
+      progress: null,
+      startedAt: undefined,
+      endedAt: undefined,
+      cancelled: true,
+    }
   }
 
   if (action.event === 'retry') {
     // Back to `queued`, and the old outcome goes with it. A retried job may
     // wait its turn behind another one (issue #263), and a "Waiting" card that
-    // still explains a failure looks like a retry that did nothing.
+    // still explains a failure looks like a retry that did nothing. This is
+    // also the move a cancelled job makes when it is asked to go again, where
+    // the state does not change and dropping the mark is the whole point.
     return {
       ...moved,
       progress: null,
@@ -180,6 +204,7 @@ function advance(job: QueuedJob, action: Extract<QueueAction, { type: 'advance' 
       engine: undefined,
       reason: undefined,
       warnings: undefined,
+      cancelled: undefined,
     }
   }
 

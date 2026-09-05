@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Converter } from '@/components/converter/converter'
 import { pairBySlug } from '@/lib/registry/pairs'
-import { startConversion } from '@/lib/worker/jobs'
+import { cancelConversion, startConversion } from '@/lib/worker/jobs'
 
 /*
  * The converter island, composed (issue #66).
@@ -217,6 +217,78 @@ describe('trying again', () => {
     await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(3))
     expect((startConversion as ReturnType<typeof vi.fn>).mock.calls[2][0].files[0].name).toBe(
       'broken.heic',
+    )
+  })
+})
+
+describe('starting a cancelled job again (issue #278)', () => {
+  it('offers a control on the card the user stopped, and none on the one they did not', async () => {
+    render(<Converter pair={pair} />)
+    drop(['stopped.heic', 'next.heic'])
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: /cancel converting stopped\.heic/i }))
+
+    // The scheduler keeps a cancelled job in its `started` set so it does not
+    // restart itself, so the card is the only way back — and the file dropped
+    // behind it, which is merely waiting, must not grow the same button.
+    await screen.findByRole('button', { name: /start converting stopped\.heic/i })
+    expect(
+      screen.queryByRole('button', { name: /start converting next\.heic/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('waits for the job in flight rather than running beside it', async () => {
+    render(<Converter pair={pair} />)
+    drop(['stopped.heic', 'next.heic'])
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: /cancel converting stopped\.heic/i }))
+
+    // The cancelled run's own abort, which is what frees the scheduler for the
+    // file behind it.
+    const abort = new Error('The conversion was cancelled.')
+    abort.name = 'AbortError'
+    settle().reject(abort)
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(2))
+
+    fireEvent.click(screen.getByRole('button', { name: /start converting stopped\.heic/i }))
+
+    // Every engine is budgeted for a tab of its own, so this joins the line.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: /start converting stopped\.heic/i }),
+      ).not.toBeInTheDocument(),
+    )
+    expect(startConversion).toHaveBeenCalledTimes(2)
+
+    settle().resolve(converted)
+    await screen.findByRole('link', { name: 'next.jpg' })
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(3))
+    expect((startConversion as ReturnType<typeof vi.fn>).mock.calls[2][0].files[0].name).toBe(
+      'stopped.heic',
+    )
+  })
+
+  it('stops the worker when a running job is removed, and takes the next one', async () => {
+    render(<Converter pair={pair} />)
+    drop(['dropped.heic', 'next.heic'])
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByRole('button', { name: /remove dropped\.heic from the queue/i }))
+    expect(cancelConversion).toHaveBeenCalledWith('worker-1')
+
+    // The abort the cancel above produces is what ends the run, and the
+    // scheduler is free only once it has landed.
+    const abort = new Error('The conversion was cancelled.')
+    abort.name = 'AbortError'
+    settle().reject(abort)
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(2))
+    expect((startConversion as ReturnType<typeof vi.fn>).mock.calls[1][0].files[0].name).toBe(
+      'next.heic',
     )
   })
 })
