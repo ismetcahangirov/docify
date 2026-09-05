@@ -191,8 +191,23 @@ describe('the remux descriptor', () => {
     }
   })
 
-  it('does not claim a plain conversion — only the extraction it can copy', () => {
-    expect(descriptor.supports(task('mp4', 'm4a', 'convert'), desktop)).toBe(false)
+  it('claims a plain conversion into M4A, which is the same extraction by another name', () => {
+    // The catalogue pages are keyed on the format pair and every one of them
+    // asks for `convert` (issue #266). "MP4 to M4A" is the sound alone in its
+    // own container whatever the op says, and a copy is the only honest way to
+    // do it.
+    expect(descriptor.supports(task('mp4', 'm4a', 'convert'), desktop)).toBe(true)
+    expect(descriptor.supports(task('mov', 'm4a', 'convert'), desktop)).toBe(true)
+    expect(descriptor.supports(task('mp4', 'm4a', 'convert'), codecless)).toBe(true)
+  })
+
+  it('still leaves a conversion into an encoded audio format alone', () => {
+    for (const to of ['mp3', 'wav', 'flac', 'ogg', 'aac'] as const) {
+      expect(descriptor.supports(task('mp4', to, 'convert'), desktop)).toBe(false)
+    }
+  })
+
+  it('does not claim a compression into M4A, which carries a setting it cannot honour', () => {
     expect(descriptor.supports(task('mp4', 'm4a', 'compress'), desktop)).toBe(false)
   })
 
@@ -241,6 +256,25 @@ describe('the remux runner, extracting audio', () => {
     expect(videoTrack(read)).toBeUndefined()
     expect(audioTrack(read)).toBeDefined()
     expect(result.type).toBe('audio/mp4')
+  })
+
+  it('does the same for a `convert` into M4A: the picture goes, the sound stays', async () => {
+    // What a catalogue page sends (issue #266). Deciding by the target rather
+    // than the op is what keeps the file from coming back as a silent movie in
+    // an audio container.
+    const audio = audioSamples(8)
+    const source = await movieFile(movie(videoSamples(6), audio))
+
+    const result = await createRunner().run(input([source], 'm4a', 'convert'), running(), () => {})
+    const read = await readMp4(new Uint8Array(await result.arrayBuffer()), running())
+
+    expect(videoTrack(read)).toBeUndefined()
+    expect(result.type).toBe('audio/mp4')
+    const track = audioTrack(read)
+    expect(track?.samples).toHaveLength(audio.length)
+    for (const [index, sample] of audio.entries()) {
+      expect(Array.from(track?.samples[index]?.data ?? [])).toEqual(Array.from(sample.data))
+    }
   })
 
   it('copies every sample byte for byte, which is what makes it lossless', async () => {

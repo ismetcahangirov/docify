@@ -226,6 +226,47 @@ describe('route — the real remux descriptor', () => {
   })
 })
 
+describe('route — the catalogue pages that end in M4A', () => {
+  // `/convert/mp4-to-m4a` and `/convert/mov-to-m4a` send `convert`, because
+  // every page is keyed on its format pair (issue #266). The job is the same
+  // index walk as an extraction, and it has to win on every device — or a
+  // Chromium user gets AAC re-encoded into AAC and a Firefox user downloads
+  // 31 MB of ffmpeg for a copy.
+  const pages: readonly ConversionTask[] = [
+    { from: 'mp4', to: 'm4a', op: 'convert' },
+    { from: 'mov', to: 'm4a', op: 'convert' },
+  ]
+  const codecless = { ...desktop, webCodecsVideo: false, webCodecsAudio: false }
+
+  it('are a stream copy on a desktop with the codecs', () => {
+    register(realRemux, realWebCodecs, realFfmpeg)
+
+    for (const page of pages) {
+      const result = chosen(route(page, 10 * MB, desktop))
+
+      expect(result.engine).toBe('remux')
+      expect(result.warnings).toEqual([])
+    }
+  })
+
+  it('are a stream copy on a browser without them, instead of the ffmpeg download', () => {
+    register(realRemux, realWebCodecs, realFfmpeg)
+
+    for (const page of pages) {
+      expect(chosen(route(page, 10 * MB, codecless)).engine).toBe('remux')
+    }
+  })
+
+  it('are a stream copy on a phone, old or new', () => {
+    register(realRemux, realWebCodecs, realFfmpeg)
+
+    for (const page of pages) {
+      expect(chosen(route(page, 10 * MB, ios)).engine).toBe('remux')
+      expect(chosen(route(page, 10 * MB, iphone)).engine).toBe('remux')
+    }
+  })
+})
+
 describe('route — MOV into MP4', () => {
   it('is a stream copy, not a transcode, whenever one will fit', () => {
     register(realRemux, realWebCodecs, realFfmpeg)
