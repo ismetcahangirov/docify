@@ -18,6 +18,7 @@ import { GridOverlay } from '@/components/blocks/grid-overlay'
 import { SectionBlock } from '@/components/blocks/section-block'
 import { StatPair } from '@/components/blocks/stat-pair'
 import { Button } from '@/components/ui/button'
+import { copyFor } from '@/lib/registry/copy'
 import { type FormatKind, formatMeta } from '@/lib/registry/formats'
 import { type ConversionPair, PAIRS, pairTitle, popularPairs } from '@/lib/registry/pairs'
 import { convertHref } from '@/lib/registry/slugs'
@@ -124,6 +125,19 @@ function featured(): readonly { pair: ConversionPair; icon: LucideIcon }[] {
   )
 }
 
+/**
+ * A card's one line: the first sentence of the pair's own page, which says why
+ * somebody makes *this* conversion. The source format's summary would do, but
+ * three PDF cards would then carry the same paragraph three times, and a row
+ * that repeats itself reads as a template.
+ */
+function lead(pair: ConversionPair): string {
+  const intro = copyFor(pair.slug)?.intro
+  const sentence = intro === undefined ? undefined : /^.*?[.!?](?=\s|$)/.exec(intro)?.[0]
+
+  return sentence ?? formatMeta(pair.from).summary
+}
+
 const CAPABILITIES: readonly CapabilityItem[] = [
   { icon: MonitorIcon, label: 'Runs in your browser', detail: 'Nothing leaves the tab' },
   { icon: ShieldCheckIcon, label: 'No sign-up', detail: 'No account, no email' },
@@ -150,15 +164,15 @@ const STEPS: readonly { title: string; body: string }[] = [
 const QUESTIONS: readonly { q: string; a: string }[] = [
   {
     q: 'Does Docify ever see my file?',
-    a: 'No. The page you are reading is the last thing the server sends. The converter itself runs inside your browser, and the file is never transmitted — not to Docify, not to anyone. The only thing counted afterwards is that a conversion happened, as a format pair and a rough size band, with nothing from the file in it.',
+    a: 'No. The page you are reading is the last thing the server sends. The converter itself runs inside your browser, and the file is never transmitted — not to Docify, not to anyone. Two things are counted afterwards: that this page was opened, and that a conversion happened, as a format pair and a rough size band. Nothing from the file, and nothing about you, is in either.',
   },
   {
     q: 'Is there a file size limit?',
-    a: 'Not one Docify sets. The ceiling is the memory your device gives a browser tab, because that is where the work happens. Before anything starts, Docify measures the file against that ceiling and, if it will not fit, tells you the number and what to try instead — a desktop, or a lighter conversion.',
+    a: 'Not one Docify sets. The ceiling is the memory your device gives a browser tab, because that is where the work happens. Before anything starts, Docify measures the file against that ceiling and, if it will not fit, tells you the number and what to try instead: a desktop if you are on a phone, or a smaller file if you are not.',
   },
   {
     q: 'Which formats does it handle?',
-    a: `${PAIRS.length} pairs across images, PDFs, video and audio: phone photos in HEIC and AVIF, footage in MOV, MKV and WebM, recordings in FLAC, WAV and M4A, and PDFs to and from pictures and text. Every pair has a page of its own, and the catalogue lists them by the format you already have.`,
+    a: `${PAIRS.length} pairs across images, PDFs, video and audio: HEIC and AVIF from phones and the web, footage in MOV, MKV and WebM, recordings in FLAC, WAV and M4A, PDFs into pictures and text, and pictures into PDF. Every pair has a page of its own, and the catalogue lists them by the format you already have.`,
   },
   {
     q: 'What does it cost?',
@@ -172,16 +186,19 @@ export default function HomePage() {
   return (
     <main className="flex flex-col gap-6 py-6">
       {/*
-       * The hero, and the one place the grid overlay is allowed. `relative`
-       * and `overflow-hidden` are what the overlay's `absolute inset-0` sits
-       * inside; the content is lifted above it with its own `relative`.
+       * The hero, and the one place the grid overlay is allowed. It is a band
+       * along the bottom of the block, inside the padding, and not a backdrop
+       * to the text: axe cannot rate the contrast of text drawn over an image
+       * node, and `e2e/a11y.spec.ts` fails a page it could not rate. The
+       * block's own bottom padding plus the content's is 48px on the
+       * narrowest screen, so a 40px band never touches the button above it.
        */}
       <SectionBlock
         variant="dark"
         aria-labelledby="hero-heading"
         className="relative overflow-hidden"
       >
-        <GridOverlay />
+        <GridOverlay className="inset-x-0 bottom-0 h-10 w-full" />
         <div className="relative flex min-w-0 flex-col gap-8 py-6 sm:py-12">
           <p className="text-eyebrow uppercase text-fg-dark-mut">File converter</p>
           <h1
@@ -225,10 +242,13 @@ export default function HomePage() {
                */}
               <a
                 href={convertHref(pair.from, pair.to)}
+                // The visible title is the name; without this a link list
+                // reads the whole card, thirty words a time.
+                aria-label={pairTitle(pair)}
                 className="block h-full rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current"
               >
                 <FeatureCard icon={icon} title={pairTitle(pair)} className="h-full">
-                  {formatMeta(pair.from).summary}
+                  {lead(pair)}
                 </FeatureCard>
               </a>
             </li>
@@ -290,7 +310,7 @@ export default function HomePage() {
         <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
           <StatPair figure={PAIRS.length} caption="converters, each with a page of its own" />
           <StatPair figure="0" caption="uploads — no file has ever reached a server" />
-          <StatPair figure="0" caption="accounts — nothing to sign up for or to leak" />
+          <StatPair figure="0" caption="accounts — nothing to sign up for, nothing to leak" />
         </div>
 
         <CapabilityStrip

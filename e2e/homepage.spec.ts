@@ -25,8 +25,10 @@ test.describe('homepage', () => {
   test('leads into the catalogue, and straight into the popular conversions', async ({ page }) => {
     await page.goto('/')
 
+    // The button by its own name: the popular block ends with a second link
+    // into the catalogue, and a looser pattern matches both.
     await expect(
-      page.getByRole('main').getByRole('link', { name: /every converter/i }),
+      page.getByRole('main').getByRole('link', { name: /browse every converter/i }),
     ).toHaveAttribute('href', '/convert')
 
     const popular = page.getByRole('main').locator('a[href^="/convert/"]')

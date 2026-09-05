@@ -55,6 +55,12 @@ than implying `pnpm size`, `pnpm audit:seo` or `pnpm e2e` was run — CI is then
 the only evidence, and it is the job that catches this class of bug. Do not
 spend the hour trying another Node version: 20, 22 and 24 have all been tried.
 
+`next dev` *does* run here. So the checks that only need a served page — axe
+against a route, the responsive sweep, a Playwright spec pointed at
+`localhost:3000` — can still be driven by hand against the dev server, and on
+#267 that would have caught both CI failures (a contrast check axe could not
+evaluate, and a link the SEO audit called broken) before the push.
+
 `pnpm env use --global <version>` is the way to try one anyway. Two traps:
 pnpm's bin directory must be on `PATH` for the command to run at all, and it
 must be *appended*, not prefixed — prefixed, its `node` shim shadows the system

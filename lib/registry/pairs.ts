@@ -220,7 +220,6 @@ export function pairBySlug(slug: string): ConversionPair | undefined {
   return BY_SLUG.get(slug)
 }
 
-/** Every pair that starts from `format`, in catalogue order. */
 /**
  * The conversions people arrive at a converter for, in catalogue order.
  *
@@ -232,6 +231,7 @@ export function popularPairs(): readonly ConversionPair[] {
   return PAIRS.filter((pair) => pair.demand === 'high')
 }
 
+/** Every pair that starts from `format`, in catalogue order. */
 export function pairsFrom(format: FormatId): readonly ConversionPair[] {
   return PAIRS.filter((pair) => pair.from === format)
 }

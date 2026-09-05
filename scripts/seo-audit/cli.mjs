@@ -54,27 +54,42 @@ function fail(message) {
   process.exitCode = 1
 }
 
-/** `.next/server/app/convert/heic-to-jpg.html` -> `/convert/heic-to-jpg`. */
+/**
+ * `.next/server/app/convert/heic-to-jpg.html` -> `/convert/heic-to-jpg`, and
+ * `.next/server/app/llms.txt.body` -> `/llms.txt`.
+ */
 function urlOf(file) {
-  const path = posix.join(...relative(appDir, file).split(sep)).replace(/\.html$/, '')
+  const path = posix.join(...relative(appDir, file).split(sep)).replace(/\.(?:html|body)$/, '')
 
   return path === 'index' ? '/' : `/${path}`
 }
 
-/** Every prerendered HTML file under `.next/server/app`. */
-function htmlFiles(directory = appDir) {
+/**
+ * Every file the build wrote for a URL, under `.next/server/app`.
+ *
+ * Two kinds. A prerendered page is an `.html` file, and those are what the
+ * audit reads. A static route handler — `/llms.txt`, `/robots.txt`,
+ * `/sitemap.xml` — is written as a `.body` beside a `.meta`, and while there is
+ * no HTML to audit in one, it is a URL the build produced: a link to it is not
+ * broken. The site footer links to `/llms.txt` from every page (#267), and
+ * without this the audit reported a hundred and twenty-seven broken links to
+ * a file that was right there.
+ */
+function producedFiles(directory = appDir) {
   return readdirSync(directory).flatMap((name) => {
     const path = join(directory, name)
-    if (statSync(path).isDirectory()) return htmlFiles(path)
+    if (statSync(path).isDirectory()) return producedFiles(path)
 
-    return name.endsWith('.html') ? [path] : []
+    return name.endsWith('.html') || name.endsWith('.body') ? [path] : []
   })
 }
 
 function main() {
   let files
+  let produced
   try {
-    files = htmlFiles()
+    produced = producedFiles()
+    files = produced.filter((file) => file.endsWith('.html'))
   } catch (error) {
     fail(
       `Could not read the build output: ${error instanceof Error ? error.message : String(error)}. ` +
@@ -89,7 +104,8 @@ function main() {
   }
 
   const pages = files.map((file) => ({ url: urlOf(file), html: readFileSync(file, 'utf8') }))
-  const known = new Set(pages.map((page) => page.url))
+  // Every URL the build produced, not only the ones with HTML in them.
+  const known = new Set(produced.map(urlOf))
 
   const findings = [
     ...pages.flatMap((page) =>

@@ -82,7 +82,12 @@ describe('HomePage', () => {
     render(<HomePage />)
 
     // Whatever `PAIRS.length` is today, stated as a figure of its own — not a
-    // number somebody typed in a sentence and will forget to update.
-    expect(screen.getByText(String(PAIRS.length))).toBeInTheDocument()
+    // number somebody typed in a sentence and will forget to update. Scoped
+    // to the figures block so a second mention elsewhere cannot make the
+    // query ambiguous.
+    const heading = screen.getByRole('heading', { level: 2, name: /none of the server/i })
+    const facts = heading.closest('section') as HTMLElement
+
+    expect(within(facts).getByText(String(PAIRS.length))).toBeInTheDocument()
   })
 })

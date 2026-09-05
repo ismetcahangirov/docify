@@ -26,7 +26,9 @@ export function SiteHeader() {
   return (
     <header
       data-slot="site-header"
-      className="mx-3 flex min-w-0 items-center justify-between gap-6 py-5 font-sans sm:mx-6"
+      // The same inset as the blocks below, and the same gutter inside it, so
+      // the wordmark's first letter lines up with the hero heading's.
+      className="mx-3 flex min-w-0 items-center justify-between gap-6 px-6 py-5 font-sans sm:mx-6 sm:px-10"
     >
       <a
         href="/"
