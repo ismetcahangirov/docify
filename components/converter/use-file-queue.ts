@@ -38,9 +38,12 @@ import { cancelConversion, startConversion } from '@/lib/worker/jobs'
  *
  * A conversion outlives the user's attention. They cancel, they retry, they drop
  * another file, and the worker keeps posting about the job they walked away from
- * because it is on another thread and has not heard yet. Rather than guarding
- * each callback with "is this still the job I think it is", every message is
- * dispatched and `lib/queue/state.ts` drops the ones that no longer apply.
+ * because it is on another thread and has not heard yet. Two things stand
+ * between that and the list. First, every run carries a number (`runs`, below):
+ * a cancel takes the next one, and a run whose number has moved on dispatches
+ * nothing at all, since state alone cannot tell a job's second run from the
+ * first worker's late result (issue #264). Second, whatever does get dispatched
+ * goes through `lib/queue/state.ts`, which drops what no longer applies.
  */
 
 /** How much of a file to read looking for its pixel dimensions. */
@@ -103,6 +106,24 @@ export function useFileQueue(): FileQueue {
   const running = React.useRef(new Map<string, string>())
 
   /**
+   * Which attempt at each job is the current one (issue #264).
+   *
+   * The state table drops a message by *state*, and state is not enough: a job
+   * that was cancelled and started again is `processing` twice over, and the
+   * first worker's result would land on the second run's card. So every run
+   * takes a number, a cancel takes the next one, and anything a run learns
+   * after an `await` is checked against it before it is dispatched. The table
+   * stays as the second line of defence.
+   */
+  const runs = React.useRef(new Map<string, number>())
+  const nextRun = React.useCallback((id: string) => {
+    const token = (runs.current.get(id) ?? 0) + 1
+    runs.current.set(id, token)
+
+    return token
+  }, [])
+
+  /**
    * The list as it is *now*, for the same reason.
    *
    * `run` is called from an event handler and then awaits twice; by the time it
@@ -127,12 +148,16 @@ export function useFileQueue(): FileQueue {
       const workerJobId = running.current.get(id)
       if (workerJobId !== undefined) void cancelConversion(workerJobId)
 
+      // Whatever the run is doing — reading the header, waiting on the worker —
+      // it is no longer the current one, even if the worker never answers.
+      nextRun(id)
+
       // Dispatched whatever the worker answers. `cancelConversion` reports
       // `false` for a job that had already finished, and waiting a round trip
       // for that would leave the button looking dead.
       advance(id, 'cancel')
     },
-    [advance],
+    [advance, nextRun],
   )
 
   const retry = React.useCallback((id: string) => advance(id, 'retry'), [advance])
@@ -148,10 +173,18 @@ export function useFileQueue(): FileQueue {
       // moves (issue #263).
       if (isFinished(job.state)) advance(id, 'retry')
 
+      const token = nextRun(id)
+      const isCurrent = () => runs.current.get(id) === token
+
       advance(id, 'start')
 
       const caps = probeCapabilities()
-      const decision = route(task, [await routeFile(job.file)], caps)
+      const header = await routeFile(job.file)
+      // A cancel that landed during the header read: the job is back in
+      // `queued` and nothing below may happen — least of all the download.
+      if (!isCurrent()) return
+
+      const decision = route(task, [header], caps)
 
       if (!decision.ok) {
         advance(id, 'fail', {
@@ -185,12 +218,17 @@ export function useFileQueue(): FileQueue {
         caps,
         running: running.current,
         dispatch,
+        isCurrent,
       })
     },
-    [advance],
+    [advance, nextRun],
   )
 
-  const remove = React.useCallback((id: string) => dispatch({ type: 'remove', id }), [])
+  const remove = React.useCallback((id: string) => {
+    running.current.delete(id)
+    runs.current.delete(id)
+    dispatch({ type: 'remove', id })
+  }, [])
   const clearFinished = React.useCallback(() => dispatch({ type: 'clearFinished' }), [])
 
   return { jobs, add, run, cancel, retry, remove, clearFinished }
@@ -208,6 +246,8 @@ interface ConvertRun {
   caps: Capabilities
   running: Map<string, string>
   dispatch: React.Dispatch<QueueAction>
+  /** Whether this is still the run the job is on. False after a cancel or a restart. */
+  isCurrent: () => boolean
 }
 
 /**
@@ -218,7 +258,7 @@ interface ConvertRun {
  * whole path be driven in a test without a real `Worker`.
  */
 async function convert(run: ConvertRun): Promise<void> {
-  const { id, file, task, settings, engine, caps, running, dispatch } = run
+  const { id, file, task, settings, engine, caps, running, dispatch, isCurrent } = run
   let loaded = false
 
   /**
@@ -245,6 +285,9 @@ async function convert(run: ConvertRun): Promise<void> {
       ...settings,
     },
     (progress) => {
+      // A tick from a worker job the user has since cancelled, arriving after
+      // the job was started again, would move the new run's bar.
+      if (!isCurrent()) return
       markLoaded()
       dispatch({ type: 'progress', id, progress })
     },
@@ -254,10 +297,16 @@ async function convert(run: ConvertRun): Promise<void> {
 
   try {
     const blob = await result
+    // Every branch below is news about *this* run. Once the user has cancelled
+    // it — and possibly started another — none of it may reach the list, and
+    // none of it may be counted (issue #264).
+    if (!isCurrent()) return
     markLoaded()
     dispatch({ type: 'advance', id, event: 'succeed', at: Date.now(), patch: { result: blob } })
     reportConversion(task, file.size, 'success')
   } catch (reason) {
+    if (!isCurrent()) return
+
     // A cancel is not a failure: the user asked for it, and the list already
     // moved the job back to `queued` when they did. Dispatching it again is
     // harmless — the state table ignores what no longer applies — and it is what
@@ -277,7 +326,9 @@ async function convert(run: ConvertRun): Promise<void> {
     })
     reportConversion(task, file.size, 'failure')
   } finally {
-    running.delete(id)
+    // Only this run's own entry: a newer run may already have put its worker
+    // id here, and a cancel still has to be able to find it.
+    if (running.get(id) === jobId) running.delete(id)
   }
 }
 
