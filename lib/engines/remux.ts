@@ -85,7 +85,11 @@ const COPYABLE_CONTAINERS: ReadonlySet<FormatId> = new Set(['mp4', 'mov'])
  *
  * `convert` is "put this in a different container", which is precisely what a
  * remux is. `extract` is "give me the sound out of this", which is the same
- * copy with the picture left behind.
+ * copy with the picture left behind. A `convert` whose target is an audio
+ * container is that extraction by another name: every catalogue page sends
+ * `convert` because the URL is keyed on the format pair, so `/convert/mp4-to-m4a`
+ * has to be answered here or the job goes to an encoder for nothing (issue
+ * #266). What to keep is therefore decided by the *target*, not by the op.
  *
  * `compress` and `resize` are deliberately absent, and that is the line that
  * keeps this engine honest. Both arrive from a settings panel carrying a target
@@ -117,8 +121,11 @@ export const descriptor: EngineDescriptor = {
 
     if (task.op === 'extract') return COPYABLE_AUDIO.has(task.to)
 
-    // A container change, and only where there is a container to change.
-    return task.from !== task.to && COPYABLE_CONTAINERS.has(task.to)
+    // Only where there is a container to change.
+    if (task.from === task.to) return false
+
+    // A container change, or the sound alone in its own container.
+    return COPYABLE_CONTAINERS.has(task.to) || COPYABLE_AUDIO.has(task.to)
   },
 }
 
@@ -138,7 +145,11 @@ export function createRunner(): EngineRunner {
       const { remuxMp4 } = await import('./mp4-remux')
       throwIfAborted(signal)
 
-      const extracting = input.task.op === 'extract'
+      // By the target, not the op: `supports` only lets `extract` through to
+      // an audio target anyway, and a `convert` into M4A is the same job. An
+      // audio container holding a video track is a silent film with the wrong
+      // label on it.
+      const extracting = COPYABLE_AUDIO.has(input.task.to)
       const written = await remuxMp4(
         bytes,
         // An extraction leaves the picture behind; a container change carries

@@ -7,8 +7,12 @@ date: 2026-09-01
 
 `remux` (`lib/engines/remux.ts`, `priority: 12`) is a separate engine rather than
 a branch inside `webcodecs`, and it outranks both codec engines for the pairs it
-claims: `mp4`/`mov` into `m4a` as an `extract`, and `mp4` <-> `mov` as a
-`convert`.
+claims: `mp4`/`mov` into `m4a`, and `mp4` <-> `mov`. It claims them by
+*target*, not by op: every catalogue page sends `convert` because the URL is
+keyed on the format pair (`lib/registry/slugs.ts`), so `/convert/mp4-to-m4a` is
+a `convert` that has to be answered as an extraction. Until #266 the engine only
+took `m4a` under `extract`, and no page ever sent that, so both m4a pages went to
+a re-encode.
 
 Two reasons it could not live inside `webcodecs`, neither of them stylistic:
 
