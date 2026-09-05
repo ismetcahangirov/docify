@@ -161,12 +161,31 @@ describe('lib/db/schema.sql', () => {
     for (const [statement] of ddl.matchAll(/create index[^;]*/gi)) {
       expect(statement).toMatch(/if not exists/i)
     }
+    // The same rule from the other side. A bare `drop` is the one statement
+    // that turns a second `pnpm db:migrate` into an error, and this file is
+    // where it would have to be added.
+    for (const [statement] of ddl.matchAll(/drop [^;]*/gi)) {
+      expect(statement).toMatch(/if exists/i)
+    }
   })
 
   it('indexes what GET /api/stats reads and nothing else', () => {
-    // `page_totals` has no reader on a hot path — `pnpm analytics` runs once,
-    // by hand — and an index added before there is a query to serve is a guess.
+    /*
+     * `readTotals` in lib/db/stats.ts sums all time filtered by `outcome`, and
+     * that is the only query on a hot path. The `(day desc)` index that used to
+     * be here served a "recent days" read nothing ever performed.
+     *
+     * `page_totals` has no hot reader either — `pnpm analytics` runs once, by
+     * hand — and an index added before there is a query to serve is a guess.
+     */
     expect(ddl.match(/create index/gi) ?? []).toHaveLength(1)
-    expect(ddl).toMatch(/on conversion_totals \(day desc\)/i)
+    expect(ddl).toMatch(/on conversion_totals \(outcome\)/i)
+  })
+
+  it('drops the index it used to declare, so an old database loses it too', () => {
+    // The schema is applied to a live database rather than replacing one, so a
+    // statement that removes what a previous version created is the only way an
+    // index stops existing anywhere but a fresh provision.
+    expect(ddl).toMatch(/drop index if exists conversion_totals_day_idx/i)
   })
 })

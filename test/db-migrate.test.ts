@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { readSchema, splitStatements } from '../scripts/db-migrate/schema.mjs'
+import {
+  classify,
+  expectedTables,
+  readSchema,
+  splitStatements,
+} from '../scripts/db-migrate/schema.mjs'
 
 /*
  * The provisioning script's one piece of logic (issue #101).
@@ -67,7 +72,8 @@ describe('readSchema', () => {
     // rather than as a silently shorter list.
     expect(readSchema().map((statement) => statement.split('\n')[0].trim())).toEqual([
       'create table if not exists conversion_totals (',
-      'create index if not exists conversion_totals_day_idx',
+      'drop index if exists conversion_totals_day_idx',
+      'create index if not exists conversion_totals_outcome_idx',
       'create table if not exists page_totals (',
     ])
   })
@@ -84,8 +90,90 @@ describe('readSchema', () => {
   it('sends only idempotent statements, so re-provisioning is not an error', () => {
     // The deploy runbook applies this on every schema change, and a second
     // apply has to be a no-op rather than a failure somebody works around.
+    // `if not exists` on what the file creates, `if exists` on what it drops:
+    // both are the same property, and a statement with neither breaks it.
     for (const statement of readSchema()) {
-      expect(statement.toLowerCase()).toContain('if not exists')
+      expect(statement.toLowerCase()).toMatch(/\bif (not )?exists\b/)
     }
+  })
+})
+
+describe('expectedTables', () => {
+  /*
+   * The names the schema declares, read from the schema.
+   *
+   * `cli.mjs` used to hold the list as a literal, and issue #102 added a table
+   * without touching it — so every run since has reported `page_totals` as an
+   * unexpected table, and `--check` never verified it was there at all. A
+   * literal in a second file is a fact that can go stale silently; scanning the
+   * statements is the same fact with nowhere to drift to.
+   */
+  it('names every table lib/db/schema.sql declares', () => {
+    expect(expectedTables()).toEqual(['conversion_totals', 'page_totals'])
+  })
+
+  it('reads the names from the statements it is given', () => {
+    expect(
+      expectedTables([
+        'create table if not exists widgets (\n  id text not null\n)',
+        'create index if not exists widgets_id_idx on widgets (id)',
+      ]),
+    ).toEqual(['widgets'])
+  })
+
+  it('names nothing for a schema that creates no table', () => {
+    expect(expectedTables(['select 1'])).toEqual([])
+  })
+
+  it('reads a name the way Postgres would rather than the way the file writes it', () => {
+    // Not what `lib/db/schema.sql` looks like today, and that is the point: a
+    // scanner that only understands the current formatting silently returns
+    // nothing — or the schema name — the day somebody reformats a statement.
+    expect(
+      expectedTables(['CREATE  TABLE   IF NOT EXISTS  public.widgets (\n  id text not null\n)']),
+    ).toEqual(['widgets'])
+  })
+})
+
+describe('classify', () => {
+  /*
+   * The comparison `cli.mjs` prints, lifted out of it.
+   *
+   * It is the defect issue #271 reports — a database was told it held an
+   * unexpected table because the script knew one name — and it lived in a
+   * function that can only be reached with a live Postgres behind it. Split out,
+   * the classification is a pure comparison of two lists of strings, and the
+   * shape that matters (a table the schema declares that the database has, and
+   * therefore is neither missing nor unexpected) costs three lines to hold.
+   */
+  it('finds nothing wrong with a database that holds exactly the schema', () => {
+    expect(
+      classify(['conversion_totals', 'page_totals'], ['conversion_totals', 'page_totals']),
+    ).toEqual({ missing: [], unexpected: [] })
+  })
+
+  it('names every table the schema declares and the database lacks', () => {
+    expect(classify(['conversion_totals'], ['conversion_totals', 'page_totals'])).toEqual({
+      missing: ['page_totals'],
+      unexpected: [],
+    })
+  })
+
+  it('names a table nobody declared, and does not call a declared one unexpected', () => {
+    // The regression this file exists for: `page_totals` is in the schema, so
+    // its presence is never a note the operator has to think about.
+    expect(
+      classify(
+        ['conversion_totals', 'page_totals', 'somebody_elses_table'],
+        ['conversion_totals', 'page_totals'],
+      ),
+    ).toEqual({ missing: [], unexpected: ['somebody_elses_table'] })
+  })
+
+  it('reports both at once for a database that is wrong in both directions', () => {
+    expect(classify(['leftovers'], ['conversion_totals'])).toEqual({
+      missing: ['conversion_totals'],
+      unexpected: ['leftovers'],
+    })
   })
 })
