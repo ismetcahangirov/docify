@@ -4,7 +4,7 @@ import * as React from 'react'
 
 import { isAbort } from '@/lib/abort'
 import { rasterSize } from '@/lib/engines/raster-size'
-import type { EngineInput } from '@/lib/engines/types'
+import type { JobSettings } from '@/lib/settings/for-pair'
 import type { JobPatch, QueueAction, QueuedJob } from '@/lib/queue/queue'
 import { createJob, queueReducer } from '@/lib/queue/queue'
 import type { JobEvent } from '@/lib/queue/state'
@@ -64,8 +64,15 @@ function nextId(): string {
   return `docify-file-${minted}`
 }
 
-/** The settings a job carries into whichever engine takes it. */
-export type JobSettings = Pick<EngineInput, 'image' | 'pdf' | 'video' | 'audio'>
+/**
+ * The settings a job carries into whichever engine takes it.
+ *
+ * Declared beside the panel that produces it, in `lib/settings/for-pair`, and
+ * re-exported here because this is where callers meet it. One definition rather
+ * than two identical ones: the day a fifth options slot lands, a second copy is
+ * the one that would be forgotten.
+ */
+export type { JobSettings }
 
 export interface FileQueue {
   jobs: readonly QueuedJob[]
