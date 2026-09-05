@@ -200,6 +200,10 @@ export function useFileQueue(): FileQueue {
 
       if (!decision.ok) {
         advance(id, 'fail', {
+          // Kept on the job because what comes next is the question "then
+          // what can I do?", and it has to be asked about this file rather
+          // than about its byte count (issue #272).
+          routeInput: header,
           failure: {
             message: decision.message,
             suggestion: decision.suggestion,
@@ -216,6 +220,7 @@ export function useFileQueue(): FileQueue {
       }
 
       advance(id, 'routed', {
+        routeInput: header,
         engine: decision.engine,
         reason: decision.reason,
         warnings: decision.warnings,

@@ -120,12 +120,15 @@ describe('the converter offers no choice the URL already made', () => {
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 
-  it('accepts only the source format', () => {
+  it('accepts the source format under every name it arrives as', () => {
     render(<Converter pair={pair} />)
 
+    // `.heif` is the same container written by an Android export or by macOS.
+    // Leaving it out hid those files behind "All files" in the OS picker, which
+    // reads as the tool not supporting them (issue #272).
     expect(screen.getByLabelText(/drop your heic files here/i)).toHaveAttribute(
       'accept',
-      'image/heic,.heic',
+      'image/heic,.heic,.heif,image/heif',
     )
   })
 })
