@@ -79,6 +79,20 @@ function Converter({ pair }: ConverterProps) {
   const started = React.useRef(new Set<string>())
   const busy = React.useRef(false)
 
+  /**
+   * How many runs have settled. State, unlike the two refs, because its only
+   * purpose is to re-run the scheduler.
+   *
+   * A run usually ends with a dispatch the list shows — `succeed` or `fail` —
+   * and the render that follows is what wakes the effect for the next job. A
+   * cancelled run does not: the list moved the job back to `queued` when the
+   * user clicked, and the worker's abort is a message the table then ignores
+   * without a render. Counting the end of every run is what keeps a job that is
+   * waiting its turn — a retry, say (issue #263) — from waiting for a render
+   * that never comes.
+   */
+  const [settled, settle] = React.useReducer((count: number) => count + 1, 0)
+
   /*
    * The scheduler: one queued job at a time, started from an effect rather than
    * from the drop handler.
@@ -109,8 +123,9 @@ function Converter({ pair }: ConverterProps) {
     // `run` never rejects: every failure is already a state the list shows.
     void run(next.id, task).finally(() => {
       busy.current = false
+      settle()
     })
-  }, [queue.jobs, run, task])
+  }, [queue.jobs, settled, run, task])
 
   /**
    * "Try again" puts the job back in the line; it does not start it.
