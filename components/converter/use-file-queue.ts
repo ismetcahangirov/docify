@@ -155,7 +155,10 @@ export function useFileQueue(): FileQueue {
   const cancel = React.useCallback(
     (id: string) => {
       const workerJobId = running.current.get(id)
-      if (workerJobId !== undefined) void cancelConversion(workerJobId)
+      // Swallowed: the worker going down is one of the ways a job gets
+      // cancelled in the first place, and an endpoint that dies mid-call would
+      // otherwise raise an unhandled rejection on top of it.
+      if (workerJobId !== undefined) void cancelConversion(workerJobId).catch(() => {})
 
       // Whatever the run is doing — reading the header, waiting on the worker —
       // it is no longer the current one, even if the worker never answers.
@@ -240,7 +243,7 @@ export function useFileQueue(): FileQueue {
     // #278). Forgetting the run number is what keeps the abort that follows
     // from being dispatched at a job that is no longer in the list.
     const workerJobId = running.current.get(id)
-    if (workerJobId !== undefined) void cancelConversion(workerJobId)
+    if (workerJobId !== undefined) void cancelConversion(workerJobId).catch(() => {})
 
     running.current.delete(id)
     runs.current.delete(id)

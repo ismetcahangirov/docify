@@ -141,6 +141,14 @@ function JobCard({
   const headingId = React.useId()
   const clock = useNow(isRunning(job.state), now)
   const eta = job.state === 'processing' ? etaLabel(job, clock) : null
+  /*
+   * "Waiting" is true of a stopped job and useless: it is the same word the
+   * file behind it shows, and the button is then the only thing separating
+   * them — which is the confusion issue #278 is about. Naming the state is
+   * also what makes pressing Start observable, since the job does not move
+   * until whatever is running has finished.
+   */
+  const status = stopped(job) ? 'Stopped' : STATUS[job.state]
   const muted = mutedVariants({ variant })
 
   return (
@@ -184,7 +192,7 @@ function JobCard({
         {job.state === 'done' && (
           <CheckIcon aria-hidden="true" className="size-4 shrink-0 text-ok" strokeWidth={2} />
         )}
-        <span data-slot="job-card-state">{STATUS[job.state]}</span>
+        <span data-slot="job-card-state">{status}</span>
         {eta !== null && (
           <span data-slot="job-card-eta" className={muted}>
             {eta}
@@ -269,7 +277,7 @@ function JobCard({
          * (issue #278). A job that is merely waiting its turn carries no mark
          * and gets no button — it is already going to run.
          */}
-        {job.state === 'queued' && job.cancelled === true && onRetry !== undefined && (
+        {stopped(job) && onRetry !== undefined && (
           <Button
             type="button"
             variant="secondary"
@@ -308,6 +316,16 @@ function JobCard({
       </div>
     </article>
   )
+}
+
+/**
+ * Whether the job is sitting in the queue because it was stopped.
+ *
+ * Both the word on the card and the button under it turn on this, and one
+ * predicate is what keeps them from disagreeing.
+ */
+function stopped(job: QueuedJob): boolean {
+  return job.state === 'queued' && job.cancelled === true
 }
 
 /**

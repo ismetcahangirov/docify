@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { QueuedJob } from '@/lib/queue/queue'
 import { createJob, queueReducer } from '@/lib/queue/queue'
+import type { JobEvent } from '@/lib/queue/state'
 
 const file = (name = 'holiday.mov') => new File(['x'], name, { type: 'video/quicktime' })
 
@@ -200,10 +201,19 @@ describe('advance', () => {
     expect(at(cancelled).cancelled).toBe(true)
   })
 
-  it('leaves a job nobody has cancelled unmarked', () => {
+  it('leaves a job that has run all the way through unmarked', () => {
+    // Only a stop earns the mark. A job that started, routed and finished must
+    // never carry it, or every settled card would offer to start itself.
     const added = queueReducer([], { type: 'add', jobs: one() })
+    const events: JobEvent[] = ['start', 'routed', 'loaded', 'succeed']
 
-    expect(at(added).cancelled).toBeUndefined()
+    const finished = events.reduce(
+      (jobs, event) => queueReducer(jobs, { type: 'advance', id: 'a', event, at: NOW }),
+      added,
+    )
+
+    expect(at(finished).state).toBe('done')
+    expect(at(finished).cancelled).toBeUndefined()
   })
 
   it('clears the mark when a cancelled job is asked to go again', () => {

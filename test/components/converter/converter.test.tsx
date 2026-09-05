@@ -25,14 +25,22 @@ const converted = new Blob(['jpg'], { type: 'image/jpeg' })
 let resolveResult: ((blob: Blob) => void) | undefined
 let rejectResult: ((reason: unknown) => void) | undefined
 
+let workerJobs = 0
+
 vi.mock('@/lib/worker/jobs', () => ({
-  startConversion: vi.fn(() => ({
-    jobId: 'worker-1',
-    result: new Promise<Blob>((resolve, reject) => {
-      resolveResult = resolve
-      rejectResult = reject
-    }),
-  })),
+  startConversion: vi.fn(() => {
+    workerJobs += 1
+
+    // Its own id per run, so an assertion about which worker was stopped names
+    // one rather than the only one there is.
+    return {
+      jobId: `worker-${workerJobs}`,
+      result: new Promise<Blob>((resolve, reject) => {
+        resolveResult = resolve
+        rejectResult = reject
+      }),
+    }
+  }),
   cancelConversion: vi.fn(async () => true),
 }))
 
@@ -80,6 +88,7 @@ afterEach(() => {
   // next test would be satisfied by this test's leftover resolver.
   resolveResult = undefined
   rejectResult = undefined
+  workerJobs = 0
 })
 
 /** The running job's own settle functions, which the worker stub set on its last call. */

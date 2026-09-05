@@ -143,6 +143,44 @@ describe('queueAnnouncement — cancelling', () => {
   })
 })
 
+describe('queueAnnouncement — a stopped job put back in the line (issue #278)', () => {
+  const stopped = (id: string, name = `${id}.heic`): QueuedJob => ({
+    ...job(id, 'queued', name),
+    cancelled: true,
+  })
+
+  it('confirms the press, which nothing else on the card does', () => {
+    // The job does not move: it is `queued` before and after, and it stays
+    // there until its turn comes. Without this the button is silent.
+    const before = [stopped('a', 'beach.heic')]
+    const after = [job('a', 'queued', 'beach.heic')]
+
+    expect(queueAnnouncement(before, after)).toBe('beach.heic is waiting its turn.')
+  })
+
+  it('counts several', () => {
+    const before = [stopped('a'), stopped('b')]
+    const after = [job('a', 'queued'), job('b', 'queued')]
+
+    expect(queueAnnouncement(before, after)).toBe('2 files waiting their turn.')
+  })
+
+  it('says nothing about a job that is still stopped', () => {
+    const jobs = [stopped('a')]
+
+    expect(queueAnnouncement(jobs, jobs)).toBeNull()
+  })
+
+  it('says nothing when the job it belongs to is starting anyway', () => {
+    // The mark is cleared by the run that starts it too, and "Converting" is
+    // the better sentence.
+    const before = [stopped('a')]
+    const after = [job('a', 'routing')]
+
+    expect(queueAnnouncement(before, after)).toBe('Converting a.heic.')
+  })
+})
+
 describe('queueAnnouncement — precedence', () => {
   /*
    * One render can carry more than one kind of news: a job finishes and the
@@ -162,5 +200,12 @@ describe('queueAnnouncement — precedence', () => {
     const after = [job('a', 'routing'), job('b', 'queued')]
 
     expect(queueAnnouncement(before, after)).toBe('Converting a.heic.')
+  })
+
+  it('reports work starting rather than another job rejoining the line', () => {
+    const before = [{ ...job('a', 'queued'), cancelled: true }, job('b', 'queued')]
+    const after = [job('a', 'queued'), job('b', 'routing')]
+
+    expect(queueAnnouncement(before, after)).toBe('Converting b.heic.')
   })
 })

@@ -19,7 +19,9 @@ import type { ConvertRequest } from '@/lib/worker/types'
  */
 
 const startConversion = vi.hoisted(() => vi.fn())
-const cancelConversion = vi.hoisted(() => vi.fn())
+// Resolving, like the real one: the hook attaches a `catch` to it so that a
+// worker dying mid-cancel is not an unhandled rejection.
+const cancelConversion = vi.hoisted(() => vi.fn(async () => true))
 const probeCapabilities = vi.hoisted(() => vi.fn())
 const reportConversion = vi.hoisted(() => vi.fn())
 
@@ -510,6 +512,40 @@ describe('useFileQueue — a run that is no longer current (issue #264)', () => 
     }
   }
 
+  it('never reaches the worker when the file is taken out while the engine is being chosen', async () => {
+    // No worker id exists yet, so there is nothing to cancel — and the run must
+    // still stop, rather than handing a discarded file to an engine and leaving
+    // the scheduler waiting for it (issue #278).
+    controllable()
+    const slow = slowFile()
+    const { result } = renderHook(() => useFileQueue())
+
+    act(() => {
+      result.current.add([slow.file])
+    })
+    const id = result.current.jobs[0].id
+
+    let finished = false
+    await act(async () => {
+      void result.current.run(id, jpgToPng).then(() => {
+        finished = true
+      })
+    })
+    expect(result.current.jobs[0].state).toBe('routing')
+
+    act(() => {
+      result.current.remove(id)
+    })
+    await slow.release()
+
+    expect(cancelConversion).not.toHaveBeenCalled()
+    expect(startConversion).not.toHaveBeenCalled()
+    expect(result.current.jobs).toHaveLength(0)
+    // The run still settles, which is what frees the scheduler for the next
+    // file.
+    await waitFor(() => expect(finished).toBe(true))
+  })
+
   it('never reaches the worker when the cancel lands while the engine is being chosen', async () => {
     controllable()
     const slow = slowFile()
@@ -631,6 +667,9 @@ describe('useFileQueue — a run that is no longer current (issue #264)', () => 
     await worker.fail(abort)
 
     expect(result.current.jobs[0].state).toBe('queued')
+    // Marked like a job the user stopped, because the card owes it the same
+    // thing: the scheduler will not pick it up again on its own (issue #278).
+    expect(result.current.jobs[0].cancelled).toBe(true)
     expect(reportConversion).not.toHaveBeenCalled()
   })
 
