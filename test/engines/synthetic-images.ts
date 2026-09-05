@@ -37,19 +37,34 @@ export function pngBytes(width: number, height: number): Uint8Array<ArrayBuffer>
     raw.fill(0x80, row * stride + 1, (row + 1) * stride)
   }
 
+  return concat(
+    pngHeaderBytes(width, height),
+    chunk('IDAT', zlibSync(raw)),
+    chunk('IEND', new Uint8Array(0)),
+  )
+}
+
+/**
+ * The signature and the IHDR alone: a PNG that declares a size and carries no
+ * pixels.
+ *
+ * `lib/engines/raster-size.ts` reads the first sixty-odd bytes of a file and
+ * nothing else, so this is exactly as much of a PNG as the router's pixel bound
+ * ever sees — and it is the only way to *have* a 30 000 × 30 000 fixture, since
+ * the real thing above would allocate 2.7 GB to build one. Not decodable, and
+ * deliberately so: anything that tries to decode it should fail rather than
+ * quietly work.
+ */
+export function pngHeaderBytes(width: number, height: number): Uint8Array<ArrayBuffer> {
   const header = new Uint8Array(13)
   const fields = new DataView(header.buffer)
+
   fields.setUint32(0, width)
   fields.setUint32(4, height)
   header[8] = 8 // bit depth
   header[9] = 2 // colour type: truecolour, no palette
 
-  return concat(
-    PNG_SIGNATURE,
-    chunk('IHDR', header),
-    chunk('IDAT', zlibSync(raw)),
-    chunk('IEND', new Uint8Array(0)),
-  )
+  return concat(PNG_SIGNATURE, chunk('IHDR', header))
 }
 
 /**

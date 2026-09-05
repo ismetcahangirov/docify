@@ -74,4 +74,27 @@ describe('saveBlob', () => {
     vi.runAllTimers()
     expect(revoked).toEqual([created[0]])
   })
+
+  /*
+   * A zero-delay macrotask is enough for Chromium and is not enough for Firefox
+   * or Safari, which can still be reading the blob a second or two after the
+   * click on a large file — and a URL revoked under them produces no file and
+   * no error (issue #272). Ten seconds costs nothing: the blob is resident
+   * either way, and this only decides when it stops being.
+   */
+  it('holds the URL for ten seconds, which is longer than any browser takes to start', () => {
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    saveBlob(new Blob(['x']), 'holiday.jpg')
+
+    vi.advanceTimersByTime(9_999)
+    expect(revoked).toEqual([])
+
+    vi.advanceTimersByTime(1)
+    expect(revoked).toEqual([created[0]])
+
+    // Once, not once per timer that happens to fire afterwards.
+    vi.advanceTimersByTime(60_000)
+    expect(revoked).toEqual([created[0]])
+  })
 })

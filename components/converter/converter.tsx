@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 
-import { formatMeta } from '@/lib/registry/formats'
+import { acceptFor, formatMeta } from '@/lib/registry/formats'
 import type { ConversionPair } from '@/lib/registry/pairs'
 import { pairTitle } from '@/lib/registry/pairs'
 import { alternativeTargets } from '@/lib/router/alternatives'
@@ -209,24 +209,41 @@ function Converter({ pair }: ConverterProps) {
    *
    * In an effect rather than during render because it calls
    * `probeCapabilities()`, which reads `navigator` and therefore cannot run on
-   * the server. Measured against the refused file's own size, since the memory
-   * budget is most of what decides whether an alternative is viable.
+   * the server.
+   *
+   * Measured against the *same numbers the job was routed with*, not against
+   * the file's size. A picture is refused for its decoded pixels far more often
+   * than for its bytes — a half-megabyte PNG can be a hundred megapixels — and
+   * an alternative worked out from bytes alone is one the browser refuses on
+   * the next drop, which is precisely the dead end `alternativeTargets` exists
+   * to prevent (issue #272). The size is the fallback for a job whose header
+   * was never read, which is the same "no pixel bound" the router already
+   * understands.
+   *
+   * The two numbers are pulled out separately so the effect depends on values
+   * rather than on the identity of an object rebuilt on every render.
    */
   const [alternatives, setAlternatives] = React.useState(NO_ALTERNATIVES)
   const refused = queue.jobs.find(
     (job) => job.state === 'failed' && job.failure?.code !== undefined,
   )
-  const refusedSize = refused?.file.size
+  const refusedBytes = refused?.routeInput?.bytes ?? refused?.file.size
+  const refusedPixels = refused?.routeInput?.pixels
 
   React.useEffect(() => {
-    if (refusedSize === undefined) {
+    if (refusedBytes === undefined) {
       setAlternatives(NO_ALTERNATIVES)
 
       return
     }
 
-    setAlternatives(alternativeTargets(task, refusedSize, probeCapabilities()))
-  }, [refusedSize, task])
+    const input =
+      refusedPixels === undefined
+        ? { bytes: refusedBytes }
+        : { bytes: refusedBytes, pixels: refusedPixels }
+
+    setAlternatives(alternativeTargets(task, [input], probeCapabilities()))
+  }, [refusedBytes, refusedPixels, task])
 
   return (
     <div data-slot="converter" className="flex min-w-0 flex-col gap-6">
@@ -234,7 +251,7 @@ function Converter({ pair }: ConverterProps) {
 
       <Dropzone
         onFiles={start}
-        accept={`${from.mime},${from.extension}`}
+        accept={acceptFor(from)}
         label={`Drop your ${from.name} files here`}
         hint={`They are converted to ${to.name} on this device. Nothing is uploaded, and there is no limit on how many you add.`}
       />

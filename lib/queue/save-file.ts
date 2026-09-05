@@ -13,21 +13,26 @@
  * page ends up holding a gigabyte of files the user downloaded and moved on
  * from ten minutes ago.
  *
- * Revoking is deferred by one task rather than done immediately after the click.
- * The browser reads the href when the download actually starts, which is after
- * the current task has drained; revoking first cancels the download that was
- * just requested. Chrome is forgiving about this and Safari is not.
+ * Revoking is deferred rather than done immediately after the click. The browser
+ * reads the href when the download actually starts, which is after the current
+ * task has drained; revoking first cancels the download that was just
+ * requested. Chrome is forgiving about this and Safari is not.
  */
 
 /**
  * How long to hold the URL after clicking.
  *
- * A macrotask, not a microtask: the download is queued by the browser, not by
- * the JavaScript that asked for it, so it has to outlive the whole current task
- * and not merely the current promise chain. Zero, because the delay is about
- * ordering rather than about waiting.
+ * Ten seconds, and the number is not about ordering. A macrotask is enough for
+ * Chromium, which reads the href on the next turn of the loop; Firefox and
+ * Safari can still be opening the blob a second or two later on a large file,
+ * and a URL revoked under them produces no file and no error — a download that
+ * silently does not happen (issue #272).
+ *
+ * The cost is nothing. The blob is resident either way: this decides only when
+ * it stops being, and ten seconds after the click is still long before the user
+ * has converted the next one.
  */
-const REVOKE_DELAY_MS = 0
+const REVOKE_DELAY_MS = 10_000
 
 /**
  * Downloads `blob` as `name`.

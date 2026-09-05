@@ -29,6 +29,22 @@ export interface FormatMeta {
   extension: string
   /** The IANA media type, used in structured data and in `accept` attributes. */
   mime: string
+  /**
+   * The other spellings of this same format that a file picker has to show.
+   *
+   * Extensions and media types both, because an OS picker filters on whichever
+   * of the two it has. A format is one thing on disk and several things in a
+   * file name: the same HEIF container is `.heic` off an iPhone and `.heif` off
+   * an Android export, and a picker built from the canonical suffix alone hides
+   * the second behind "All files" — which reads as the tool not supporting the
+   * file (issue #272).
+   *
+   * Only what changes the picker. The engines sniff bytes and never consult
+   * this, so an alias is a claim about what people have on disk rather than
+   * about what can be decoded. Where a format really has one spelling, the
+   * field is absent rather than an empty array.
+   */
+  aliases?: readonly string[]
   kind: FormatKind
   /**
    * One sentence about what the format is for.
@@ -45,6 +61,8 @@ const META: Readonly<Record<FormatId, Omit<FormatMeta, 'id'>>> = {
     fullName: 'Joint Photographic Experts Group',
     extension: '.jpg',
     mime: 'image/jpeg',
+    // The spelling from before eight-character file names, which never went away.
+    aliases: ['.jpeg'],
     kind: 'image',
     summary:
       'The oldest photographic format still in daily use, and the one every camera, phone, printer and website accepts without asking.',
@@ -99,6 +117,8 @@ const META: Readonly<Record<FormatId, Omit<FormatMeta, 'id'>>> = {
     fullName: 'Tagged Image File Format',
     extension: '.tif',
     mime: 'image/tiff',
+    // What every scanner and every image editor actually writes.
+    aliases: ['.tiff'],
     kind: 'image',
     summary:
       'The archival and print format: lossless, multi-page, and the default output of most document scanners.',
@@ -117,6 +137,9 @@ const META: Readonly<Record<FormatId, Omit<FormatMeta, 'id'>>> = {
     fullName: 'High Efficiency Image Container',
     extension: '.heic',
     mime: 'image/heic',
+    // The same container under its standard name: Android exports and macOS
+    // both write `.heif`, and an iPhone photo is the only thing that is `.heic`.
+    aliases: ['.heif', 'image/heif'],
     kind: 'image',
     summary:
       'What an iPhone has written since iOS 11. About half the size of the equivalent JPG, and unopenable on a great deal of software.',
@@ -308,4 +331,23 @@ export function formatMeta(id: FormatId): FormatMeta {
 /** Every format in one family, in the order of {@link ALL_FORMATS}. */
 export function formatsOfKind(kind: FormatKind): readonly FormatMeta[] {
   return ALL_FORMATS.filter((format) => format.kind === kind)
+}
+
+/**
+ * What to put in an `<input type="file">`'s `accept`, for a picker that shows
+ * every file this format actually arrives as.
+ *
+ * The media type first, then the canonical extension, then the aliases — a
+ * picker lists them in the order it is given, and the canonical spelling is the
+ * one the page is about. Deduplicated because a repeated token is a repeated
+ * row in some pickers.
+ *
+ * `accept` is a filter on what the user can *see*, never a check on what is
+ * allowed: a browser applies it loosely, a drag-and-drop bypasses it entirely,
+ * and the engines sniff bytes regardless. Widening it therefore cannot let
+ * anything through that was not already coming through — it only stops hiding a
+ * file the user is looking straight at (issue #272).
+ */
+export function acceptFor(format: FormatMeta): string {
+  return [...new Set([format.mime, format.extension, ...(format.aliases ?? [])])].join(',')
 }

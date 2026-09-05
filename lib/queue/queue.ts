@@ -13,7 +13,7 @@
  * `components/converter/use-file-queue`, which is the impure half by design.
  */
 
-import type { EngineId, RejectionCode, Warning } from '@/lib/router/types'
+import type { EngineId, RejectionCode, RouteFile, Warning } from '@/lib/router/types'
 
 import type { JobEvent, JobState } from './state'
 import { isFinished, transition } from './state'
@@ -48,6 +48,21 @@ export interface QueuedJob {
    * something is happening and cannot say how far along it is.
    */
   progress: number | null
+  /**
+   * The numbers `route()` was actually given for this file.
+   *
+   * Kept because a refusal is not the end of the conversation: whatever offers
+   * the user somewhere else to go has to ask the router the same question about
+   * the same file, and `file.size` is only half of it. A picture's decoded
+   * pixels are what bind a canvas engine, and an alternative measured without
+   * them is one the browser will refuse on the next drop — the dead end
+   * `lib/router/alternatives.ts` exists to prevent (issue #272).
+   *
+   * Absent until the file's header has been read, and absent for good on a file
+   * whose header said nothing — which is the same "no pixel bound" the router
+   * already understands.
+   */
+  routeInput?: RouteFile
   /** The engine `route()` chose, once it has. */
   engine?: EngineId
   /** Why that engine was chosen, in words. */
@@ -90,7 +105,10 @@ export interface QueuedJob {
  * way to move a job — the one thing `./state` exists to prevent.
  */
 export type JobPatch = Partial<
-  Pick<QueuedJob, 'engine' | 'reason' | 'warnings' | 'result' | 'failure' | 'progress'>
+  Pick<
+    QueuedJob,
+    'engine' | 'reason' | 'warnings' | 'result' | 'failure' | 'progress' | 'routeInput'
+  >
 >
 
 export type QueueAction =
