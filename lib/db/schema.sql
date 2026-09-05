@@ -52,12 +52,20 @@ create table if not exists conversion_totals (
     check (total >= 0)
 );
 
--- GET /api/stats reads recent days and sums them; the primary key already
--- orders by `pair` first, which is the wrong leading column for that scan.
--- One index, for the one query. Adding more before there is a second reader
--- would be guessing.
-create index if not exists conversion_totals_day_idx
-  on conversion_totals (day desc);
+-- GET /api/stats sums every successful row, all time, and counts the distinct
+-- pairs among them — `readTotals` in lib/db/stats.ts. The scan it makes is
+-- filtered by `outcome` and by nothing else, and the primary key leads with
+-- `pair`, so the key is no help to it. One index, for the one query. Adding
+-- more before there is a second reader would be guessing.
+--
+-- The index this replaces was on `(day desc)`, written for a "recent days"
+-- read that no query has ever performed. Dropping it first is what makes a
+-- database provisioned before this change lose it on the next `pnpm db:migrate`
+-- instead of carrying an index nothing will ever use.
+drop index if exists conversion_totals_day_idx;
+
+create index if not exists conversion_totals_outcome_idx
+  on conversion_totals (outcome);
 
 -- ## The second counter: how often each page was opened (issue #102)
 --

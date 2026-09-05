@@ -13,10 +13,12 @@
  *
  * ## Why this exists rather than a migration framework
  *
- * There is one table and there has only ever been one. A framework would bring
- * a dependency, a versions table and an ordering problem to a schema whose
- * every statement is `if not exists` and therefore safe to re-apply in any
- * order, any number of times. `test/db-migrate.test.ts` holds that property.
+ * The data model is a short list of counter tables and the indexes they need.
+ * A framework would bring a dependency, a versions table and an ordering
+ * problem to a schema whose every statement is idempotent — `if not exists` on
+ * what it creates, `if exists` on what it drops — and therefore safe to
+ * re-apply in any order, any number of times, whatever state a database is
+ * already in. `test/db-migrate.test.ts` holds that property.
  *
  * When the schema does change, it changes `lib/db/schema.sql` and this command
  * runs again. A change that could not be expressed idempotently would be the
@@ -25,7 +27,7 @@
  */
 import { neon } from '@neondatabase/serverless'
 
-import { readSchema, SCHEMA_PATH } from './schema.mjs'
+import { expectedTables, readSchema, SCHEMA_PATH } from './schema.mjs'
 
 /** @param {string} message */
 function fail(message) {
@@ -111,19 +113,29 @@ async function main() {
   console.log(`  tables   ${tables.length > 0 ? tables.join(', ') : '(none)'}`)
   console.log(`  indexes  ${indexes.length > 0 ? indexes.join(', ') : '(none)'}\n`)
 
-  if (!tables.includes('conversion_totals')) {
+  // Both lists are derived from the schema rather than written down here. A
+  // name kept in two places goes stale in one of them, which is exactly what
+  // happened when issue #102 added `page_totals` and this file did not notice.
+  const expected = expectedTables(statements)
+  const missing = expected.filter((table) => !tables.includes(table))
+
+  if (missing.length > 0) {
+    const names = missing.join(', ')
+    const verb = missing.length === 1 ? 'is' : 'are'
+    const them = missing.length === 1 ? 'it' : 'them'
+
     fail(
       check
-        ? 'conversion_totals is not there. Run `pnpm db:migrate` to create it.'
-        : 'conversion_totals is still missing after applying the schema.',
+        ? `${names} ${verb} not there. Run \`pnpm db:migrate\` to create ${them}.`
+        : `${names} ${verb} still missing after applying the schema.`,
     )
 
     return
   }
 
   // Named rather than counted: the point of this line is that the database
-  // holds the one table the schema declares and nothing somebody added by hand.
-  const unexpected = tables.filter((table) => table !== 'conversion_totals')
+  // holds the tables the schema declares and nothing somebody added by hand.
+  const unexpected = tables.filter((table) => !expected.includes(table))
   if (unexpected.length > 0) {
     console.log(`  note     unexpected table(s): ${unexpected.join(', ')}`)
     console.log('           lib/db/schema.sql is the whole data model — see CLAUDE.md §2.1.\n')

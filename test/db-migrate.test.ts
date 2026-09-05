@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { readSchema, splitStatements } from '../scripts/db-migrate/schema.mjs'
+import { expectedTables, readSchema, splitStatements } from '../scripts/db-migrate/schema.mjs'
 
 /*
  * The provisioning script's one piece of logic (issue #101).
@@ -67,7 +67,8 @@ describe('readSchema', () => {
     // rather than as a silently shorter list.
     expect(readSchema().map((statement) => statement.split('\n')[0].trim())).toEqual([
       'create table if not exists conversion_totals (',
-      'create index if not exists conversion_totals_day_idx',
+      'drop index if exists conversion_totals_day_idx',
+      'create index if not exists conversion_totals_outcome_idx',
       'create table if not exists page_totals (',
     ])
   })
@@ -84,8 +85,38 @@ describe('readSchema', () => {
   it('sends only idempotent statements, so re-provisioning is not an error', () => {
     // The deploy runbook applies this on every schema change, and a second
     // apply has to be a no-op rather than a failure somebody works around.
+    // `if not exists` on what the file creates, `if exists` on what it drops:
+    // both are the same property, and a statement with neither breaks it.
     for (const statement of readSchema()) {
-      expect(statement.toLowerCase()).toContain('if not exists')
+      expect(statement.toLowerCase()).toMatch(/\bif (not )?exists\b/)
     }
+  })
+})
+
+describe('expectedTables', () => {
+  /*
+   * The names the schema declares, read from the schema.
+   *
+   * `cli.mjs` used to hold the list as a literal, and issue #102 added a table
+   * without touching it — so every run since has reported `page_totals` as an
+   * unexpected table, and `--check` never verified it was there at all. A
+   * literal in a second file is a fact that can go stale silently; scanning the
+   * statements is the same fact with nowhere to drift to.
+   */
+  it('names every table lib/db/schema.sql declares', () => {
+    expect(expectedTables()).toEqual(['conversion_totals', 'page_totals'])
+  })
+
+  it('reads the names from the statements it is given', () => {
+    expect(
+      expectedTables([
+        'create table if not exists widgets (\n  id text not null\n)',
+        'create index if not exists widgets_id_idx on widgets (id)',
+      ]),
+    ).toEqual(['widgets'])
+  })
+
+  it('names nothing for a schema that creates no table', () => {
+    expect(expectedTables(['select 1'])).toEqual([])
   })
 })

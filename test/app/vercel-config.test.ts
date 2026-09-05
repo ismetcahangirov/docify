@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
@@ -94,6 +94,29 @@ describe('vercel.json', () => {
       // job: the one route increments a counter and answers 202, and a limit
       // that generous only decides how long a runaway invocation bills for.
       expect(settings.maxDuration).toBeLessThanOrEqual(15)
+    }
+  })
+
+  it('bounds every route handler under app/api, not only the ones it names', () => {
+    /*
+     * The other half of the rule above. `functions` naming only routes that
+     * exist says nothing about a route that exists and is not named — and an
+     * unnamed one runs on the platform default of 300 seconds. Both routes here
+     * do a single `insert ... on conflict` and answer 202; there is no reading
+     * of that work under which either needs five minutes.
+     *
+     * Walked rather than listed, so adding `app/api/whatever/route.ts` fails
+     * this file until `vercel.json` accounts for it.
+     */
+    const routes = readdirSync(join(repoRoot, 'app', 'api'), { recursive: true })
+      .map((entry) => String(entry).split(sep).join('/'))
+      .filter((entry) => entry.endsWith('/route.ts'))
+      .map((entry) => `app/api/${entry}`)
+
+    expect(routes.length).toBeGreaterThan(0)
+
+    for (const route of routes) {
+      expect(config.functions?.[route]?.maxDuration, route).toBeLessThanOrEqual(10)
     }
   })
 })

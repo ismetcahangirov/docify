@@ -7,6 +7,9 @@
   "functions": {
     "app/api/stats/route.ts": {
       "maxDuration": 10
+    },
+    "app/api/views/route.ts": {
+      "maxDuration": 10
     }
   }
 }

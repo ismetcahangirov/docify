@@ -37,13 +37,27 @@ describe('clientKey', () => {
     expect(key).toMatch(/^[0-9a-f]{16}$/)
   })
 
-  it('reads only the first hop of x-forwarded-for', () => {
-    // Everything after the first entry was appended by a proxy and can be
-    // forged by the client; counting it would let one caller mint keys freely.
-    const direct = clientKey(withHeaders({ 'x-forwarded-for': '203.0.113.7' }))
-    const chained = clientKey(withHeaders({ 'x-forwarded-for': '203.0.113.7, 198.51.100.2' }))
+  it('reads only the last hop of x-forwarded-for', () => {
+    /*
+     * A proxy *appends*, so the list runs client-first and the only entry we
+     * put there ourselves is the last one. Reading the first would take a
+     * string the caller typed: one client sending a fresh value per request
+     * mints a fresh key per request and never meets the limiter at all.
+     */
+    const direct = clientKey(withHeaders({ 'x-forwarded-for': '198.51.100.2' }))
 
-    expect(chained).toBe(direct)
+    expect(clientKey(withHeaders({ 'x-forwarded-for': '203.0.113.7, 198.51.100.2' }))).toBe(direct)
+    // A different forged prefix in front of the same real hop is the same
+    // caller, and has to land in the same bucket.
+    expect(clientKey(withHeaders({ 'x-forwarded-for': '203.0.113.8, 198.51.100.2' }))).toBe(direct)
+  })
+
+  it('ignores empty entries in x-forwarded-for', () => {
+    // A trailing comma would otherwise read as an address of zero length and
+    // send the caller to the shared bucket with everybody unidentifiable.
+    expect(clientKey(withHeaders({ 'x-forwarded-for': '198.51.100.2, ' }))).toBe(
+      clientKey(withHeaders({ 'x-forwarded-for': '198.51.100.2' })),
+    )
   })
 
   it('falls back to x-real-ip, then to a shared bucket', () => {

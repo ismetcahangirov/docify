@@ -18,9 +18,9 @@
  * It handles what `lib/db/schema.sql` actually contains and one class of thing
  * it might: line comments, block comments, single-quoted literals with doubled
  * quotes inside them. It does not handle dollar-quoted function bodies, because
- * there are none and there will not be — the schema is one table of counters
- * (CLAUDE.md §2.1), and a repository that grows a stored procedure has bigger
- * questions to answer than this file's.
+ * there are none and there will not be — the schema is a short list of counter
+ * tables (CLAUDE.md §2.1), and a repository that grows a stored procedure has
+ * bigger questions to answer than this file's.
  */
 import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -107,4 +107,23 @@ export function splitStatements(sql) {
  */
 export function readSchema() {
   return splitStatements(readFileSync(SCHEMA_PATH, 'utf8'))
+}
+
+/**
+ * Every table the schema declares, in the order it declares them.
+ *
+ * `cli.mjs` needs this to say which tables a database is missing and which it
+ * has that the schema never asked for. It held the answer as a literal until
+ * issue #102 added `page_totals` without touching it, at which point every run
+ * reported the new table as unexpected and `--check` stopped verifying it was
+ * there at all. A list kept in a second file is a fact with somewhere to drift
+ * to; reading it back out of the statements is the same fact with nowhere.
+ *
+ * @param {string[]} [statements] Defaults to the repository's own schema.
+ * @returns {string[]}
+ */
+export function expectedTables(statements = readSchema()) {
+  return statements
+    .map((statement) => /create table if not exists (\w+)/i.exec(statement)?.[1])
+    .filter((name) => name !== undefined)
 }
