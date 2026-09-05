@@ -195,6 +195,30 @@ export function sourceDurationSeconds(
 }
 
 /**
+ * What a track costs, in bits per second, measured from the samples themselves.
+ *
+ * An MP4 states a bitrate in places that are routinely wrong — an `esds` written
+ * by one tool and re-muxed by another keeps whatever the first one claimed — so
+ * the payload is weighed instead. It is only ever an average, which is all a
+ * size target needs: the question is how many of the target's bits a carried
+ * track will take, not how they are distributed.
+ *
+ * Zero for a track with nothing in it, or one whose timings the file did not
+ * fill in. That is the same answer as "no audio", which is the safe way to be
+ * wrong here — {@link bitrateForTargetSize} would otherwise subtract a number
+ * derived from a division by zero.
+ */
+export function sourceBitrate(
+  timescale: number,
+  samples: readonly { data: { byteLength: number }; duration: number }[],
+): number {
+  const seconds = sourceDurationSeconds(timescale, samples)
+  if (seconds <= 0) return 0
+
+  return (samples.reduce((total, sample) => total + sample.data.byteLength, 0) * 8) / seconds
+}
+
+/**
  * The bitrate to hand `VideoEncoder`, from whichever sizing method was chosen.
  *
  * This is where the one real difference between the two engines is absorbed:
@@ -229,16 +253,19 @@ export async function planVideoEncode(
   samples: readonly { duration: number }[],
   options: VideoOptions | undefined,
   isSupported: (config: EncoderConfig) => Promise<ConfigSupport>,
+  audioBitrate = 0,
 ): Promise<EncoderConfig> {
   if (source.width === undefined || source.height === undefined) {
     throw new Error('This video does not say how large its picture is, so it cannot be re-encoded.')
   }
 
-  // No audio is carried through this path, so a size target has the whole file
-  // to spend rather than having to leave room for a soundtrack.
+  // A size target has to leave room for whatever the caller is carrying
+  // alongside the picture: `./video-transcode` copies the soundtrack through, so
+  // those bits land on top of anything the encoder is told to produce. Zero is
+  // the default because a caller that carries nothing owes nothing.
   const encode = resolveVideoEncode(options, {
     durationSeconds: sourceDurationSeconds(source.timescale, samples),
-    audioBitrate: 0,
+    audioBitrate,
   })
 
   const size = targetSize({ width: source.width, height: source.height }, encode)

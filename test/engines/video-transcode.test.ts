@@ -121,6 +121,29 @@ async function sourceWithSound(video = 4, audio = audioSamples(6)) {
   return writeMp4(media, running(), loadMp4Box)
 }
 
+/** An MP4 with a picture and two soundtracks, the way a dual-language film is cut. */
+async function sourceWithTwoSoundtracks() {
+  const media = sourceMedia(4)
+  for (const [index, language] of ['eng', 'jpn'].entries()) {
+    media.tracks.push({
+      id: 2 + index,
+      kind: 'audio',
+      format: {
+        codec: 'mp4a.40.2',
+        timescale: AUDIO_TIMESCALE,
+        description: AAC_CONFIG,
+        descriptionType: 'esds',
+        channelCount: 2,
+        sampleRate: AUDIO_TIMESCALE,
+        language,
+      },
+      samples: audioSamples(6),
+    })
+  }
+
+  return writeMp4(media, running(), loadMp4Box)
+}
+
 /** An MP4 with sound and no picture. */
 async function audioOnlyFile() {
   return writeMp4(
@@ -319,6 +342,41 @@ describe('transcodeVideo', () => {
     expect(media.tracks).toHaveLength(1)
     expect(audioTrack(media)).toBeUndefined()
     expect(videoTrack(media)?.samples).toHaveLength(3)
+  })
+
+  it('carries every soundtrack, not just the first one it finds', async () => {
+    // A dual-language film remuxes with both tracks intact; compressing the
+    // picture must not be the operation that quietly throws one language away.
+    const codecs = fakeVideoCodecs()
+
+    const media = await readMp4(
+      await run(await sourceWithTwoSoundtracks(), codecs),
+      running(),
+      loadMp4Box,
+    )
+
+    expect(media.tracks).toHaveLength(3)
+    expect(media.tracks.filter((track) => track.kind === 'audio')).toHaveLength(2)
+    expect(media.tracks.map((track) => track.format.language)).toEqual(['und', 'eng', 'jpn'])
+  })
+
+  it('leaves the size target room for the sound it is about to carry', async () => {
+    // The audio lands on top of whatever the encoder produces, so a target that
+    // spent every bit on the picture would be beaten by the soundtrack.
+    const codecs = fakeVideoCodecs()
+    const audio = audioSamples(60)
+
+    await run(await sourceWithSound(4, audio), codecs, {
+      compression: { method: 'target-size', targetBytes: 512 * 1024 },
+    })
+    const withSound = codecs.encoderConfig?.bitrate
+
+    const silent = fakeVideoCodecs()
+    await run(await sourceFile(4), silent, {
+      compression: { method: 'target-size', targetBytes: 512 * 1024 },
+    })
+
+    expect(withSound).toBeLessThan(silent.encoderConfig?.bitrate ?? 0)
   })
 
   it('explains a file with sound and no picture', async () => {

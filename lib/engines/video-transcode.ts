@@ -56,12 +56,12 @@ import { throwIfAborted } from '@/lib/abort'
 import { codecDescription } from './codec-description'
 import { readMp4 } from './mp4-demux'
 import type { Mp4Media, Mp4Sample, Mp4Track } from './mp4-media'
-import { audioTrack, videoTrack } from './mp4-media'
+import { videoTrack } from './mp4-media'
 import { writeMp4 } from './mp4-mux'
 import { drainSamples, keepOnlyTracks } from './mp4-samples'
 import type { Mp4BoxLoader } from './mp4-runtime'
 import type { ProgressCallback } from './types'
-import { planVideoEncode } from './video-config'
+import { planVideoEncode, sourceBitrate } from './video-config'
 import type { VideoOptions } from './video-options'
 import {
   browserVideoCodecs,
@@ -118,13 +118,12 @@ export async function transcodeVideo(
   const media = await readMp4(bytes, signal, loadMp4Box)
   const source = videoTrack(media)
   if (source === undefined) throw noVideoTrack(media)
-  // Taken before anything is released: the copy below writes these samples out
-  // untouched, so they are the one thing besides the video that has to survive.
-  const sound = audioTrack(media)
-  // Everything else the demuxer read and this path will not — a second
-  // soundtrack, a timed metadata track — has no business staying resident while
-  // the codecs run.
-  keepOnlyTracks(media, sound === undefined ? [source] : [source, sound])
+  // Every soundtrack, not the first: a dual-language film keeps both languages
+  // through a remux, and compressing the picture must not be the operation that
+  // quietly throws one of them away. Taken before anything is released, because
+  // the copy below writes these samples out untouched.
+  const sound = media.tracks.filter((track) => track.kind === 'audio')
+  keepOnlyTracks(media, [source, ...sound])
 
   onProgress(DEMUXED)
 
@@ -134,6 +133,11 @@ export async function transcodeVideo(
     source.samples,
     options,
     platform.isEncoderConfigSupported,
+    // A size target has to leave room for the tracks that land on top of the
+    // encoder's output. `./mp4-demux` reads them in full, so the rate is
+    // weighed rather than taken from a header that may be describing a
+    // different encode.
+    sound.reduce((total, track) => total + sourceBitrate(track.format.timescale, track.samples), 0),
   )
   throwIfAborted(signal)
 
@@ -158,9 +162,9 @@ export async function transcodeVideo(
           },
           samples: encoded.samples,
         },
-        // Unchanged, id and all: the muxer renumbers from 1 as it adds tracks,
-        // so the demuxed id is only meaningful inside the file it came from.
-        ...(sound === undefined ? [] : [sound]),
+        // Unchanged, ids and all: the muxer renumbers from 1 as it adds tracks,
+        // so the demuxed ids are only meaningful inside the file they came from.
+        ...sound,
       ],
     },
     signal,

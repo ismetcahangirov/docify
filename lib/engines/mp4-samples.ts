@@ -96,13 +96,14 @@ export function drainSamples(track: Mp4Track): SampleStream {
 /**
  * Drops every track of `media` outside `keep`, and empties the ones it drops.
  *
- * A transcode touches one or two tracks: the video it re-encodes, and the sound
- * it copies straight through. Everything else — a second language, a timed
- * metadata track — was demuxed into memory anyway, and stays there for the whole
- * job because `media` is still on the stack. Emptying them as well as unlinking
- * them matters: whoever handed the media over may still hold a reference to a
- * `Mp4Track` object, and an unlinked track with its samples intact is the same
- * megabytes under a different name.
+ * A conversion touches some of a file's tracks and not others: an audio target
+ * reads one track and drops the picture; a video transcode re-encodes the
+ * picture and copies every soundtrack through. Whatever is left over was
+ * demuxed into memory anyway, and stays there for the whole job because `media`
+ * is still on the stack. Emptying those as well as unlinking them matters:
+ * whoever handed the media over may still hold a reference to a `Mp4Track`
+ * object, and an unlinked track with its samples intact is the same megabytes
+ * under a different name.
  *
  * The kept tracks are left exactly as they came, samples included. Releasing
  * those is {@link drainSamples}' job, and only for the track that is actually

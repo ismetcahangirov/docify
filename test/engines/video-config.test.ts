@@ -9,6 +9,7 @@ import {
   evenDimension,
   H264_CANDIDATES,
   planVideoEncode,
+  sourceBitrate,
   sourceDurationSeconds,
   sourceFrameRate,
   targetSize,
@@ -306,6 +307,23 @@ describe('planVideoEncode — the sizing methods end to end', () => {
     )
   })
 
+  it('leaves room for a soundtrack the transcode is going to carry', async () => {
+    // The video path copies the audio track through rather than dropping it, so
+    // a size target that spent every bit on the picture would be beaten by the
+    // sound that lands on top of it.
+    const config = await planVideoEncode(
+      format,
+      samples,
+      { compression: { method: 'target-size', targetBytes: 5 * 1024 * 1024 } },
+      accepts,
+      128_000,
+    )
+
+    expect(config.bitrate).toBe(
+      bitrateForTargetSize(5 * 1024 * 1024, { durationSeconds: 10, audioBitrate: 128_000 }),
+    )
+  })
+
   it('turns a quality into the bitrate that quality is worth', async () => {
     const config = await planVideoEncode(
       format,
@@ -315,5 +333,31 @@ describe('planVideoEncode — the sizing methods end to end', () => {
     )
 
     expect(config.bitrate).toBe(bitrateForCrf(17, 1920, 1080, 30))
+  })
+})
+
+describe('sourceBitrate', () => {
+  const track = (count: number, bytes: number, duration: number) =>
+    Array.from({ length: count }, () => ({ data: new Uint8Array(bytes), duration }))
+
+  it('is the encoded bytes over the seconds they take, in bits', () => {
+    // 100 packets of 1024 samples at 44.1 kHz is 2.32 seconds; 100 x 400 bytes
+    // is 320 000 bits, so a shade under 138 kbps.
+    expect(sourceBitrate(44_100, track(100, 400, 1024))).toBeCloseTo(
+      320_000 / (102_400 / 44_100),
+      0,
+    )
+  })
+
+  it('answers zero for a track with no samples, rather than a division by nothing', () => {
+    expect(sourceBitrate(44_100, [])).toBe(0)
+  })
+
+  it('answers zero for a timescale the file did not state', () => {
+    expect(sourceBitrate(0, track(10, 400, 1024))).toBe(0)
+  })
+
+  it('answers zero when the samples claim no duration at all', () => {
+    expect(sourceBitrate(44_100, track(10, 400, 0))).toBe(0)
   })
 })
