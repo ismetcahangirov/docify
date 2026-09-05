@@ -38,9 +38,12 @@ import { cancelConversion, startConversion } from '@/lib/worker/jobs'
  *
  * A conversion outlives the user's attention. They cancel, they retry, they drop
  * another file, and the worker keeps posting about the job they walked away from
- * because it is on another thread and has not heard yet. Rather than guarding
- * each callback with "is this still the job I think it is", every message is
- * dispatched and `lib/queue/state.ts` drops the ones that no longer apply.
+ * because it is on another thread and has not heard yet. Two things stand
+ * between that and the list. First, every run carries a number (`runs`, below):
+ * a cancel takes the next one, and a run whose number has moved on dispatches
+ * nothing at all, since state alone cannot tell a job's second run from the
+ * first worker's late result (issue #264). Second, whatever does get dispatched
+ * goes through `lib/queue/state.ts`, which drops what no longer applies.
  */
 
 /** How much of a file to read looking for its pixel dimensions. */

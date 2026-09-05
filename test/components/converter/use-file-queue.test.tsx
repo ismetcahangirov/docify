@@ -500,10 +500,101 @@ describe('useFileQueue — a run that is no longer current (issue #264)', () => 
 
     // The header came back to a run nobody wants any more: no engine is
     // chosen, nothing is downloaded, and the scheduler is not held for it.
+    // `run` has to have resolved first, or the negative assertion is only
+    // about how far the microtasks happened to get.
+    await waitFor(() => expect(finished).toBe(true))
     expect(startConversion).not.toHaveBeenCalled()
     expect(result.current.jobs[0].state).toBe('queued')
     expect(result.current.jobs[0].engine).toBeUndefined()
-    await waitFor(() => expect(finished).toBe(true))
+  })
+
+  it('still lets a cancel reach the newer worker after the older run has settled', async () => {
+    const worker = multiWorker()
+    const { result } = renderHook(() => useFileQueue())
+
+    act(() => {
+      result.current.add([file()])
+    })
+    const id = result.current.jobs[0].id
+
+    await act(async () => {
+      void result.current.run(id, jpgToPng)
+    })
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+    act(() => {
+      result.current.cancel(id)
+    })
+    await act(async () => {
+      void result.current.run(id, jpgToPng)
+    })
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(2))
+
+    // The first worker job settles late. Its clean-up must not take the
+    // second run's worker id with it, or this next cancel reaches nothing.
+    await worker.finish(0, new Blob(['stale']))
+    act(() => {
+      result.current.cancel(id)
+    })
+
+    expect(cancelConversion).toHaveBeenLastCalledWith('worker-2')
+  })
+
+  it('does not let an old worker abort send the restarted job back to waiting', async () => {
+    const worker = multiWorker()
+    const { result } = renderHook(() => useFileQueue())
+
+    act(() => {
+      result.current.add([file()])
+    })
+    const id = result.current.jobs[0].id
+
+    await act(async () => {
+      void result.current.run(id, jpgToPng)
+    })
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+    act(() => {
+      result.current.cancel(id)
+    })
+    await act(async () => {
+      void result.current.run(id, jpgToPng)
+    })
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(2))
+
+    // `loading-engine` answers `cancel`, so by state alone the old worker's
+    // abort would be applied to the new run — and the card would show
+    // "Waiting" over a worker that is still converting.
+    await worker.abort(0)
+
+    expect(result.current.jobs[0].state).toBe('loading-engine')
+
+    const fresh = new Blob(['fresh'])
+    await worker.finish(1, fresh)
+    await waitFor(() => expect(result.current.jobs[0].state).toBe('done'))
+    expect(result.current.jobs[0].result).toBe(fresh)
+  })
+
+  it('still returns the job to the queue when the worker dies under the current run', async () => {
+    const worker = controllable()
+    const { result } = renderHook(() => useFileQueue())
+
+    act(() => {
+      result.current.add([file()])
+    })
+    const id = result.current.jobs[0].id
+
+    await act(async () => {
+      void result.current.run(id, jpgToPng)
+    })
+    await waitFor(() => expect(startConversion).toHaveBeenCalled())
+
+    // Nobody cancelled: the abort is the worker going down. That is the one
+    // abort that still has to reach the list.
+    const abort = new Error('The worker stopped.')
+    abort.name = 'AbortError'
+    await worker.fail(abort)
+
+    expect(result.current.jobs[0].state).toBe('queued')
+    expect(reportConversion).not.toHaveBeenCalled()
   })
 
   it('drops the result of a cancelled run rather than landing it on the next one', async () => {
