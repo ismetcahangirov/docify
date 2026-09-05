@@ -220,3 +220,57 @@ describe('trying again', () => {
     )
   })
 })
+
+describe('the settings panel (issue #265)', () => {
+  const slider = () => screen.getByLabelText('Quality')
+
+  it('offers the settings this page can actually apply', () => {
+    render(<Converter pair={pair} />)
+
+    expect(screen.getByRole('group', { name: /image/i })).toBeInTheDocument()
+    expect(slider()).toHaveAttribute('type', 'range')
+  })
+
+  it('sits between the dropzone and the queue, where a choice is made before a drop', async () => {
+    const { container } = render(<Converter pair={pair} />)
+    drop(['one.heic'])
+
+    const panel = container.querySelector('[data-slot="settings-panel"]')!
+    const queue = await screen.findByRole('list', { name: /HEIC to JPG queue/i })
+
+    // DOCUMENT_POSITION_FOLLOWING: the queue comes after the panel.
+    expect(panel.compareDocumentPosition(queue) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('sends what the panel holds when the job starts', async () => {
+    render(<Converter pair={pair} />)
+    fireEvent.change(slider(), { target: { value: '40' } })
+    drop(['holiday.heic'])
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+
+    const request = (startConversion as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(request.image).toEqual({ quality: 40, keepMetadata: false })
+  })
+
+  it('stays usable while a job runs, because the next job reads it afresh', async () => {
+    render(<Converter pair={pair} />)
+    drop(['one.heic', 'two.heic'])
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+    expect(slider()).not.toBeDisabled()
+
+    fireEvent.change(slider(), { target: { value: '30' } })
+    settle().resolve(converted)
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(2))
+    const second = (startConversion as ReturnType<typeof vi.fn>).mock.calls[1][0]
+    expect(second.image.quality).toBe(30)
+  })
+
+  it('offers no panel where no setting would reach an engine', () => {
+    const { container } = render(<Converter pair={pairBySlug('jpg-to-pdf')!} />)
+
+    expect(container.querySelector('[data-slot="settings-panel"]')).toBeNull()
+  })
+})

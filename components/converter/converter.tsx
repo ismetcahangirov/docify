@@ -8,12 +8,17 @@ import { pairTitle } from '@/lib/registry/pairs'
 import { alternativeTargets } from '@/lib/router/alternatives'
 import { probeCapabilities } from '@/lib/router/capabilities'
 import type { ConversionTask } from '@/lib/router/types'
+import type { JobSettings } from '@/lib/settings/for-pair'
+import { settingsFor } from '@/lib/settings/for-pair'
+import type { SettingsValues } from '@/lib/settings/schema'
+import { defaultValues } from '@/lib/settings/values'
 import { cn } from '@/lib/utils'
 
 import { Dropzone } from './dropzone'
 import { JobCard } from './job-card'
 import { QueueAnnouncer } from './queue-announcer'
 import { ResultPanel } from './result-panel'
+import { SettingsPanel } from './settings-panel'
 import { useFileQueue } from './use-file-queue'
 
 /*
@@ -54,6 +59,10 @@ export interface ConverterProps {
 /** The empty list, hoisted so an idle render does not mint a new array. */
 const NO_ALTERNATIVES: readonly ConversionTask[] = []
 
+/** What a page with no panel holds, and what it sends. */
+const NO_VALUES: SettingsValues = {}
+const NO_SETTINGS: JobSettings = {}
+
 function Converter({ pair }: ConverterProps) {
   const queue = useFileQueue()
   const { add, run, cancel, remove, retry: requeue } = queue
@@ -67,6 +76,41 @@ function Converter({ pair }: ConverterProps) {
   )
 
   const start = React.useCallback((files: readonly File[]) => add([...files]), [add])
+
+  /**
+   * The controls this pair offers, and what the user has done with them.
+   *
+   * `null` for a conversion where nothing a panel could show would reach an
+   * engine — see `lib/settings/for-pair`, which is where that decision lives so
+   * that this component never reasons about formats.
+   *
+   * The state is not keyed on the pair because an island renders one pair for
+   * its whole life: the URL is the choice, and changing it is a navigation.
+   */
+  const settings = React.useMemo(() => settingsFor(pair), [pair])
+
+  const [values, setValues] = React.useState<SettingsValues>(() =>
+    settings === null ? NO_VALUES : defaultValues(settings.schema),
+  )
+
+  const applied = React.useMemo<JobSettings>(
+    () => (settings === null ? NO_SETTINGS : settings.toJobSettings(values)),
+    [settings, values],
+  )
+
+  /**
+   * What the next job will carry, kept where the scheduler can read it.
+   *
+   * A ref rather than a dependency of the scheduler effect below: the values
+   * are read when a job *starts*, so a slider moved while one is running
+   * belongs to the next file rather than to the one in flight — and putting
+   * them in the effect's dependencies would wake it on every keystroke for no
+   * decision it could make differently.
+   */
+  const jobSettings = React.useRef(applied)
+  React.useEffect(() => {
+    jobSettings.current = applied
+  }, [applied])
 
   /**
    * Which jobs have already been handed to the router, and whether one is in
@@ -121,7 +165,7 @@ function Converter({ pair }: ConverterProps) {
     started.current.add(next.id)
     busy.current = true
     // `run` never rejects: every failure is already a state the list shows.
-    void run(next.id, task).finally(() => {
+    void run(next.id, task, jobSettings.current).finally(() => {
       busy.current = false
       settle()
     })
@@ -179,6 +223,16 @@ function Converter({ pair }: ConverterProps) {
         label={`Drop your ${from.name} files here`}
         hint={`They are converted to ${to.name} on this device. Nothing is uploaded, and there is no limit on how many you add.`}
       />
+
+      {/*
+       * Above the queue, because it is a decision made *before* a file is
+       * dropped — and left enabled while a job runs, since what it holds is
+       * read when the next job starts rather than shared with the one in
+       * flight.
+       */}
+      {settings !== null && (
+        <SettingsPanel schema={settings.schema} values={values} onChange={setValues} />
+      )}
 
       {queue.jobs.length > 0 && (
         <ul
