@@ -327,6 +327,10 @@ describe('the remux runner, extracting audio', () => {
     await expect(createRunner().run(input([silent]), running(), () => {})).rejects.toThrow(
       /no audio/i,
     )
+    // The same sentence for the page's `convert`, which is the same job.
+    await expect(
+      createRunner().run(input([silent], 'm4a', 'convert'), running(), () => {}),
+    ).rejects.toThrow(/no audio/i)
   })
 
   it('refuses a job that names more than one file', async () => {

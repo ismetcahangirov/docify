@@ -253,7 +253,12 @@ describe('route — the catalogue pages that end in M4A', () => {
     register(realRemux, realWebCodecs, realFfmpeg)
 
     for (const page of pages) {
-      expect(chosen(route(page, 10 * MB, codecless)).engine).toBe('remux')
+      const result = chosen(route(page, 10 * MB, codecless))
+
+      expect(result.engine).toBe('remux')
+      // This is the profile the bug was worst on: neither the download nor
+      // the slow path is warned about, because neither happens.
+      expect(result.warnings).toEqual([])
     }
   })
 
@@ -261,8 +266,12 @@ describe('route — the catalogue pages that end in M4A', () => {
     register(realRemux, realWebCodecs, realFfmpeg)
 
     for (const page of pages) {
-      expect(chosen(route(page, 10 * MB, ios)).engine).toBe('remux')
-      expect(chosen(route(page, 10 * MB, iphone)).engine).toBe('remux')
+      for (const phone of [ios, iphone]) {
+        const result = chosen(route(page, 10 * MB, phone))
+
+        expect(result.engine).toBe('remux')
+        expect(result.warnings).toEqual([])
+      }
     }
   })
 })

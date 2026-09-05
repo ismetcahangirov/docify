@@ -145,10 +145,11 @@ export function createRunner(): EngineRunner {
       const { remuxMp4 } = await import('./mp4-remux')
       throwIfAborted(signal)
 
-      // By the target, not the op: a `convert` into M4A is an extraction too,
-      // and an audio container holding a video track is a silent film with
-      // the wrong label on it.
-      const extracting = input.task.op === 'extract' || COPYABLE_AUDIO.has(input.task.to)
+      // By the target, not the op: `supports` only lets `extract` through to
+      // an audio target anyway, and a `convert` into M4A is the same job. An
+      // audio container holding a video track is a silent film with the wrong
+      // label on it.
+      const extracting = COPYABLE_AUDIO.has(input.task.to)
       const written = await remuxMp4(
         bytes,
         // An extraction leaves the picture behind; a container change carries
