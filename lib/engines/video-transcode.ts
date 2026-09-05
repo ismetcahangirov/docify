@@ -11,6 +11,12 @@
  *    bitrate `./video-config` negotiated with the browser.
  * 4. `./mp4-mux` writes a new container around them.
  *
+ * The soundtrack goes round the outside. Its samples are demuxed in stage 1 and
+ * handed to stage 4 as they are — no decoder, no encoder, no resampling — which
+ * is the same stream copy `./mp4-remux` performs, done here so that a transcode
+ * never returns a silent file. Re-encoding it would cost quality for nothing:
+ * the operations this engine claims are about the picture.
+ *
  * The two codecs are wired output-to-input: the decoder's `output` callback
  * hands each frame straight to the encoder and closes it. A frame is a GPU
  * surface — several megabytes for 1080p, more on a phone — so holding a queue of
@@ -52,10 +58,10 @@ import { readMp4 } from './mp4-demux'
 import type { Mp4Media, Mp4Sample, Mp4Track } from './mp4-media'
 import { videoTrack } from './mp4-media'
 import { writeMp4 } from './mp4-mux'
-import { drainSamples, keepOnlyTrack } from './mp4-samples'
+import { drainSamples, keepOnlyTracks } from './mp4-samples'
 import type { Mp4BoxLoader } from './mp4-runtime'
 import type { ProgressCallback } from './types'
-import { planVideoEncode } from './video-config'
+import { planVideoEncode, sourceBitrate } from './video-config'
 import type { VideoOptions } from './video-options'
 import {
   browserVideoCodecs,
@@ -91,9 +97,9 @@ export interface VideoTranscodeDependencies {
 /**
  * Transcodes the video track of `bytes` and returns a new MP4.
  *
- * Audio is deliberately not carried: it needs its own decoder and encoder, which
- * is issue #48, and silently dropping a soundtrack would be worse than saying
- * so. Until that lands the engine only claims jobs where losing it is the point.
+ * The soundtrack rides along as a stream copy: whatever the file had is written
+ * back byte for byte. A file with no picture is still refused rather than
+ * silently turned into an audio container — see {@link noVideoTrack}.
  */
 export async function transcodeVideo(
   bytes: Uint8Array,
@@ -112,10 +118,12 @@ export async function transcodeVideo(
   const media = await readMp4(bytes, signal, loadMp4Box)
   const source = videoTrack(media)
   if (source === undefined) throw noVideoTrack(media)
-  // Everything the demuxer read that this path will not: a soundtrack, most
-  // often, which is dropped rather than carried (see the note on this
-  // function) and has no business staying resident while the codecs run.
-  keepOnlyTrack(media, source)
+  // Every soundtrack, not the first: a dual-language film keeps both languages
+  // through a remux, and compressing the picture must not be the operation that
+  // quietly throws one of them away. Taken before anything is released, because
+  // the copy below writes these samples out untouched.
+  const sound = media.tracks.filter((track) => track.kind === 'audio')
+  keepOnlyTracks(media, [source, ...sound])
 
   onProgress(DEMUXED)
 
@@ -125,6 +133,11 @@ export async function transcodeVideo(
     source.samples,
     options,
     platform.isEncoderConfigSupported,
+    // A size target has to leave room for the tracks that land on top of the
+    // encoder's output. `./mp4-demux` reads them in full, so the rate is
+    // weighed rather than taken from a header that may be describing a
+    // different encode.
+    sound.reduce((total, track) => total + sourceBitrate(track.format.timescale, track.samples), 0),
   )
   throwIfAborted(signal)
 
@@ -149,6 +162,9 @@ export async function transcodeVideo(
           },
           samples: encoded.samples,
         },
+        // Unchanged, ids and all: the muxer renumbers from 1 as it adds tracks,
+        // so the demuxed ids are only meaningful inside the file they came from.
+        ...sound,
       ],
     },
     signal,

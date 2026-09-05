@@ -17,11 +17,12 @@
  * and mp4box cannot read or write them, so those pairs fall to `ffmpeg` (issue
  * #49), which is exactly what the priority ordering is for.
  *
- * Audio is not carried yet. A transcode that silently dropped a soundtrack would
- * be worse than one that says so, so until the audio path lands (issue #48) the
- * engine claims the operations where losing it is either impossible or the
- * point — and `./video-transcode` explains itself when a file turns out to have
- * only sound.
+ * Audio is carried, and never re-encoded. A video job copies the soundtrack from
+ * the source container into the output as it stands, the same stream copy
+ * `./mp4-remux` performs, so a transcode returns the file the user gave with a
+ * new picture in it rather than a silent one. Only an audio *target* reaches a
+ * codec, through `./audio-transcode`; a file that turns out to have sound and no
+ * picture is refused by `./video-transcode` with a sentence that says so.
  *
  * ## What gates it
  *

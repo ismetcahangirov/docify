@@ -94,19 +94,30 @@ export function drainSamples(track: Mp4Track): SampleStream {
 }
 
 /**
- * Drops every track of `media` except `keep`, and empties the ones it drops.
+ * Drops every track of `media` outside `keep`, and empties the ones it drops.
  *
- * A transcode reads one track. The others — an audio track alongside the video
- * being converted, most often — were demuxed into memory anyway, and they stay
- * there for the whole job because `media` is still on the stack. Emptying them
- * as well as unlinking them matters: whoever handed the media over may still
- * hold a reference to a `Mp4Track` object, and an unlinked track with its
- * samples intact is the same megabytes under a different name.
+ * A conversion touches some of a file's tracks and not others: an audio target
+ * reads one track and drops the picture; a video transcode re-encodes the
+ * picture and copies every soundtrack through. Whatever is left over was
+ * demuxed into memory anyway, and stays there for the whole job because `media`
+ * is still on the stack. Emptying those as well as unlinking them matters:
+ * whoever handed the media over may still hold a reference to a `Mp4Track`
+ * object, and an unlinked track with its samples intact is the same megabytes
+ * under a different name.
+ *
+ * The kept tracks are left exactly as they came, samples included. Releasing
+ * those is {@link drainSamples}' job, and only for the track that is actually
+ * read once and never looked at again.
  */
-export function keepOnlyTrack(media: Mp4Media, keep: Mp4Track): void {
+export function keepOnlyTracks(media: Mp4Media, keep: readonly Mp4Track[]): void {
   for (const track of media.tracks) {
-    if (track !== keep) track.samples = []
+    if (!keep.includes(track)) track.samples = []
   }
 
-  media.tracks = [keep]
+  media.tracks = [...keep]
+}
+
+/** {@link keepOnlyTracks} for the common case of a single survivor. */
+export function keepOnlyTrack(media: Mp4Media, keep: Mp4Track): void {
+  keepOnlyTracks(media, [keep])
 }

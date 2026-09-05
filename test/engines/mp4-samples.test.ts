@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Mp4Media, Mp4Sample, Mp4Track } from '@/lib/engines/mp4-media'
-import { drainSamples, keepOnlyTrack } from '@/lib/engines/mp4-samples'
+import { drainSamples, keepOnlyTrack, keepOnlyTracks } from '@/lib/engines/mp4-samples'
 
 /** `count` samples, each carrying a distinguishable buffer of `bytes` bytes. */
 function samples(count: number, bytes = 16): Mp4Sample[] {
@@ -119,5 +119,66 @@ describe('keepOnlyTrack', () => {
 
     expect(file.tracks).toEqual([only])
     expect(only.samples).toHaveLength(2)
+  })
+})
+
+describe('keepOnlyTracks', () => {
+  const media = (): Mp4Media => ({
+    tracks: [
+      videoTrackOf(3),
+      {
+        id: 2,
+        kind: 'audio',
+        format: { codec: 'mp4a.40.2', timescale: 44_100, channelCount: 2, sampleRate: 44_100 },
+        samples: samples(4, 512),
+      },
+      {
+        id: 3,
+        kind: 'audio',
+        format: { codec: 'mp4a.40.2', timescale: 48_000, channelCount: 1, sampleRate: 48_000 },
+        samples: samples(5, 512),
+      },
+    ],
+  })
+
+  it('leaves every track the job will read, in the order it was given them', () => {
+    const file = media()
+    const [video, first] = file.tracks
+
+    keepOnlyTracks(file, [video, first])
+
+    expect(file.tracks).toEqual([video, first])
+  })
+
+  it('keeps the samples of the tracks it was told to keep', () => {
+    // A video transcode drains its own track; the audio track it carries is
+    // copied sample for sample into the muxer, so emptying it would ship a
+    // soundtrack of nothing.
+    const file = media()
+    const [video, sound] = file.tracks
+
+    keepOnlyTracks(file, [video, sound])
+
+    expect(video.samples).toHaveLength(3)
+    expect(sound.samples).toHaveLength(4)
+  })
+
+  it('empties every track it drops, so their samples are not reachable through the caller', () => {
+    const file = media()
+    const [video, kept, dropped] = file.tracks
+
+    keepOnlyTracks(file, [video, kept])
+
+    expect(dropped.samples).toEqual([])
+  })
+
+  it('drops everything when the list is empty', () => {
+    const file = media()
+    const [video] = file.tracks
+
+    keepOnlyTracks(file, [])
+
+    expect(file.tracks).toEqual([])
+    expect(video.samples).toEqual([])
   })
 })
