@@ -26,9 +26,9 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## gotcha
 
+- [windows-build-broke-on-pnpm-junctions](entries/windows-build-broke-on-pnpm-junctions.md) — The Windows build crash was never about Node — pnpm's junctions make webpack resolve a path that does not exist, and its timestamp-and-hash snapshot turns that into a hash of undefined
 - [a-carried-track-is-a-term-of-the-size-target](entries/a-carried-track-is-a-term-of-the-size-target.md) — An engine that copies a track past the encoder owes that track's bitrate to the size target, or the capable browser is the one that overshoots
 - [a-pixel-bound-test-needs-a-device-without-simd](entries/a-pixel-bound-test-needs-a-device-without-simd.md) — A test that means to exercise the decoded-pixel bound must route on a device with wasmSimd false, or vips answers and the assertion proves nothing
-- [build-does-not-run-on-node-24](entries/build-does-not-run-on-node-24.md) — pnpm build crashes on the Windows dev machine with a webpack WasmHash error on Node 22 and 24 alike — CI on Linux builds the same tree, and lint/typecheck/test pass regardless
 - [lighthouse-numbers-come-from-ci](entries/lighthouse-numbers-come-from-ci.md) — A Lighthouse score measured on the dev laptop is not the gate's score — and lhci asserts the best run unless told otherwise
 - [barrel-imports-cost-a-budget](entries/barrel-imports-cost-a-budget.md) — A single umbrella import cost 76 kB gzipped on every route — pnpm size names the route, never the package
 - [ci-does-not-run-on-a-conflicting-pr](entries/ci-does-not-run-on-a-conflicting-pr.md) — A PR with no checks at all is usually a merge conflict, not a stuck runner — GitHub never starts CI on one
@@ -44,6 +44,8 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## session
 
+- [session-2026-09-06-103e550c](entries/session-2026-09-06-103e550c.md) — Session on 2026-09-06: agent (10 file ops)
+- [session-2026-09-06-b6e56b84](entries/session-2026-09-06-b6e56b84.md) — Session on 2026-09-06: router, engines, root, app, agent, docs (15 file ops)
 - [session-2026-09-05-039547a6](entries/session-2026-09-05-039547a6.md) — Session on 2026-09-05: general work (0 file ops)
 - [session-2026-09-05-2f87c69e](entries/session-2026-09-05-2f87c69e.md) — Session on 2026-09-05: general work (0 file ops)
 - [session-2026-09-05-417bea57](entries/session-2026-09-05-417bea57.md) — Session on 2026-09-05: ui, agent (12 file ops)

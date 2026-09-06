@@ -59,6 +59,16 @@ const ISOLATED_ASSET_HEADERS = [
 /** Everything an isolated page fetches: its own chunks, and the vendored engines. */
 const ISOLATED_ASSET_ROUTES = ['/_next/static/:path*', '/vendor/:path*']
 
+/**
+ * The slice of webpack's configuration this repository sets.
+ *
+ * Next types the `webpack` hook's argument as `any`; naming the two fields that
+ * are touched keeps that `any` out of this file.
+ */
+type WebpackSnapshotConfig = {
+  snapshot?: { buildDependencies?: { hash?: boolean; timestamp?: boolean } }
+}
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   /*
@@ -88,6 +98,50 @@ const nextConfig: NextConfig = {
    */
   experimental: {
     optimizePackageImports: ['radix-ui', 'lucide-react'],
+  },
+  /*
+   * Issue #260: `pnpm build` died on the Windows development machine before it
+   * emitted a single route, with `TypeError: Cannot read properties of
+   * undefined (reading 'length')` raised inside webpack's `WasmHash`. The stack
+   * made that look like a Node 24 WebAssembly incompatibility. It is not a Node
+   * version problem at all — `hash.update()` was simply handed `undefined`.
+   *
+   * pnpm links each package into `node_modules/` as an NTFS *junction* on
+   * Windows, and `fs.readlink()` on a junction returns an *absolute* target.
+   * webpack joins that target onto the link's own directory with
+   * `path.win32.join`, which appends an absolute second argument instead of
+   * taking it whole, so the resolved target reads `<repo>\node_modules\` with
+   * `C:\<repo>\node_modules\.pnpm\next@…\node_modules\next` appended to it —
+   * a directory that does not exist.
+   *
+   * Reading a directory that is not there stores `null` under both
+   * `_contextTimestamps` and `_contextHashes`,
+   * `_readContextTimestampAndHash` merges the pair as
+   * `{ ...null, ...null }`, and the resulting `{}` walks straight through the
+   * `if (entry)` guard in `_resolveContextTsh` to hand `entry.hash` —
+   * `undefined` — to the hash.
+   *
+   * On Linux pnpm writes *relative* symlinks, the join is correct, and the path
+   * exists. That is the whole of the difference, and it is why CI has been
+   * green throughout on a tree that could not be built locally.
+   *
+   * The merge is reached only when the build-dependency snapshot is taken by
+   * timestamp *and* hash, which is webpack's default. Asking for the hash alone
+   * routes through `_resolveContextHash`, whose identical guard is checked
+   * against the `null` that was never merged into `{}`. Hashing build
+   * dependencies is also the more accurate of the two — it does not trust
+   * mtimes — at the cost of re-reading them on each build.
+   *
+   * Nothing about the emitted bundle changes: `snapshot.buildDependencies`
+   * decides when webpack's persistent cache is invalidated, not what is
+   * compiled.
+   */
+  webpack(config: WebpackSnapshotConfig) {
+    config.snapshot = {
+      ...config.snapshot,
+      buildDependencies: { hash: true, timestamp: false },
+    }
+    return config
   },
   async headers() {
     return [
