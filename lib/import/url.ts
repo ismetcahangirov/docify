@@ -161,9 +161,16 @@ export async function importFromUrl(url: string, options: ImportOptions = {}): P
 
   if (!response.ok) throw new Error(refusalMessage(response))
 
-  const blob = await response.blob()
+  // `arrayBuffer` rather than `blob`: `new File([blob], …)` is not portable —
+  // jsdom stringifies a `Blob` handed to the `File` constructor on some Node
+  // versions and reads its bytes on others, so the same test passed on the dev
+  // machine and produced a file containing "[object Blob]" in CI.
+  const bytes = await response.arrayBuffer()
 
-  return new File([blob], filenameFrom(response.headers.get('content-disposition')), {
-    type: blob.type,
+  return new File([bytes], filenameFrom(response.headers.get('content-disposition')), {
+    // The header, not `blob.type`. The proxy always sends one — falling back to
+    // `application/octet-stream` when the upstream declared none — and reading
+    // it here keeps the type the proxy decided rather than one inferred twice.
+    type: response.headers.get('content-type') ?? 'application/octet-stream',
   })
 }

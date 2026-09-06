@@ -112,6 +112,27 @@ describe('importFromUrl', () => {
     expect(await file.text()).toBe('bytes')
   })
 
+  it('keeps the bytes, rather than a description of them', async () => {
+    // `new File([blob], …)` stringifies the blob on some Node versions and
+    // reads it on others: the file arrived containing "[object Blob]" in CI
+    // while this suite was green on the dev machine.
+    const fetch = answer(new Uint8Array([1, 2, 3, 4]))
+
+    const file = await importFromUrl('https://example.com/x', { fetch })
+
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3, 4]))
+    expect(file.size).toBe(4)
+  })
+
+  it('falls back to an opaque type when the proxy declared none', async () => {
+    const file = await importFromUrl('https://example.com/x', {
+      fetch: answer(new Uint8Array([1, 2, 3])),
+    })
+
+    // Never a guess. These bytes are about to be handed to a conversion engine.
+    expect(file.type).toBe('application/octet-stream')
+  })
+
   it('falls back to a generic name when the proxy sent no disposition', async () => {
     const file = await importFromUrl('https://example.com/x', { fetch: answer('bytes') })
 
