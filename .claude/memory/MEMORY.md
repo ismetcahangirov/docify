@@ -26,7 +26,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## gotcha
 
-- [windows-build-broke-on-pnpm-junctions](entries/windows-build-broke-on-pnpm-junctions.md) — The Windows build crash was never about Node — pnpm's junctions make webpack resolve a path that does not exist, and its timestamp-and-hash snapshot turns that into a hash of undefined
+- [windows-build-broke-on-pnpm-junctions](entries/windows-build-broke-on-pnpm-junctions.md) — The Windows build crash was pnpm junctions plus a poisoned .next cache, not Node — and the cache half was already written down before the issue was opened
 - [a-carried-track-is-a-term-of-the-size-target](entries/a-carried-track-is-a-term-of-the-size-target.md) — An engine that copies a track past the encoder owes that track's bitrate to the size target, or the capable browser is the one that overshoots
 - [a-pixel-bound-test-needs-a-device-without-simd](entries/a-pixel-bound-test-needs-a-device-without-simd.md) — A test that means to exercise the decoded-pixel bound must route on a device with wasmSimd false, or vips answers and the assertion proves nothing
 - [lighthouse-numbers-come-from-ci](entries/lighthouse-numbers-come-from-ci.md) — A Lighthouse score measured on the dev laptop is not the gate's score — and lhci asserts the best run unless told otherwise
