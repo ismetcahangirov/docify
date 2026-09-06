@@ -1,10 +1,12 @@
 import type { NextConfig } from 'next'
 
 /**
- * Cross-origin isolation is what unlocks `SharedArrayBuffer`, and therefore
- * multi-threaded `ffmpeg.wasm`. The capability router reads `crossOriginIsolated`
- * and falls back to a single-threaded path with a `NO_ISOLATION` warning when it
- * is false.
+ * Cross-origin isolation is what unlocks `SharedArrayBuffer`, and therefore the
+ * multi-threaded engine builds. The capability router reads
+ * `crossOriginIsolated` and routes around the engines that need it when it is
+ * false. The vendored ffmpeg core is not one of them: it is built
+ * `--disable-pthreads` and runs on one core either way, so its `NO_ISOLATION`
+ * warning is about that build and not about these headers.
  *
  * `Cross-Origin-Embedder-Policy: require-corp` blocks every cross-origin
  * subresource that does not explicitly opt in, so it is scoped to the converter
@@ -20,7 +22,13 @@ const CROSS_ORIGIN_ISOLATION_HEADERS = [
   { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
 ]
 
-/** Only these route groups become cross-origin isolated. */
+/**
+ * Only these route groups become cross-origin isolated.
+ *
+ * `/tools` is reserved for the tool pages the plan puts there. Until they land
+ * it is a `noindex` placeholder, and it stays listed here so the headers are
+ * already in place — and already exercised — on the day the real pages arrive.
+ */
 const ISOLATED_ROUTES = ['/convert/:path*', '/tools/:path*']
 
 /**

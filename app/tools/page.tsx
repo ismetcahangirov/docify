@@ -24,8 +24,13 @@ export default function ToolsPlaceholderPage() {
          * indexable surface.
          */}
         <h1 className="text-h2 uppercase">Tools</h1>
+        {/*
+         * Neutral on purpose. Whoever lands here — a stale link, a typed path,
+         * a crawler that ignored the `noindex` — should read a sentence about
+         * the site rather than a note about its backlog.
+         */}
         <p className="text-body text-fg-light-mut">
-          Tool routes are not implemented yet. The converters live under{' '}
+          Tools are coming. The converters are at{' '}
           <a href="/convert" className="underline underline-offset-4">
             /convert
           </a>
