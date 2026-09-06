@@ -24,6 +24,7 @@ const config: ProxyConfig = {
   timeoutMs: 5_000,
   port: 8080,
   allowedOrigins: ['https://docify.app'],
+  ratePerMinute: 30,
 }
 
 /** A resolver that answers with whatever addresses it is given. */
@@ -181,5 +182,112 @@ describe('the redirect loop', () => {
       RefusedUrlError,
     )
     expect(perform).not.toHaveBeenCalled()
+  })
+})
+
+/*
+ * The abort signal (issue #269).
+ *
+ * `proxy.ts` has always passed `signal: AbortSignal.timeout(config.timeoutMs)`
+ * into this fetch, and this fetch has always ignored it. The `timeout` handed
+ * to `node:http` is a *socket idle* timeout, not a deadline: an upstream that
+ * sends one byte every 29 seconds keeps a connection open for hours, and on a
+ * free instance a handful of those is the whole service.
+ *
+ * The signal is checked before a hop and honoured during one, so a redirect
+ * chain cannot outlive the deadline either.
+ */
+
+/** A `node:http`-shaped request that never answers, and remembers being destroyed. */
+function silentSend() {
+  const listeners = new Map<string, (reason?: unknown) => void>()
+  let destroyedWith: unknown = null
+
+  const outgoing = {
+    on(event: string, listener: (reason?: unknown) => void) {
+      listeners.set(event, listener)
+
+      return outgoing
+    },
+    end() {},
+    destroy(reason?: unknown) {
+      destroyedWith = reason ?? null
+      listeners.get('error')?.(reason)
+    },
+  }
+
+  const send = vi.fn(() => outgoing)
+
+  return { send, destroyed: () => destroyedWith }
+}
+
+/** A signal that is already aborted, with the name a timeout would carry. */
+function timedOut(): AbortSignal {
+  const controller = new AbortController()
+  controller.abort(Object.assign(new Error('the deadline passed'), { name: 'TimeoutError' }))
+
+  return controller.signal
+}
+
+describe('the abort signal', () => {
+  it('refuses before the first hop when the signal has already fired', async () => {
+    const perform = answers()
+
+    await expect(
+      guarded(perform)('https://example.com/a.heic', { signal: timedOut() }),
+    ).rejects.toMatchObject({ name: 'TimeoutError' })
+    expect(perform).not.toHaveBeenCalled()
+  })
+
+  it('checks the signal again between hops, not only at the start', async () => {
+    const controller = new AbortController()
+    const perform = vi.fn(async () => {
+      // Aborted while the first hop was in flight, which is the case a check at
+      // the start alone would sail straight past.
+      controller.abort(Object.assign(new Error('the deadline passed'), { name: 'TimeoutError' }))
+
+      return {
+        status: 302,
+        headers: new Headers(),
+        body: null,
+        location: new URL('https://cdn.example.com/a.heic'),
+      }
+    })
+
+    await expect(
+      guarded(perform as never)('https://example.com/a.heic', { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'TimeoutError' })
+    expect(perform).toHaveBeenCalledTimes(1)
+  })
+
+  it('hands the signal down to the hop', async () => {
+    const perform = answers()
+    const signal = new AbortController().signal
+
+    await guarded(perform)('https://example.com/a.heic', { signal })
+
+    expect(perform).toHaveBeenCalledWith(expect.objectContaining({ signal }))
+  })
+
+  it('destroys the socket when the signal fires mid-hop', async () => {
+    const { send, destroyed } = silentSend()
+    const controller = new AbortController()
+    const fetchImpl = createGuardedFetch(config, { lookup: () => {}, send: send as never })
+
+    const pending = fetchImpl('https://example.com/a.heic', { signal: controller.signal })
+    controller.abort(Object.assign(new Error('the deadline passed'), { name: 'TimeoutError' }))
+
+    // Destroying is the whole point: without it the socket stays open and the
+    // rejection only frees the promise, not the connection.
+    await expect(pending).rejects.toMatchObject({ name: 'TimeoutError' })
+    expect(destroyed()).toMatchObject({ name: 'TimeoutError' })
+  })
+
+  it('leaves a hop alone when no signal was given', async () => {
+    const perform = answers()
+
+    await expect(guarded(perform)('https://example.com/a.heic')).resolves.toMatchObject({
+      status: 200,
+    })
   })
 })

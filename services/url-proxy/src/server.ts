@@ -6,6 +6,7 @@ import type { ReadableStream as NodeReadableStream } from 'node:stream/web'
 import { readConfig } from './config.js'
 import { createGuardedFetch } from './guarded-fetch.js'
 import { handleRequest } from './proxy.js'
+import { createRateLimiter } from './rate-limit.js'
 
 /**
  * The Node adapter, and the only file here that touches a socket.
@@ -31,6 +32,14 @@ import { handleRequest } from './proxy.js'
  * The upstream fetch is `createGuardedFetch`, never the global one: the global
  * `fetch` cannot be told which address to connect to, and that is what closes
  * DNS rebinding (issue #88, `safe-lookup.ts`).
+ *
+ * ## The one thing only this file knows
+ *
+ * `incoming.socket.remoteAddress` — the address the connection actually came
+ * from, as opposed to the one a header claims. It is passed down so the rate
+ * limiter has something to fall back to that a caller cannot write (issue #269,
+ * `client-key.ts`). The limiter itself is built once here rather than per
+ * request, because a window that is rebuilt on every call is not a window.
  */
 
 /** The Web `Request` that a Node request describes. */
@@ -82,11 +91,15 @@ export function start(
 ): ReturnType<typeof createServer> {
   const config = readConfig(env)
   const guardedFetch = createGuardedFetch(config)
+  const limiter = createRateLimiter({ limit: config.ratePerMinute, windowMs: 60_000 })
 
   const server = createServer((incoming, outgoing) => {
     const origin = `http://${incoming.headers.host ?? 'localhost'}`
 
-    void handleRequest(toWebRequest(incoming, origin), config, guardedFetch)
+    void handleRequest(toWebRequest(incoming, origin), config, guardedFetch, {
+      remoteAddress: incoming.socket.remoteAddress,
+      limiter,
+    })
       .then((response) => send(response, outgoing))
       .catch(() => {
         // Nothing above should throw; if it does, the client gets a status

@@ -20,12 +20,21 @@ export interface ProxyConfig {
   port: number
   /** Exact origins the browser may call from. Empty means none. */
   allowedOrigins: readonly string[]
+  /**
+   * How many transfers one caller may start a minute.
+   *
+   * `Origin` is a CORS decision and not authentication — `curl` writes whatever
+   * it likes there. This is the number that actually bounds what a script can
+   * cost, so unlike the others it has no "off" value: see `readConfig`.
+   */
+  ratePerMinute: number
 }
 
 const DEFAULTS = {
   maxBytes: 100 * 1024 * 1024,
   timeoutMs: 30_000,
   port: 8080,
+  ratePerMinute: 30,
 } as const
 
 /** A positive whole number, or `null` for anything else. */
@@ -46,6 +55,11 @@ export function readConfig(env: Record<string, string | undefined>): ProxyConfig
     timeoutMs: positiveInteger(env.TIMEOUT_MS) ?? DEFAULTS.timeoutMs,
     // Render assigns the port; the default is only for a local run.
     port: positiveInteger(env.PORT) ?? DEFAULTS.port,
+    // The safe direction is the opposite one from `MAX_BYTES`. A broken ceiling
+    // should fall back low; a broken *limit* should fall back to a working
+    // number, because a limiter that refuses everything is an outage wearing a
+    // 429. `positiveInteger` already rejects `0` for exactly that reason.
+    ratePerMinute: positiveInteger(env.RATE_LIMIT_PER_MINUTE) ?? DEFAULTS.ratePerMinute,
     allowedOrigins: (env.ALLOWED_ORIGINS ?? '')
       .split(',')
       .map((origin) => origin.trim())

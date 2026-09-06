@@ -115,6 +115,15 @@ describe('render.yaml', () => {
     expect(origins?.split(',').map((origin) => origin.trim())).toContain(SITE_ORIGIN)
   })
 
+  it('declares every knob the service reads', () => {
+    // `config.ts` falls back safely for each of these, so a missing one is not
+    // an outage — it is a service quietly running on a default nobody chose,
+    // which is exactly the kind of drift a blueprint exists to prevent.
+    for (const name of ['MAX_BYTES', 'TIMEOUT_MS', 'RATE_LIMIT_PER_MINUTE']) {
+      expect(envVar(name), name).toBeDefined()
+    }
+  })
+
   it('pins a Node version the service supports', () => {
     const declared = envVar('NODE_VERSION')
     const required: { engines: { node: string } } = JSON.parse(

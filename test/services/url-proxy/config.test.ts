@@ -20,6 +20,7 @@ describe('readConfig', () => {
     expect(config.maxBytes).toBe(100 * 1024 * 1024)
     expect(config.timeoutMs).toBe(30_000)
     expect(config.port).toBe(8080)
+    expect(config.ratePerMinute).toBe(30)
     // Nobody, rather than everybody. A proxy that answers any origin is an open
     // proxy, and an open proxy is somebody else's bandwidth bill.
     expect(config.allowedOrigins).toEqual([])
@@ -49,5 +50,21 @@ describe('readConfig', () => {
 
   it('reads the upstream timeout', () => {
     expect(readConfig({ TIMEOUT_MS: '5000' }).timeoutMs).toBe(5_000)
+  })
+
+  it('reads the rate limit', () => {
+    expect(readConfig({ RATE_LIMIT_PER_MINUTE: '10' }).ratePerMinute).toBe(10)
+  })
+
+  it('ignores a rate limit that is not a positive whole number', () => {
+    // Zero would read as "nobody may call", which is not a value anybody sets
+    // on purpose — and a limiter that refuses everything is indistinguishable
+    // from an outage. Falling back to the default is the safe direction here,
+    // in the other direction from MAX_BYTES, because the conservative answer to
+    // a broken *ceiling* is the low one and to a broken *limit* is the working
+    // one.
+    for (const value of ['0', '-5', 'lots', '1.5', '', ' ']) {
+      expect(readConfig({ RATE_LIMIT_PER_MINUTE: value }).ratePerMinute).toBe(30)
+    }
   })
 })
