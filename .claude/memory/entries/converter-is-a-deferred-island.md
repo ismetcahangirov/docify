@@ -1,8 +1,8 @@
 ---
-name: converter-is-a-deferred-island
-description: The converter loads after the static page, its skeleton is sized to prevent shift, and its scheduler must be an effect
-type: decision
-date: 2026-09-02
+name: "converter-is-a-deferred-island"
+description: "The converter loads after the static page, its skeleton is sized to prevent shift, and its scheduler must be an effect"
+type: "decision"
+date: "2026-09-02"
 ---
 
 A conversion page is static HTML plus exactly one hydrating component, and that

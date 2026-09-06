@@ -1,8 +1,8 @@
 ---
-name: a-pixel-bound-test-needs-a-device-without-simd
-description: A test that means to exercise the decoded-pixel bound must route on a device with wasmSimd false, or vips answers and the assertion proves nothing
-type: gotcha
-date: 2026-09-05
+name: "a-pixel-bound-test-needs-a-device-without-simd"
+description: "A test that means to exercise the decoded-pixel bound must route on a device with wasmSimd false, or vips answers and the assertion proves nothing"
+type: "gotcha"
+date: "2026-09-05"
 ---
 
 wasm-vips is exempt from the raster pixel guard (see

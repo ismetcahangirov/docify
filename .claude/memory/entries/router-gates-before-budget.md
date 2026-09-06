@@ -1,8 +1,8 @@
 ---
-name: router-gates-before-budget
-description: The capability gate runs before the memory-budget check, so a rejection never quotes a doomed engine's ceiling
-type: decision
-date: 2026-08-13
+name: "router-gates-before-budget"
+description: "The capability gate runs before the memory-budget check, so a rejection never quotes a doomed engine's ceiling"
+type: "decision"
+date: "2026-08-13"
 ---
 
 `route()` in `lib/router/route.ts` runs its checks in this order: EMPTY_INPUT, candidate

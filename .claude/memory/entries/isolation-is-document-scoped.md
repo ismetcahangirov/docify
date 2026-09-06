@@ -1,8 +1,8 @@
 ---
-name: isolation-is-document-scoped
-description: crossOriginIsolated is per-document, not per-device — it must never be cached alongside the rest of Capabilities
-type: gotcha
-date: 2026-08-13
+name: "isolation-is-document-scoped"
+description: "crossOriginIsolated is per-document, not per-device — it must never be cached alongside the rest of Capabilities"
+type: "gotcha"
+date: "2026-08-13"
 ---
 
 COOP/COEP are scoped to /convert/* and /tools/* in next.config.ts, but sessionStorage

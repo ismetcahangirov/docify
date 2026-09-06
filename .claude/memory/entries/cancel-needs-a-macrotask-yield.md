@@ -1,8 +1,8 @@
 ---
-name: cancel-needs-a-macrotask-yield
-description: An engine loop that only awaits promises never observes a cancel — the worker's message loop needs a macrotask to run
-type: gotcha
-date: 2026-08-14
+name: "cancel-needs-a-macrotask-yield"
+description: "An engine loop that only awaits promises never observes a cancel — the worker's message loop needs a macrotask to run"
+type: "gotcha"
+date: "2026-08-14"
 ---
 
 Found implementing PDF merge (#38), and it applies to every multi-item engine we

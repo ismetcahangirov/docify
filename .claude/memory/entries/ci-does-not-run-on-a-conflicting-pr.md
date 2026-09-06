@@ -1,8 +1,8 @@
 ---
-name: ci-does-not-run-on-a-conflicting-pr
-description: A PR with no checks at all is usually a merge conflict, not a stuck runner — GitHub never starts CI on one
-type: gotcha
-date: 2026-08-31
+name: "ci-does-not-run-on-a-conflicting-pr"
+description: "A PR with no checks at all is usually a merge conflict, not a stuck runner — GitHub never starts CI on one"
+type: "gotcha"
+date: "2026-08-31"
 ---
 
 `gh pr checks <n>` answering `no checks reported on the '<branch>' branch` reads

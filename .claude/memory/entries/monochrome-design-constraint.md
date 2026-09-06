@@ -1,8 +1,8 @@
 ---
-name: monochrome-design-constraint
-description: The palette is monochrome by owner mandate — no blue/purple, no glassmorphism
-type: constraint
-date: 2026-08-13
+name: "monochrome-design-constraint"
+description: "The palette is monochrome by owner mandate — no blue/purple, no glassmorphism"
+type: "constraint"
+date: "2026-08-13"
 ---
 
 The visual system is deliberately monochrome and high-contrast, derived from an

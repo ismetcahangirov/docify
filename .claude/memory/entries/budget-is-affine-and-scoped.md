@@ -1,8 +1,8 @@
 ---
-name: budget-is-affine-and-scoped
-description: The memory budget is factor x heldBytes + reserveBytes, and each engine says whether it holds every file of a job at once or one at a time
-type: decision
-date: 2026-08-14
+name: "budget-is-affine-and-scoped"
+description: "The memory budget is factor x heldBytes + reserveBytes, and each engine says whether it holds every file of a job at once or one at a time"
+type: "decision"
+date: "2026-08-14"
 ---
 
 `MEMORY` in `lib/router/budget.ts` replaced the old `EXPANSION: Record<EngineId, number>`

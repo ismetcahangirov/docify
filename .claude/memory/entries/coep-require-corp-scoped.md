@@ -1,8 +1,8 @@
 ---
-name: coep-require-corp-scoped
-description: COEP is require-corp (not credentialless) and is scoped to /convert/* and /tools/* only
-type: decision
-date: 2026-08-13
+name: "coep-require-corp-scoped"
+description: "COEP is require-corp (not credentialless) and is scoped to /convert/* and /tools/* only"
+type: "decision"
+date: "2026-08-13"
 ---
 
 Cross-origin isolation is set in `next.config.ts` via `headers()`, on

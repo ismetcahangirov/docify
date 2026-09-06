@@ -1,8 +1,8 @@
 ---
-name: analytics-count-views-never-visitors
-description: The analytics deliberately cannot count visitors — every hosted product identifies one, and the schema says Docify holds no address hashed or otherwise
-type: decision
-date: 2026-09-04
+name: "analytics-count-views-never-visitors"
+description: "The analytics deliberately cannot count visitors — every hosted product identifies one, and the schema says Docify holds no address hashed or otherwise"
+type: "decision"
+date: "2026-09-04"
 ---
 
 Issue #102 asked for "privacy-first analytics, cookieless, consistent with the

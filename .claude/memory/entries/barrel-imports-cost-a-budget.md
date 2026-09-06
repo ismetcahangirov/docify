@@ -1,8 +1,8 @@
 ---
-name: barrel-imports-cost-a-budget
-description: A single umbrella import cost 76 kB gzipped on every route — pnpm size names the route, never the package
-type: gotcha
-date: 2026-09-02
+name: "barrel-imports-cost-a-budget"
+description: "A single umbrella import cost 76 kB gzipped on every route — pnpm size names the route, never the package"
+type: "gotcha"
+date: "2026-09-02"
 ---
 
 `components/blocks/section-block.tsx` imports one thing — `Slot` — from the

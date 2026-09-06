@@ -1,8 +1,8 @@
 ---
-name: no-ai-attribution-in-git
-description: Git history must carry no AI attribution — no Co-Authored-By, no bot contributors
-type: constraint
-date: 2026-08-13
+name: "no-ai-attribution-in-git"
+description: "Git history must carry no AI attribution — no Co-Authored-By, no bot contributors"
+type: "constraint"
+date: "2026-08-13"
 ---
 
 The repository owner requires that nothing in the project's public record indicates

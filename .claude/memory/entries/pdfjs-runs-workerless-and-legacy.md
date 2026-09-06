@@ -1,8 +1,8 @@
 ---
-name: pdfjs-runs-workerless-and-legacy
-description: pdf.js runs inside our worker only without its own worker and only as the legacy build — both are deliberate, not workarounds
-type: decision
-date: 2026-08-14
+name: "pdfjs-runs-workerless-and-legacy"
+description: "pdf.js runs inside our worker only without its own worker and only as the legacy build — both are deliberate, not workarounds"
+type: "decision"
+date: "2026-08-14"
 ---
 
 Decided implementing PDF page rendering (#41). Both halves look like

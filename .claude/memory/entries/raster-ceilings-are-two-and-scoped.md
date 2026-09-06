@@ -1,8 +1,8 @@
 ---
-name: raster-ceilings-are-two-and-scoped
-description: The raster pixel guard is two different ceilings over three engines — vips is deliberately exempt and canvas/heif deliberately get the browser limit, not the budget one
-type: decision
-date: 2026-08-14
+name: "raster-ceilings-are-two-and-scoped"
+description: "The raster pixel guard is two different ceilings over three engines — vips is deliberately exempt and canvas/heif deliberately get the browser limit, not the budget one"
+type: "decision"
+date: "2026-08-14"
 ---
 
 #160 gave the raster engines a decoded-pixel guard. The non-obvious part is that

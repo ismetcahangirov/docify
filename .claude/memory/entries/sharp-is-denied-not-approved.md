@@ -1,8 +1,8 @@
 ---
-name: sharp-is-denied-not-approved
-description: sharp's build script is denied, and that decision has three sides — the deny, images.unoptimized, and the absence of next/image
-type: decision
-date: 2026-09-04
+name: "sharp-is-denied-not-approved"
+description: "sharp's build script is denied, and that decision has three sides — the deny, images.unoptimized, and the absence of next/image"
+type: "decision"
+date: "2026-09-04"
 ---
 
 `pnpm-workspace.yaml` denies the `sharp` build script (`sharp: false`). It was
