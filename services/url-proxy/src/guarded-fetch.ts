@@ -35,6 +35,15 @@ import { checkUrl } from './url-guard.js'
  * files sit behind, few enough that a redirect loop is not a way to hold an
  * instance open.
  *
+ * ## The deadline is honoured here or nowhere
+ *
+ * `proxy.ts` has always passed `signal: AbortSignal.timeout(...)`, and until
+ * issue #269 this file ignored it. The `timeout` handed to `node:http` is a
+ * *socket idle* timeout: an upstream that sends one byte every 29 seconds
+ * renews it forever. So the signal is checked before every hop and listened to
+ * during one, and when it fires the socket is destroyed rather than merely
+ * abandoned — a rejected promise frees the caller, not the connection.
+ *
  * ## Nothing is buffered
  *
  * The `IncomingMessage` is a `Readable` and goes out as a web stream without
@@ -53,6 +62,19 @@ export class RefusedUrlError extends Error {
   }
 }
 
+/** `node:http`'s `request`, injectable so the abort path can be tested without a socket. */
+export type Send = typeof httpRequest
+
+interface HopOptions {
+  url: URL
+  timeoutMs: number
+  lookup: NetLookup
+  userAgent: string
+  /** The deadline for the whole fetch, if the caller set one. */
+  signal?: AbortSignal
+  send?: Send
+}
+
 interface Hop {
   status: number
   headers: Headers
@@ -62,17 +84,30 @@ interface Hop {
   location: URL | null
 }
 
-/** One request, with the connection pinned to a vetted address. */
-function performHop(
-  url: URL,
-  timeoutMs: number,
-  lookup: NetLookup,
-  userAgent: string,
-): Promise<Hop> {
-  return new Promise<Hop>((resolve, reject) => {
-    const send = url.protocol === 'https:' ? httpsRequest : httpRequest
+/** The error a fired deadline should surface as, so `proxy.ts` answers 504 and not 502. */
+function abortReason(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason
 
-    const outgoing = send(
+  if (reason instanceof Error) return reason
+
+  return Object.assign(new Error('the request was abandoned'), { name: 'TimeoutError' })
+}
+
+/** One request, with the connection pinned to a vetted address. */
+function performHop({ url, timeoutMs, lookup, userAgent, signal, send }: HopOptions): Promise<Hop> {
+  let answered: { destroy(reason?: Error): void } | undefined
+  let removeAbortListener = () => {}
+
+  return new Promise<Hop>((resolve, reject) => {
+    if (signal?.aborted === true) {
+      reject(abortReason(signal))
+
+      return
+    }
+
+    const request = send ?? (url.protocol === 'https:' ? httpsRequest : httpRequest)
+
+    const outgoing = request(
       url,
       {
         method: 'GET',
@@ -82,6 +117,9 @@ function performHop(
         timeout: timeoutMs,
       },
       (incoming) => {
+        // From here the deadline belongs to the body, and destroying the
+        // request object no longer stops anything arriving on the socket.
+        answered = incoming
         const headers = new Headers()
         for (const [name, value] of Object.entries(incoming.headers)) {
           if (value === undefined) continue
@@ -126,8 +164,25 @@ function performHop(
       )
     })
     outgoing.on('error', reject)
+
+    if (signal !== undefined) {
+      const abandon = () => {
+        const reason = abortReason(signal)
+        // `destroy` on the request emits `error`, which rejects; rejecting here
+        // as well is harmless and covers a `send` that does not.
+        outgoing.destroy(reason)
+        answered?.destroy(reason)
+        reject(reason)
+      }
+
+      signal.addEventListener('abort', abandon, { once: true })
+      removeAbortListener = () => signal.removeEventListener('abort', abandon)
+    }
+
     outgoing.end()
-  })
+    // One deadline outlives three hops, so a listener left behind on each is a
+    // leak on the signal for as long as the fetch runs.
+  }).finally(() => removeAbortListener())
 }
 
 /**
@@ -138,22 +193,35 @@ function performHop(
  */
 export function createGuardedFetch(
   config: ProxyConfig,
-  options: { lookup?: NetLookup; perform?: typeof performHop } = {},
+  options: { lookup?: NetLookup; perform?: typeof performHop; send?: Send } = {},
 ): FetchImpl {
   const lookup = options.lookup ?? createSafeLookup()
   const perform = options.perform ?? performHop
 
   return async (target, init) => {
     const userAgent = new Headers(init?.headers).get('user-agent') ?? 'Docify-URL-Import/1.0'
+    const signal = init?.signal ?? undefined
     let url = new URL(target)
 
     for (let hops = 0; hops <= MAX_REDIRECTS; hops += 1) {
+      // Before every hop, not only the first: a deadline that passed while the
+      // last one was in flight must stop the chain rather than start a request
+      // it has already outlived.
+      if (signal?.aborted === true) throw abortReason(signal)
+
       // Re-checked every hop, including the first. A redirect is a URL from a
       // stranger exactly as much as the original was.
       const verdict = checkUrl(url)
       if (!verdict.allowed) throw new RefusedUrlError(verdict.reason)
 
-      const hop = await perform(url, config.timeoutMs, lookup, userAgent)
+      const hop = await perform({
+        url,
+        timeoutMs: config.timeoutMs,
+        lookup,
+        userAgent,
+        signal,
+        send: options.send,
+      })
 
       if (hop.location === null) {
         return new Response(hop.body, { status: hop.status, headers: hop.headers })

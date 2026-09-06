@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { ProxyConfig } from '../../../services/url-proxy/src/config'
 import { type FetchImpl, handleRequest } from '../../../services/url-proxy/src/proxy'
+import { createRateLimiter } from '../../../services/url-proxy/src/rate-limit'
 
 /*
  * The URL import proxy (issue #87).
@@ -22,6 +23,7 @@ const config: ProxyConfig = {
   timeoutMs: 5_000,
   port: 8080,
   allowedOrigins: ['https://docify.app'],
+  ratePerMinute: 30,
 }
 
 const ORIGIN = { origin: 'https://docify.app' }
@@ -30,11 +32,22 @@ const ORIGIN = { origin: 'https://docify.app' }
 const upstream = (body: BodyInit | null, init: ResponseInit = {}) =>
   vi.fn<FetchImpl>(async () => new Response(body, { status: 200, ...init }))
 
+/**
+ * A limiter with more allowance than any one test needs.
+ *
+ * A fresh one per call, so that only the tests in "the rate limit" below are
+ * about limiting and the rest cannot fail because of the order they ran in.
+ * `proxy.ts` builds a shared one when none is passed, which is what the service
+ * itself relies on — a default that limits rather than one that does not.
+ */
+const generous = () => createRateLimiter({ limit: 1_000, windowMs: 60_000 })
+
 const ask = (target: string, headers: Record<string, string> = ORIGIN, fetch = upstream('data')) =>
   handleRequest(
     new Request(`https://proxy.docify.app/fetch?url=${encodeURIComponent(target)}`, { headers }),
     config,
     fetch,
+    { limiter: generous() },
   )
 
 describe('the proxy', () => {
@@ -163,6 +176,7 @@ describe('what the proxy refuses', () => {
       new Request('https://proxy.docify.app/fetch', { headers: ORIGIN }),
       config,
       upstream('data'),
+      { limiter: generous() },
     )
 
     expect(bare.status).toBe(400)
@@ -238,6 +252,7 @@ describe('what the proxy sends upstream', () => {
       }),
       config,
       fetch,
+      { limiter: generous() },
     )
 
     const sent = new Headers(fetch.mock.calls[0][1]?.headers)
@@ -310,5 +325,202 @@ describe('how a refused URL reaches the caller', () => {
     await ask('https://example.com/a.heic', ORIGIN, fetch)
 
     expect(fetch.mock.calls[0][1]?.redirect).toBe('manual')
+  })
+})
+
+/*
+ * What `Origin` was doing on its own, and what now stands beside it (issue #269).
+ *
+ * A browser sets `Origin` honestly. `curl -H "Origin: https://docify.app"` does
+ * not, and anybody who reads `render.yaml` knows what to put there. So the
+ * allowlist is a CORS decision that was being asked to do a job CORS cannot do:
+ * on its own it left an open 100 MiB-per-request proxy on the owner's Render
+ * bandwidth.
+ *
+ * Two things are added, and only one of them is a defence. The referer check
+ * removes the copy-paste `curl` case and nothing harder — a header is a header.
+ * The rate limit is what actually bounds the cost, and it is keyed by address
+ * rather than by anything the caller writes.
+ */
+
+const limiterFor = (limit: number) => createRateLimiter({ limit, windowMs: 60_000 })
+
+/** One request, with a context that would otherwise be `server.ts`'s job to build. */
+const askWith = (
+  headers: Record<string, string>,
+  context: Parameters<typeof handleRequest>[3] = { limiter: generous() },
+  fetch = upstream('data'),
+) =>
+  handleRequest(
+    new Request(
+      `https://proxy.docify.app/fetch?url=${encodeURIComponent('https://example.com/a.heic')}`,
+      { headers },
+    ),
+    config,
+    fetch,
+    context,
+  )
+
+describe('the referer check', () => {
+  it('answers a request with no referer at all', async () => {
+    // Privacy settings and `rel="noreferrer"` both strip it, so a missing
+    // referer has to stay allowed or the feature breaks for the people most
+    // careful about their browsing.
+    const response = await askWith(ORIGIN)
+
+    expect(response.status).toBe(200)
+  })
+
+  it('answers a request whose referer is on an allowed origin', async () => {
+    const response = await askWith({ ...ORIGIN, referer: 'https://docify.app/convert/heic-to-jpg' })
+
+    expect(response.status).toBe(200)
+  })
+
+  it('refuses a request whose referer is somewhere else', async () => {
+    const response = await askWith({ ...ORIGIN, referer: 'https://evil.test/' })
+
+    expect(response.status).toBe(403)
+  })
+
+  it('refuses a referer that only starts like an allowed origin', async () => {
+    // `https://docify.app.evil.test/` passes a naive `startsWith` against the
+    // origin without its separator, which is the whole trick.
+    const response = await askWith({ ...ORIGIN, referer: 'https://docify.app.evil.test/' })
+
+    expect(response.status).toBe(403)
+  })
+})
+
+describe('the rate limit', () => {
+  it('answers inside the allowance and refuses past it', async () => {
+    const limiter = limiterFor(2)
+    const headers = { ...ORIGIN, 'x-forwarded-for': '203.0.113.7' }
+
+    expect((await askWith(headers, { limiter })).status).toBe(200)
+    expect((await askWith(headers, { limiter })).status).toBe(200)
+
+    const refused = await askWith(headers, { limiter })
+
+    expect(refused.status).toBe(429)
+    expect(refused.headers.get('retry-after')).toBe('60')
+  })
+
+  it('keeps the CORS headers on a refusal, so the page can read the status', async () => {
+    const limiter = limiterFor(1)
+    const headers = { ...ORIGIN, 'x-forwarded-for': '203.0.113.7' }
+
+    await askWith(headers, { limiter })
+    const refused = await askWith(headers, { limiter })
+
+    // Without these the browser reports a network error and the page cannot
+    // tell "you are going too fast" from "the service is down".
+    expect(refused.headers.get('access-control-allow-origin')).toBe('https://docify.app')
+  })
+
+  it('counts callers apart', async () => {
+    const limiter = limiterFor(1)
+
+    await askWith({ ...ORIGIN, 'x-forwarded-for': '203.0.113.7' }, { limiter })
+    const other = await askWith({ ...ORIGIN, 'x-forwarded-for': '198.51.100.4' }, { limiter })
+
+    expect(other.status).toBe(200)
+  })
+
+  it('keys on the hop the platform appended, not the one the caller wrote', async () => {
+    const limiter = limiterFor(1)
+
+    // A caller that prepends a fresh value per request mints a fresh key per
+    // request and never meets the limiter at all — unless the *last* entry is
+    // the one read, which is the only one Render put there.
+    await askWith({ ...ORIGIN, 'x-forwarded-for': 'first.of.many, 203.0.113.7' }, { limiter })
+    const again = await askWith(
+      { ...ORIGIN, 'x-forwarded-for': 'a.different.lie, 203.0.113.7' },
+      { limiter },
+    )
+
+    expect(again.status).toBe(429)
+  })
+
+  it('falls back to the socket address when there is no header', async () => {
+    const limiter = limiterFor(1)
+
+    await askWith(ORIGIN, { limiter, remoteAddress: '203.0.113.9' })
+    const again = await askWith(ORIGIN, { limiter, remoteAddress: '203.0.113.9' })
+
+    expect(again.status).toBe(429)
+  })
+
+  it('does not spend the allowance on a preflight', async () => {
+    const limiter = limiterFor(1)
+
+    await handleRequest(
+      new Request('https://proxy.docify.app/fetch?url=https%3A%2F%2Fexample.com%2Fa.heic', {
+        method: 'OPTIONS',
+        headers: ORIGIN,
+      }),
+      config,
+      upstream('data'),
+      { limiter },
+    )
+
+    // A browser sends one of these before every cross-origin GET. Counting them
+    // would halve the allowance for no reason.
+    expect((await askWith(ORIGIN, { limiter })).status).toBe(200)
+  })
+
+  it('does not spend the allowance on a health check', async () => {
+    const limiter = limiterFor(1)
+
+    await handleRequest(new Request('https://proxy.docify.app/healthz'), config, upstream('data'), {
+      limiter,
+    })
+
+    expect((await askWith(ORIGIN, { limiter })).status).toBe(200)
+  })
+})
+
+describe('the transfer deadline', () => {
+  it('errors a body that never finishes', async () => {
+    vi.useFakeTimers()
+
+    try {
+      // One chunk, then silence. The socket idle timeout `node:http` was given
+      // never fires for this, and before #269 nothing else did either.
+      const trickle = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3]))
+        },
+      })
+      const response = await askWith(
+        ORIGIN,
+        { limiter: generous() },
+        vi.fn<FetchImpl>(async () => new Response(trickle)),
+      )
+      const reading = response.text()
+
+      vi.advanceTimersByTime(config.timeoutMs + 1)
+
+      await expect(reading).rejects.toThrow(/did not finish/)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('lets a body that finishes in time through', async () => {
+    vi.useFakeTimers()
+
+    try {
+      const response = await askWith(ORIGIN)
+      const text = await response.text()
+
+      // And the deadline must not fire afterwards on a controller that has
+      // already closed, which would throw somewhere nothing is listening.
+      vi.advanceTimersByTime(config.timeoutMs * 2)
+
+      expect(text).toBe('data')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

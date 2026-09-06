@@ -16,23 +16,73 @@
  *
  * The response status is already 200 and sent by then; there is no way to
  * change it once bytes are in flight. That is HTTP, not a shortcut.
+ *
+ * ## The other ceiling is time
+ *
+ * A ceiling in bytes says nothing about how long they may take to arrive, and
+ * an upstream that trickles one byte every 29 seconds never trips a socket idle
+ * timeout either. `signal` is the deadline for the whole transfer (issue #269):
+ * `proxy.ts` opens it when the response starts, and it errors the stream the
+ * same way the byte ceiling does, for the same reason — a short file is worse
+ * than a failed one.
  */
 
-/** Errors the stream once more than `maxBytes` have passed through it. */
-export function limitStream(maxBytes: number): TransformStream<Uint8Array, Uint8Array> {
+/**
+ * Errors the stream once more than `maxBytes` have passed through it, or once
+ * `signal` — the deadline for the whole transfer — has fired.
+ */
+export function limitStream(
+  maxBytes: number,
+  signal?: AbortSignal,
+): TransformStream<Uint8Array, Uint8Array> {
   let seen = 0
+  // A stream that has closed has no controller left to error, and calling one
+  // anyway throws where nothing is listening. The deadline usually outlives a
+  // healthy transfer, so this is the common path, not the corner.
+  let settled = false
+  let release = () => {}
 
   return new TransformStream<Uint8Array, Uint8Array>({
+    start(controller) {
+      if (signal === undefined) return
+
+      const abandon = () => {
+        if (settled) return
+        settled = true
+        controller.error(
+          signal.reason instanceof Error
+            ? signal.reason
+            : new Error('The transfer did not finish in time.'),
+        )
+      }
+
+      if (signal.aborted) {
+        abandon()
+
+        return
+      }
+
+      signal.addEventListener('abort', abandon, { once: true })
+      release = () => signal.removeEventListener('abort', abandon)
+    },
+
     transform(chunk, controller) {
       seen += chunk.byteLength
 
       if (seen > maxBytes) {
+        settled = true
+        release()
         controller.error(new Error(`The file is larger than the ${maxBytes} byte import limit.`))
 
         return
       }
 
       controller.enqueue(chunk)
+    },
+
+    flush() {
+      settled = true
+      release()
     },
   })
 }

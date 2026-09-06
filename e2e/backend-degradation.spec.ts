@@ -169,6 +169,78 @@ test.describe('with the backend unreachable', () => {
   })
 })
 
+/*
+ * The URL import proxy is the third server-side thing, and the newest
+ * (issue #270). It is also the only one a visitor waits on: the counters are
+ * fire-and-forget, and this one is in front of a file they asked for.
+ *
+ * The origin is `https://proxy.docify.invalid`, set for the build in
+ * `playwright.config.ts` — it resolves nowhere, so a request that escapes the
+ * interception below fails anyway, which is the state under test either way.
+ */
+test.describe('with the import proxy unreachable', () => {
+  /** Breaks every call to the proxy, and counts them for the same reason as above. */
+  async function breakTheProxy(page: Page): Promise<{ attempts: () => number }> {
+    let attempts = 0
+
+    await page.route('**proxy.docify.invalid**', async (route) => {
+      attempts += 1
+      await route.abort('failed')
+    })
+
+    return { attempts: () => attempts }
+  }
+
+  test('says so, and does not take the dropzone down with it', async ({ page }) => {
+    test.slow()
+
+    const proxy = await breakTheProxy(page)
+
+    await page.goto('/convert/bmp-to-jpg')
+
+    const url = page.locator('[data-slot="url-import-input"]')
+    await expect(url).toBeVisible({ timeout: 30_000 })
+
+    await url.fill('https://example.com/photo.bmp')
+    await page.getByRole('button', { name: /fetch/i }).click()
+
+    // An explanation, not "Failed to fetch" and not silence (CLAUDE.md §2.5).
+    const said = page.locator('[data-slot="url-import-error"]')
+    await expect(said).toBeVisible({ timeout: 30_000 })
+    await expect(said).toContainText(/could not be reached/i)
+    expect(proxy.attempts()).toBeGreaterThan(0)
+
+    // And the thing that never needed a server still works, on the same page,
+    // after the failure — which is the whole point of keeping the import beside
+    // the dropzone rather than in front of it.
+    const input = page.locator('[data-slot="dropzone-input"]')
+    await input.setInputFiles(SOURCE)
+
+    await expect(page.locator('[data-slot="job-card-state"]')).toHaveText('Done', {
+      timeout: 60_000,
+    })
+  })
+
+  test('leaves the field usable for a second attempt', async ({ page }) => {
+    test.slow()
+
+    await breakTheProxy(page)
+    await page.goto('/convert/bmp-to-jpg')
+
+    const url = page.locator('[data-slot="url-import-input"]')
+    await expect(url).toBeVisible({ timeout: 30_000 })
+
+    await url.fill('https://example.com/photo.bmp')
+    await page.getByRole('button', { name: /fetch/i }).click()
+    await expect(page.locator('[data-slot="url-import-error"]')).toBeVisible({ timeout: 30_000 })
+
+    // The button comes back rather than staying stuck on "Fetching…", which is
+    // what a failure that never resolves the pending state would look like.
+    await expect(page.getByRole('button', { name: /^fetch$/i })).toBeEnabled()
+    await expect(url).toHaveValue('https://example.com/photo.bmp')
+  })
+})
+
 test.describe('the figures endpoint', () => {
   test('answers 200 and says so when there is no database', async ({ request }) => {
     // CI runs with no `DATABASE_URL`, so this is not a simulation — it is the

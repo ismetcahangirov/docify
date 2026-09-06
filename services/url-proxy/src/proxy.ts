@@ -1,5 +1,7 @@
+import { clientKey } from './client-key.js'
 import type { ProxyConfig } from './config.js'
 import { limitStream } from './limit-stream.js'
+import { createRateLimiter, type RateLimiter } from './rate-limit.js'
 import { checkUrl } from './url-guard.js'
 
 /**
@@ -35,6 +37,16 @@ import { checkUrl } from './url-guard.js'
  * error — the same class of bug the COEP comment in `next.config.ts` records
  * about the worker chunk.
  *
+ * ## `Origin` is not authentication
+ *
+ * It never was, and until issue #269 it was the only thing standing between
+ * this service and anybody who had read `render.yaml`: a browser sets the
+ * header honestly and `curl -H "Origin: https://docify.app"` does not. Two
+ * things stand beside it now, and only one is a defence. The `referer` check
+ * removes the copy-paste case and nothing harder. The rate limit is what
+ * actually bounds the cost, because it is keyed by where the connection came
+ * from rather than by anything the caller writes — see `client-key.ts`.
+ *
  * ## Where the SSRF guard is
  *
  * In two places, and neither of them is here. `checkUrl` refuses what can be
@@ -57,6 +69,47 @@ const USER_AGENT = 'Docify-URL-Import/1.0'
 const OPAQUE = 'application/octet-stream'
 
 export type FetchImpl = (url: string, init?: RequestInit) => Promise<Response>
+
+/**
+ * What only the socket knows, handed down by `server.ts`.
+ *
+ * `limiter` is a parameter because a rate limiter is per-process state and the
+ * tests are about windows: sharing one across a suite would make every
+ * assertion depend on the order the others ran in. When it is absent the
+ * service still limits — `sharedLimiter` below — so forgetting to pass one
+ * fails safe rather than open.
+ */
+export interface RequestContext {
+  /** The connection's own address. Never a header; see `client-key.ts`. */
+  remoteAddress?: string
+  limiter?: RateLimiter
+}
+
+/** One window per minute, per process. Built on first use so `config` is known. */
+let sharedLimiter: RateLimiter | null = null
+
+function limiterFor(config: ProxyConfig): RateLimiter {
+  sharedLimiter ??= createRateLimiter({ limit: config.ratePerMinute, windowMs: 60_000 })
+
+  return sharedLimiter
+}
+
+/**
+ * Whether a referer, if there is one, came from somewhere this service serves.
+ *
+ * A missing referer passes: privacy settings and `rel="noreferrer"` both strip
+ * it, and breaking the feature for the people most careful about their browsing
+ * would be a poor trade for a check this weak. The trailing separator matters —
+ * without it `https://docify.app.evil.test/` starts with the allowed origin.
+ */
+function refererAllowed(request: Request, allowedOrigins: readonly string[]): boolean {
+  const referer = request.headers.get('referer')
+  if (referer === null || referer.length === 0) return true
+
+  return allowedOrigins.some(
+    (origin) => referer === origin || referer.startsWith(`${origin}/`) || referer === `${origin}/`,
+  )
+}
 
 /** CORS and isolation headers for one allowed origin. */
 function crossOrigin(origin: string): Record<string, string> {
@@ -108,6 +161,7 @@ export async function handleRequest(
   request: Request,
   config: ProxyConfig,
   fetchImpl: FetchImpl,
+  context: RequestContext = {},
 ): Promise<Response> {
   const { pathname } = new URL(request.url)
 
@@ -135,6 +189,16 @@ export async function handleRequest(
   }
 
   if (request.method !== 'GET') return fail(405, cors)
+
+  // After the preflight, so a browser's automatic OPTIONS does not halve every
+  // caller's allowance, and after the method check, so a malformed request is
+  // not charged for either.
+  if (!refererAllowed(request, config.allowedOrigins)) return fail(403, cors)
+
+  const limiter = context.limiter ?? limiterFor(config)
+  if (!limiter.check(clientKey(request, context.remoteAddress))) {
+    return fail(429, { ...cors, 'retry-after': '60' })
+  }
 
   const target = requestedUrl(request)
   if (target === null) return fail(400, cors)
@@ -197,5 +261,17 @@ export async function handleRequest(
   // A body-less 200 is legal and means an empty file.
   if (body === null) return new Response(null, { status: 200, headers })
 
-  return new Response(body.pipeThrough(limitStream(config.maxBytes)), { status: 200, headers })
+  // The deadline for the transfer itself, opened now because the headers have
+  // arrived and the clock that bounded *them* has done its job. `unref` so a
+  // pending deadline is never the reason the process stays up.
+  const transfer = new AbortController()
+  const deadline = setTimeout(() => {
+    transfer.abort(new Error('The transfer did not finish in time.'))
+  }, config.timeoutMs)
+  deadline.unref?.()
+
+  return new Response(body.pipeThrough(limitStream(config.maxBytes, transfer.signal)), {
+    status: 200,
+    headers,
+  })
 }

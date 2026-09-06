@@ -19,6 +19,7 @@ import { JobCard } from './job-card'
 import { QueueAnnouncer } from './queue-announcer'
 import { ResultPanel } from './result-panel'
 import { SettingsPanel } from './settings-panel'
+import { UrlImport } from './url-import'
 import { useFileQueue } from './use-file-queue'
 
 /*
@@ -76,6 +77,15 @@ function Converter({ pair }: ConverterProps) {
   )
 
   const start = React.useCallback((files: readonly File[]) => add([...files]), [add])
+
+  /**
+   * A file fetched from a URL joins the queue exactly as a dropped one does.
+   *
+   * There is deliberately no second path: once `UrlImport` hands over a `File`,
+   * nothing downstream — the router, the worker, the cards — can tell where it
+   * came from, and nothing downstream should be able to.
+   */
+  const startOne = React.useCallback((file: File) => add([file]), [add])
 
   /**
    * The controls this pair offers, and what the user has done with them.
@@ -257,6 +267,13 @@ function Converter({ pair }: ConverterProps) {
       />
 
       {/*
+       * Under the dropzone, because it is the second way to do the same thing
+       * and the lesser one: a link has to be public, and a drop does not.
+       * Renders nothing at all where no proxy is configured (issue #270).
+       */}
+      <UrlImport onFile={startOne} />
+
+      {/*
        * Above the queue, because it is a decision made *before* a file is
        * dropped — and left enabled while a job runs, since what it holds is
        * read when the next job starts rather than shared with the one in
@@ -296,7 +313,8 @@ function Converter({ pair }: ConverterProps) {
        */}
       <p className={cn('text-body text-fg-dark-mut')}>
         Every conversion runs in this tab. No {from.name} file is sent anywhere, and closing the
-        page is enough to remove every trace of it.
+        page is enough to remove every trace of it. A link you paste is fetched for you, because a
+        browser cannot read one itself — the file it returns is converted here like any other.
       </p>
     </div>
   )

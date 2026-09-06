@@ -28,10 +28,11 @@ the tab (CLAUDE.md §2.1). This is only for a URL the user typed.
 | ------ | ---------------------------------------------------------- |
 | `200`  | streaming the upstream body                                |
 | `400`  | the `url` is missing, unparseable, or refused by the guard |
-| `403`  | the `Origin` header is missing or not in `ALLOWED_ORIGINS` |
+| `403`  | the `Origin` is missing or not allowed, or a `referer` is  |
 | `404`  | some other path                                            |
 | `405`  | some other method                                          |
 | `413`  | the upstream declared a body over `MAX_BYTES`              |
+| `429`  | over `RATE_LIMIT_PER_MINUTE`; carries `retry-after: 60`    |
 | `502`  | the upstream refused, or could not be reached              |
 | `504`  | the upstream did not answer within `TIMEOUT_MS`            |
 
@@ -43,7 +44,54 @@ network, so echoing it tells an attacker nothing they did not already type.
 A body that turns out to be over the ceiling _while streaming_ cannot be a
 `413`: the `200` was sent long before. The stream is errored and the socket
 destroyed, so the transfer fails as a transfer rather than arriving truncated
-and looking complete.
+and looking complete. The same is true of the deadline below.
+
+## `Origin` is not authentication
+
+It never was. A browser sets the header honestly; `curl -H "Origin:
+https://docify.app"` does not, and the value to send is written in `render.yaml`
+for anyone to read. Until issue #269 that header was the only thing standing
+between this service and an open 100 MiB-per-request proxy on the owner's
+bandwidth.
+
+Two things stand beside it now, and only one of them is a defence.
+
+**The `referer` check** refuses a request whose referer is present and is not on
+an allowed origin. A missing referer still passes — privacy settings and
+`rel="noreferrer"` both strip it, and breaking the feature for the people most
+careful about their browsing would be a poor trade for a check this weak. It
+removes the copy-paste `curl` case and nothing harder, because a header is a
+header.
+
+**The rate limit** is what actually bounds the cost. `RATE_LIMIT_PER_MINUTE`
+transfers per caller per minute, answered `429` with `retry-after: 60` past
+that, and the CORS headers stay on the refusal so the page can tell "too fast"
+from "the service is down".
+
+A caller is identified by address, never by a header they write:
+`x-forwarded-for` is a list a proxy _appends_ to, so the entry that counts is
+the **last** one — the one Render wrote in front of this process. Reading the
+first would let one script mint a fresh key per request and never meet the
+limiter at all. With no header at all the fallback is the socket's own address,
+passed down by `server.ts`. The address is then salted and hashed to 64 bits
+(`src/client-key.ts`) and lives in one window's map: this service still holds
+nothing that says who anybody is.
+
+Neither of these is a login. A determined script with a residential proxy pool
+gets `RATE_LIMIT_PER_MINUTE` per address like everybody else, and that is the
+intended ceiling rather than a gap in one.
+
+## The deadline is the whole transfer
+
+`TIMEOUT_MS` bounds the transfer, not only the wait for headers (issue #269).
+
+That distinction was the bug. The `timeout` given to `node:http` is a **socket
+idle** timeout, so an upstream sending one byte every 29 seconds renews it
+forever, and the `AbortSignal` `proxy.ts` passed into the fetch was being
+ignored outright. Now the signal is checked before every redirect hop and
+listened to during one — a fired deadline destroys the socket rather than only
+rejecting the promise — and a second deadline opens when the response starts and
+errors the body stream if it has not finished by then.
 
 ### `GET /healthz`
 
@@ -149,12 +197,21 @@ upstream learns that Docify asked; it does not learn who asked Docify.
 | ----------------- | ----------- | --------------------------------------------------- |
 | `PORT`            | `8080`      | Render assigns this                                 |
 | `MAX_BYTES`       | `104857600` | 100 MiB                                             |
-| `TIMEOUT_MS`      | `30000`     |                                                     |
+| `TIMEOUT_MS`      | `30000`     | bounds the whole transfer, not only the headers     |
 | `ALLOWED_ORIGINS` | _(empty)_   | comma-separated exact origins; empty means **none** |
+
+| Variable                | Default | Notes                           |
+| ----------------------- | ------- | ------------------------------- |
+| `RATE_LIMIT_PER_MINUTE` | `30`    | transfers per caller per minute |
 
 Every default is the conservative one. A missing `MAX_BYTES` is the ceiling, not
 the absence of one, and a missing `ALLOWED_ORIGINS` trusts nobody rather than
 everybody — an open proxy is somebody else's bandwidth bill.
+
+`RATE_LIMIT_PER_MINUTE` is the one that falls back in the other direction, and
+deliberately: a broken _ceiling_ should land low, but a broken _limit_ that
+landed at zero would be an outage wearing a `429`. Anything that is not a
+positive whole number reads as the default.
 
 ## Running it
 

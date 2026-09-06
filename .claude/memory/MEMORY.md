@@ -10,6 +10,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## decision
 
+- [url-import-was-retired-then-shipped](entries/url-import-was-retired-then-shipped.md) — URL import was decided retired on 2026-09-05 and shipped on 2026-09-06 — the reasons for retiring did not stop being true, and its prerequisite #269 had been closed unimplemented
 - [a-copy-refuses-what-the-target-cannot-hold](entries/a-copy-refuses-what-the-target-cannot-hold.md) — The codec check for a stream copy lives in the engine, not the router — the router has a format pair and a size and cannot see inside the file
 - [settings-only-where-an-engine-reads-them](entries/settings-only-where-an-engine-reads-them.md) — A tool page offers a control only when an engine on that path reads it, which is why the panel is chosen by source and target together rather than by the target's family
 - [analytics-count-views-never-visitors](entries/analytics-count-views-never-visitors.md) — The analytics deliberately cannot count visitors — every hosted product identifies one, and the schema says Docify holds no address hashed or otherwise

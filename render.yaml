@@ -65,5 +65,14 @@ services:
       # written.
       - key: MAX_BYTES
         value: 104857600
+      # Not only the wait for headers: since #269 this bounds the whole
+      # transfer, so an upstream that trickles a byte at a time is abandoned
+      # here rather than holding a connection open for hours.
       - key: TIMEOUT_MS
         value: 30000
+      # `Origin` is a CORS decision, not authentication — curl writes whatever
+      # it likes there. This is the number that actually bounds what a script
+      # pointed at the service can cost, keyed by the address Render appends
+      # rather than by any header the caller controls (#269).
+      - key: RATE_LIMIT_PER_MINUTE
+        value: 30
