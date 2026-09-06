@@ -147,6 +147,13 @@ DATABASE_URL=              # Neon connection string (anonymous counters)
 NEXT_PUBLIC_PROXY_URL=     # URL-import proxy endpoint
 ```
 
+`NEXT_PUBLIC_PROXY_URL` is read at build time. Without it the converter's
+"paste a link to a file" control renders nothing at all — not a disabled field
+and not an explanation, because a checkout with no proxy is an ordinary Docify
+rather than a broken one. Set it to the origin of a deployed
+[`services/url-proxy`](services/url-proxy/README.md); the deploy is documented
+in [docs/backend/render-deploy.md](docs/backend/render-deploy.md).
+
 ## Project structure
 
 ```
@@ -165,6 +172,8 @@ docs/          architecture and implementation plans
 ## Privacy
 
 Docify has no accounts, no cookies for tracking, and no file storage. The only data that ever reaches a server is an anonymous counter event recording _which conversion type_ was performed and whether it succeeded — no file names, no file contents, no IP addresses retained.
+
+A file you choose from your own machine never leaves the tab. A **link** you paste is the one exception, and it is not an exception to that sentence: a browser cannot fetch an arbitrary URL itself, so the link — not a file — is sent to the URL-import proxy, which streams the bytes back without storing them. From the moment they arrive they are converted in the tab like any other file.
 
 ## Contributing
 

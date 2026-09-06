@@ -10,6 +10,15 @@ const BASE_URL = `http://127.0.0.1:${PORT}`
 //
 // Locally an already-listening server is reused, so a `pnpm dev` session on the
 // same port is tested instead of a production build. CI never reuses.
+//
+// `NEXT_PUBLIC_PROXY_URL` is set for the build because it is a *build-time*
+// constant: without one the URL-import control renders nothing at all
+// (issue #270), and a suite that never sees the control cannot say whether a
+// dead proxy blocks a drop. The origin below exists nowhere — every request to
+// it is intercepted by `e2e/backend-degradation.spec.ts`, and any that is not
+// simply fails, which is the state under test.
+const PROXY_URL = 'https://proxy.docify.invalid'
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -28,7 +37,7 @@ export default defineConfig({
   webServer: {
     command: 'pnpm build && pnpm start',
     url: BASE_URL,
-    env: { PORT: String(PORT) },
+    env: { PORT: String(PORT), NEXT_PUBLIC_PROXY_URL: PROXY_URL },
     reuseExistingServer: !process.env.CI,
     // Covers `next build` on a cold runner, not just server boot. The static
     // generation pass grows with every SEO pair page, so this is deliberately roomy.
