@@ -21,12 +21,14 @@
  * ## Single-threaded, whatever the page
  *
  * The vendored build is `--disable-pthreads` (see `./ffmpeg-runtime`), so it
- * uses one core on an isolated page and one core on an ordinary one. The
- * router's `NO_ISOLATION` warning therefore *understates* the position rather
- * than misstating it: what it says is true when it fires, and the isolated case
- * is no better. Making it better needs the separate `@ffmpeg/core-mt` build,
- * which doubles the 31 MB — a trade worth making deliberately rather than as a
- * side effect of this issue.
+ * uses one core on an isolated page and one core on an ordinary one. That is
+ * why the router's `NO_ISOLATION` warning fires for every job this engine wins
+ * rather than only on a page that is not cross-origin isolated, and why its
+ * wording blames this build rather than the document's headers: isolation buys
+ * this core nothing, so staying silent on an isolated page would promise cores
+ * the engine cannot deliver. Making the promise true needs the separate
+ * `@ffmpeg/core-mt` build, which doubles the 31 MB — a trade worth making
+ * deliberately rather than as a side effect of this issue.
  *
  * ## Lazy loading, and what "lazy" has to mean at this size
  *

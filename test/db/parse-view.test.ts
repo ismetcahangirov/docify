@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import sitemap from '@/app/sitemap'
 import { parsePageView } from '@/lib/db/parse-view'
 import { PAIR_SLUGS } from '@/lib/registry/pairs'
 
@@ -58,6 +59,20 @@ describe('parsePageView', () => {
     ['a bare string', '/'],
   ])('refuses %s', (_label, value) => {
     expect(parsePageView(value)).toBeNull()
+  })
+
+  it('accepts every path the sitemap publishes', () => {
+    // `PAGES` is built from `PAIR_SLUGS` plus three literals; the sitemap is
+    // built from `PAIRS` plus two. A static route added to one and not the
+    // other is a page that is served, linked and crawled, and then silently
+    // uncounted — drift no type catches, because both sides are strings.
+    const paths = sitemap().map((entry) => new URL(entry.url).pathname)
+
+    expect(paths.length).toBeGreaterThan(0)
+
+    for (const path of paths) {
+      expect(parsePageView({ page: path })).toEqual({ page: path })
+    }
   })
 
   it('refuses a query string even on a page that exists', () => {

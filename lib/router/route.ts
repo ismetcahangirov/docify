@@ -128,7 +128,7 @@ export function route(task: ConversionTask, input: RouteInput, caps: Capabilitie
     engine: chosen.id,
     reason: chosen.label,
     loadCost: chosen.loadCost,
-    warnings: warningsFor(chosen, task, caps),
+    warnings: warningsFor(chosen, task),
   }
 }
 
@@ -214,12 +214,14 @@ function codecKind(task: ConversionTask): 'video' | 'audio' | null {
  * and for those the pair is still all there is to go on: a codec-level answer
  * about whether a given file could have been copied needs the file open, which
  * the router never does.
+ *
+ * `Capabilities` is deliberately not a parameter. Every warning here is a fact
+ * about the chosen engine or about the format pair, and the device has already
+ * had its say by the time one is chosen: it decided which engines were eligible
+ * at all. The one warning that used to read it — `NO_ISOLATION` — was reading
+ * the wrong thing, and says so at its own site.
  */
-function warningsFor(
-  engine: EngineDescriptor,
-  task: ConversionTask,
-  caps: Capabilities,
-): Warning[] {
+function warningsFor(engine: EngineDescriptor, task: ConversionTask): Warning[] {
   const warnings: Warning[] = []
 
   if (engine.id === 'ffmpeg') {
@@ -229,13 +231,16 @@ function warningsFor(
         'No hardware acceleration is available for this format, so the conversion will take noticeably longer.',
     })
 
-    if (!caps.crossOriginIsolated) {
-      warnings.push({
-        code: 'NO_ISOLATION',
-        message:
-          'Running single-threaded: this page is not cross-origin isolated, so only one CPU core can be used.',
-      })
-    }
+    // Unconditional, although the code reads like a question about the page.
+    // The vendored core is built `--disable-pthreads` (`lib/engines/ffmpeg-runtime.ts`),
+    // so it uses one core on an isolated document and one on an ordinary one.
+    // Gating this on `caps.crossOriginIsolated` said, by omission, that an
+    // isolated page would get the others.
+    warnings.push({
+      code: 'NO_ISOLATION',
+      message:
+        'Running single-threaded: this build of ffmpeg uses one CPU core, so long files take a while.',
+    })
   }
 
   if (engine.loadCost > LARGE_DOWNLOAD_BYTES) {

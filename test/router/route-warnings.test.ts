@@ -112,6 +112,35 @@ describe('route — warnings', () => {
     expect(codes).toEqual(['SLOW_PATH', 'NO_ISOLATION', 'LARGE_DOWNLOAD', 'QUALITY_LOSS'])
   })
 
+  it('warns that ffmpeg is single-threaded however the page is served', () => {
+    register(ffmpeg())
+
+    const isolated = warningCodes(route(mp4ToWebm, 10 * MB, desktop))
+    const single = warningCodes(
+      route(mp4ToWebm, 10 * MB, { ...desktop, crossOriginIsolated: false }),
+    )
+
+    // The vendored core is built `--disable-pthreads` — see
+    // `lib/engines/ffmpeg-runtime.ts` — so it runs on one core on an isolated
+    // page too. Firing only on the non-isolated one told half the users the
+    // truth and left the other half expecting cores that do not exist.
+    expect(isolated).toContain('NO_ISOLATION')
+    // And once on the page that used to be the only one warned, not twice.
+    expect(single.filter((code) => code === 'NO_ISOLATION')).toHaveLength(1)
+  })
+
+  it('blames the ffmpeg build for the single core rather than the page', () => {
+    register(ffmpeg())
+
+    const warning = chosen(route(mp4ToWebm, 10 * MB, desktop)).warnings.find(
+      (candidate) => candidate.code === 'NO_ISOLATION',
+    )
+
+    expect(warning?.message).toBe(
+      'Running single-threaded: this build of ffmpeg uses one CPU core, so long files take a while.',
+    )
+  })
+
   it('quotes the download size in the LARGE_DOWNLOAD message', () => {
     register(ffmpeg())
 

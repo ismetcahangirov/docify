@@ -87,7 +87,10 @@ export const DESKTOP_BUDGET_FLOOR_BYTES = ANDROID_BUDGET_BYTES
  * `docs/router/memory-budget-measurement.md` is the harness, the corpus and the
  * recorded runs. It also says, row by row, which of the entries below are
  * measured and which are carried over from before it existed: `pdflib` and `zip`
- * are measured, `pdfjs` is half measured, and the other seven are not.
+ * are measured, `pdfjs` is half measured, `canvas` and `heif` are measured in a
+ * browser for their per-pixel terms but not for their byte factors, and the
+ * remaining five — `vips`, `remux`, `webcodecs`, `ffmpeg` and `libarchive` — are
+ * not measured at all.
  */
 export const MEMORY: Record<EngineId, EngineMemory> = {
   /**
@@ -248,16 +251,22 @@ export const MEMORY: Record<EngineId, EngineMemory> = {
    * promised a device that could not have delivered it.
    */
   webcodecs: { factor: 4, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
-  /** Not measured — no engine ships yet. Input, output and scratch buffers all
-   *  live in MEMFS simultaneously, which is why it is also the last resort. */
+  /** The engine ships — `lib/engines/ffmpeg.ts`, #49 — but the 4.5 does not:
+   *  it is carried over from before the engine existed and has never been
+   *  measured. What it is meant to express is that the input, the output and
+   *  the scratch buffers all live in MEMFS at once, which is also why this
+   *  engine is the last resort. There is no Node stand-in worth measuring, so
+   *  correcting it means the browser harness in
+   *  `docs/router/memory-budget-measurement.md`. */
   ffmpeg: { factor: 4.5, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
   /** Measured through `fflate` itself, which is what the engine will be built
    *  on: `zipSync` is handed every member and builds the archive in one buffer,
    *  so a job costs what its members add up to — 2.93× on 447 MB of input and
    *  3.42× on a job small enough for fflate's own working set to show. */
   zip: { factor: 3, holds: 'all-at-once', reserveBytes: 0, bytesPerPixel: 0 },
-  /** Not measured — no engine ships yet. libarchive buffers a whole entry plus
-   *  the compressed source. */
+  /** Not measured, and nothing to measure: this id has no descriptor yet. The 3
+   *  is a guess at what libarchive holds — a whole entry plus the compressed
+   *  source — and it is provisional until an engine exists to measure. */
   libarchive: { factor: 3, holds: 'one-at-a-time', reserveBytes: 0, bytesPerPixel: 0 },
 }
 
