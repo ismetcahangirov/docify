@@ -91,13 +91,7 @@ If a file genuinely can't be handled on your device, Docify tells you exactly wh
 
 > Node 22 is required because the repository's agent tooling uses the built-in `node:sqlite` module. The application itself runs on Node 20+.
 
-Node 24 is fine as well. It was thought not to be for a month: `pnpm build` crashed on
-Windows inside webpack's WebAssembly hasher, and the stack named the Node major so
-convincingly that three Node versions were tried before the value being hashed was
-printed. The cause is pnpm's NTFS junctions, which make webpack resolve a build
-dependency to a path that does not exist and then hash `undefined`. `next.config.ts`
-configures the build-dependency snapshot around it; the comment above the `webpack` hook
-there is the long version (#260).
+> Node 24 works too. If a Windows `pnpm build` ever dies inside webpack's `WasmHash`, delete `.next` — the long version is the comment above the `webpack` hook in `next.config.ts` (#260).
 
 ```bash
 git clone https://github.com/ismetcahangirov/docify.git
