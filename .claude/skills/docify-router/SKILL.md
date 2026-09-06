@@ -86,7 +86,7 @@ Use `fitsInBudget(engine, job, caps)` for the filter step; it is inclusive of th
 | Code | When |
 |---|---|
 | `SLOW_PATH` | `ffmpeg` was selected — no hardware acceleration available |
-| `NO_ISOLATION` | `ffmpeg` + `crossOriginIsolated === false` → single-threaded |
+| `NO_ISOLATION` | `ffmpeg` was selected — the vendored core is `--disable-pthreads`, so it is single-threaded on an isolated page too |
 | `LARGE_DOWNLOAD` | `loadCost > 8 MB` |
 | `QUALITY_LOSS` | Lossy → lossy re-encode |
 
@@ -110,7 +110,7 @@ suggestion: 'Please try again.'
 ✓ desktop + jpg→png + 2MB                       → 'canvas'  (zero loadCost wins)
 ✓ desktop + mp4→webm + 50MB, webCodecs: true    → 'webcodecs'
 ✓ desktop + mp4→webm + 50MB, webCodecs: false   → 'ffmpeg' + SLOW_PATH
-✓ ffmpeg + crossOriginIsolated: false           → NO_ISOLATION warning
+✓ ffmpeg, isolated page or not                  → NO_ISOLATION warning
 ✓ ios + mp4→mp3 + 200MB                         → DEVICE_TOO_WEAK
 ✓ desktop + mp4→mp3 + 4GB                       → FILE_TOO_LARGE
 ✓ jpg→dwg                                       → UNSUPPORTED_PAIR

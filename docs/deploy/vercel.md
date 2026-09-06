@@ -109,8 +109,10 @@ curl -s  https://docify.app/api/stats
 The second is the one that is easy to get wrong and invisible when it is: a
 converter page must answer with `Cross-Origin-Opener-Policy: same-origin` and
 `Cross-Origin-Embedder-Policy: require-corp`, or `crossOriginIsolated` is false
-in the tab, `SharedArrayBuffer` is unavailable and the router quietly drops to a
-single-threaded path with a `NO_ISOLATION` warning.
+in the tab, `SharedArrayBuffer` is unavailable and the router quietly routes
+around every engine that needs it. (`NO_ISOLATION` is not the signal to look
+for: the vendored ffmpeg core is single-threaded whatever the headers say, so
+that warning fires on a correctly isolated deployment too.)
 
 The last returns `{"available":false}` rather than an error when `DATABASE_URL`
 is unset. That is the designed behaviour, not a broken deployment

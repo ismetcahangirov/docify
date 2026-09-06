@@ -16,10 +16,10 @@
  * `@ffmpeg/core` 0.12.10, ffmpeg 5.1.4, configured with libx264, libx265,
  * libvpx, libmp3lame, libvorbis, libopus, libtheora and libwebp — every codec
  * Docify offers — and, importantly, `--disable-pthreads`. It is single-threaded
- * whatever the page's isolation, which is why `./ffmpeg.ts` says the router's
- * `NO_ISOLATION` warning understates the situation rather than misstating it.
- * Lifting that needs the separate `@ffmpeg/core-mt` build, which would double
- * the 31 MB this already costs.
+ * whatever the page's isolation, which is why the router emits `NO_ISOLATION`
+ * for every ffmpeg job rather than only for an un-isolated page — see
+ * `./ffmpeg.ts`. Lifting that needs the separate `@ffmpeg/core-mt` build, which
+ * would double the 31 MB this already costs.
  *
  * ## Loading
  *
