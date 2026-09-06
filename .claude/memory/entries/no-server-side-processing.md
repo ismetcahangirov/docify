@@ -1,8 +1,8 @@
 ---
-name: no-server-side-processing
-description: All conversion runs client-side; there is deliberately no processing VM
-type: decision
-date: 2026-08-13
+name: "no-server-side-processing"
+description: "All conversion runs client-side; there is deliberately no processing VM"
+type: "decision"
+date: "2026-08-13"
 ---
 
 Docify performs every conversion in the user's browser. There is no transcoding

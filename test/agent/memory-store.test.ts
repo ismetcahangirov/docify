@@ -2,13 +2,22 @@
 // tested in the node environment rather than the project-wide jsdom one.
 // @vitest-environment node
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { listEntries, parseEntry, renderMemoryIndex } from '../../.claude/hooks/lib/store.mjs'
+import { areaOf, repoRelative } from '../../.claude/hooks/lib/paths.mjs'
+import {
+  INDEX_MD,
+  describeToolCall,
+  listEntries,
+  parseEntry,
+  renderEntry,
+  renderMemoryIndex,
+} from '../../.claude/hooks/lib/store.mjs'
 
 /**
  * The memory store is read on Windows, where entries reach the working tree with
@@ -175,5 +184,153 @@ describe('renderMemoryIndex', () => {
 
   it('says so explicitly when there is nothing to index', () => {
     expect(renderMemoryIndex([])).toContain('_No entries yet._')
+  })
+})
+
+/**
+ * The repository root as the hooks compute it. Derived from this file's own URL
+ * rather than from `process.cwd()`, so the assertions hold however vitest is
+ * launched.
+ */
+const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
+
+describe('repoRelative', () => {
+  it('reduces a path inside the repository to its relative part', () => {
+    expect(repoRelative(join(REPO_ROOT, 'lib', 'db', 'views.ts'))).toBe('lib/db/views.ts')
+  })
+
+  it('refuses a path outside the repository', () => {
+    // The session scratchpad lives under the OS temp directory: recording it
+    // would write the machine's username and the session UUID into a committed
+    // entry.
+    expect(repoRelative(join(tmpdir(), 'claude', 'session', 'scratchpad', 'spike.mjs'))).toBeNull()
+  })
+
+  it('ignores the drive-letter case Windows hands the hook', () => {
+    const swapped = REPO_ROOT.replace(/^([a-zA-Z]):/, (_, d: string) => `${d.toLowerCase()}:`)
+    expect(repoRelative(join(swapped, 'lib', 'db', 'views.ts'))).toBe('lib/db/views.ts')
+  })
+
+  it('passes an already-relative path through unchanged', () => {
+    expect(repoRelative('lib/db/views.ts')).toBe('lib/db/views.ts')
+  })
+
+  it('returns null for an empty path and for the root itself', () => {
+    expect(repoRelative('')).toBeNull()
+    expect(repoRelative(REPO_ROOT)).toBeNull()
+  })
+})
+
+describe('areaOf', () => {
+  it('derives the area from the path instead of an allowlist', () => {
+    // lib/db, lib/analytics, docs/backend and e2e/ were all discarded as "other"
+    // by the hard-coded list this replaced.
+    expect(areaOf('lib/db/schema.sql')).toBe('db')
+    expect(areaOf('lib/analytics/track.ts')).toBe('analytics')
+    expect(areaOf('lib/router/route.ts')).toBe('router')
+    expect(areaOf('e2e/convert.spec.ts')).toBe('test')
+    expect(areaOf('test/router/route.test.ts')).toBe('test')
+    expect(areaOf('docs/backend/provisioning.md')).toBe('docs')
+  })
+
+  it('reads app/api as backend and every other app path as app', () => {
+    expect(areaOf('app/api/views/route.ts')).toBe('backend')
+    expect(areaOf('app/convert/[pair]/page.tsx')).toBe('app')
+  })
+
+  it('keeps the remaining fixed areas', () => {
+    expect(areaOf('components/converter/dropzone.tsx')).toBe('ui')
+    expect(areaOf('services/url-proxy/server.ts')).toBe('backend')
+    expect(areaOf('scripts/db-migrate/cli.mjs')).toBe('ci')
+    expect(areaOf('.github/workflows/ci.yml')).toBe('ci')
+    expect(areaOf('.claude/hooks/session-end.mjs')).toBe('agent')
+  })
+
+  it('falls back to the first path segment, and to root for a top-level file', () => {
+    expect(areaOf('public/fonts/archivo.woff2')).toBe('public')
+    expect(areaOf('package.json')).toBe('root')
+  })
+
+  it('returns null for a path that is missing', () => {
+    expect(areaOf(null)).toBeNull()
+    expect(areaOf('')).toBeNull()
+  })
+})
+
+describe('describeToolCall', () => {
+  it('records a repository file by its relative path', () => {
+    expect(
+      describeToolCall('Write', { file_path: join(REPO_ROOT, 'lib', 'db', 'views.ts') }),
+    ).toEqual({
+      kind: 'file',
+      target: 'lib/db/views.ts',
+      summary: 'Write lib/db/views.ts',
+    })
+  })
+
+  it('records no target and no path for a file outside the repository', () => {
+    expect(
+      describeToolCall('Edit', { file_path: join(tmpdir(), 'scratchpad', 'spike.mjs') }),
+    ).toEqual({
+      kind: 'file',
+      target: null,
+      summary: 'Edit (outside the repository)',
+    })
+  })
+})
+
+describe('renderEntry', () => {
+  const entry = {
+    name: 'session-2026-09-04-b5e1f97e',
+    description: 'Session on 2026-09-04: app, seo, backend (42 file ops)',
+    type: 'session',
+    date: '2026-09-04',
+    body: 'Areas touched: app, seo',
+  }
+
+  it('quotes every frontmatter value, so a colon cannot break the YAML', () => {
+    // `description: Session on 2026-09-04: app, seo` is a nested mapping to any
+    // real YAML parser, and only this repository's tolerant regex survived it.
+    for (const field of ['name', 'description', 'type', 'date']) {
+      const line = renderEntry(entry)
+        .split('\n')
+        .find((l) => l.startsWith(`${field}:`))
+      expect(line, `${field} was not written`).toBeDefined()
+      expect(line!.slice(field.length + 1).trim()).toMatch(/^".*"$/)
+    }
+  })
+
+  it('round-trips through parseEntry', () => {
+    expect(parseEntry(renderEntry(entry), 'session-2026-09-04-b5e1f97e.md')).toEqual({
+      file: 'session-2026-09-04-b5e1f97e.md',
+      ...entry,
+    })
+  })
+
+  it('still parses an entry written before the values were quoted', () => {
+    expect(parseEntry(ENTRY, 'legacy.md').description).toBe(
+      'The palette is monochrome by owner mandate',
+    )
+  })
+})
+
+describe('MEMORY.md', () => {
+  it('is exactly what renderMemoryIndex produces from the committed entries', () => {
+    // MEMORY.md was hand-edited once, so every SessionEnd rewrote it and the
+    // reorder landed in an unrelated diff.
+    const onDisk = readFileSync(INDEX_MD, 'utf8')
+      .replace(/^\uFEFF/, '')
+      .replace(/\r\n?/g, '\n')
+    expect(onDisk).toBe(renderMemoryIndex(listEntries()))
+  })
+})
+
+describe('the committed entries', () => {
+  const entries = listEntries()
+
+  it('carry no absolute path from the machine that wrote them', () => {
+    for (const e of entries) {
+      expect(e.body, `${e.file} leaks an absolute path`).not.toMatch(/[A-Za-z]:\/Users\/|\/home\//)
+    }
   })
 })

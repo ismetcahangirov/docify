@@ -1,8 +1,8 @@
 ---
-name: parallel-agent-coordination
-description: Hazards when several agents work one repo at once — shared scratchpad, stale conditional rules, lockfile conflicts, merge order, scaffolding the shared surface first, the comments a rename leaves behind, resuming interrupted agents, and verifying the merged tree
-type: process
-date: 2026-08-13
+name: "parallel-agent-coordination"
+description: "Hazards when several agents work one repo at once — shared scratchpad, stale conditional rules, lockfile conflicts, merge order, scaffolding the shared surface first, the comments a rename leaves behind, resuming interrupted agents, and verifying the merged tree"
+type: "process"
+date: "2026-08-13"
 ---
 
 Learned running EPIC 1's five tasks (#4, #5, #6, #7, #11) as parallel agents in

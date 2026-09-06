@@ -1,8 +1,8 @@
 ---
-name: libheif-is-primary-broken
-description: libheif-js 1.19.8 ships a broken is_primary() that throws ReferenceError on every image
-type: gotcha
-date: 2026-08-14
+name: "libheif-is-primary-broken"
+description: "libheif-js 1.19.8 ships a broken is_primary() that throws ReferenceError on every image"
+type: "gotcha"
+date: "2026-08-14"
 ---
 
 `HeifImage.is_primary()` is unusable in libheif-js 1.19.8. It throws

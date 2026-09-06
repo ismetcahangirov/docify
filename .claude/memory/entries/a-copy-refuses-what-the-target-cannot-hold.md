@@ -1,8 +1,8 @@
 ---
-name: a-copy-refuses-what-the-target-cannot-hold
-description: The codec check for a stream copy lives in the engine, not the router — the router has a format pair and a size and cannot see inside the file
-type: decision
-date: 2026-09-05
+name: "a-copy-refuses-what-the-target-cannot-hold"
+description: "The codec check for a stream copy lives in the engine, not the router — the router has a format pair and a size and cannot see inside the file"
+type: "decision"
+date: "2026-09-05"
 ---
 
 `route(task, bytes, caps)` decides on a format pair, a byte count and a

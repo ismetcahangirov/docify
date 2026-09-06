@@ -16,6 +16,8 @@ import { Buffer } from 'node:buffer'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { repoRelative } from './paths.mjs'
+
 const HERE = dirname(fileURLToPath(import.meta.url))
 export const MEMORY_DIR = join(HERE, '..', '..', 'memory')
 export const ENTRIES_DIR = join(MEMORY_DIR, 'entries')
@@ -88,15 +90,25 @@ export function shouldRecord(toolName) {
   return Boolean(toolName) && !IGNORED_TOOLS.has(toolName)
 }
 
-/** Extracts a short, human-meaningful label from a tool call. */
+/**
+ * Extracts a short, human-meaningful label from a tool call.
+ *
+ * A file outside the repository gets a null target and a summary that names no
+ * path: it lives in somebody's temp directory, and an entry file is committed.
+ * Callers drop null targets rather than record them.
+ */
 export function describeToolCall(toolName, toolInput = {}) {
-  const rel = (p) => String(p || '').replace(/\\/g, '/').split('/docify/').pop() ?? p
-
   switch (toolName) {
     case 'Edit':
     case 'Write':
-    case 'NotebookEdit':
-      return { kind: 'file', target: rel(toolInput.file_path), summary: `${toolName} ${rel(toolInput.file_path)}` }
+    case 'NotebookEdit': {
+      const target = repoRelative(toolInput.file_path)
+      return {
+        kind: 'file',
+        target,
+        summary: target ? `${toolName} ${target}` : `${toolName} (outside the repository)`,
+      }
+    }
     case 'Bash':
     case 'PowerShell': {
       const cmd = String(toolInput.command || '').slice(0, 160)
@@ -112,6 +124,23 @@ export function describeToolCall(toolName, toolInput = {}) {
 
 /** Machine-independent string order. localeCompare would depend on the runtime's ICU data. */
 const byString = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
+
+/**
+ * Reads one frontmatter value, quoted or bare.
+ *
+ * Values are written quoted, because a description reads "Session on
+ * 2026-09-04: app, seo" and a bare colon makes that a nested mapping to every
+ * YAML parser there is. Bare values still parse: entries written before the
+ * quoting are on disk and must keep working.
+ */
+function unquoteScalar(value) {
+  if (!/^".*"$/s.test(value)) return value
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value.slice(1, -1).replace(/\\"/g, '"')
+  }
+}
 
 /**
  * Splits one entry file into its frontmatter fields and its body.
@@ -132,7 +161,7 @@ export function parseEntry(raw, file) {
   if (fm) {
     for (const line of fm[1].split('\n')) {
       const m = line.match(/^(\w+):\s*(.*)$/)
-      if (m) meta[m[1]] = m[2].trim()
+      if (m) meta[m[1]] = unquoteScalar(m[2].trim())
     }
   }
   return {
@@ -158,20 +187,37 @@ export function listEntries(dir = ENTRIES_DIR) {
     .sort((a, b) => byString(b.date || '', a.date || '') || byString(a.file, b.file))
 }
 
-export function writeEntry({ name, description, type, date, body }) {
-  ensureDirs()
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  const file = join(ENTRIES_DIR, `${slug}.md`)
-  const content = `---
-name: ${slug}
-description: ${description}
-type: ${type}
-date: ${date}
+function slugify(name) {
+  return String(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+/**
+ * Renders one entry file.
+ *
+ * Every frontmatter value goes through JSON.stringify: a JSON string is a valid
+ * YAML double-quoted scalar, so the colon in a description no longer turns the
+ * block into something only this repository's tolerant regex can read.
+ */
+export function renderEntry({ name, description, type, date, body }) {
+  const q = (v) => JSON.stringify(String(v ?? ''))
+  return `---
+name: ${q(slugify(name))}
+description: ${q(description)}
+type: ${q(type)}
+date: ${q(date)}
 ---
 
-${body.trim()}
+${String(body).trim()}
 `
-  writeFileSync(file, content, 'utf8')
+}
+
+export function writeEntry(entry) {
+  ensureDirs()
+  const file = join(ENTRIES_DIR, `${slugify(entry.name)}.md`)
+  writeFileSync(file, renderEntry(entry), 'utf8')
   rebuildMemoryIndexMd()
   return file
 }

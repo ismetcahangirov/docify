@@ -1,8 +1,8 @@
 ---
-name: abort-is-matched-by-name
-description: An abort is identified by name === 'AbortError', never by instanceof — Comlink drops DOMException and jsdom does not make it an Error
-type: gotcha
-date: 2026-08-14
+name: "abort-is-matched-by-name"
+description: "An abort is identified by name === 'AbortError', never by instanceof — Comlink drops DOMException and jsdom does not make it an Error"
+type: "gotcha"
+date: "2026-08-14"
 ---
 
 An abort crossing Docify's layers is matched by `name === 'AbortError'`, never

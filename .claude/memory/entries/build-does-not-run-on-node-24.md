@@ -1,8 +1,8 @@
 ---
-name: build-does-not-run-on-node-24
-description: pnpm build crashes on the Windows dev machine with a webpack WasmHash error on Node 22 and 24 alike — CI on Linux builds the same tree, and lint/typecheck/test pass regardless
-type: gotcha
-date: 2026-09-04
+name: "build-does-not-run-on-node-24"
+description: "pnpm build crashes on the Windows dev machine with a webpack WasmHash error on Node 22 and 24 alike — CI on Linux builds the same tree, and lint/typecheck/test pass regardless"
+type: "gotcha"
+date: "2026-09-04"
 ---
 
 `pnpm build` fails on the Windows development machine, on clean `main`, before

@@ -1,8 +1,8 @@
 ---
-name: a-carried-track-is-a-term-of-the-size-target
-description: An engine that copies a track past the encoder owes that track's bitrate to the size target, or the capable browser is the one that overshoots
-type: gotcha
-date: 2026-09-05
+name: "a-carried-track-is-a-term-of-the-size-target"
+description: "An engine that copies a track past the encoder owes that track's bitrate to the size target, or the capable browser is the one that overshoots"
+type: "gotcha"
+date: "2026-09-05"
 ---
 
 `bitrateForTargetSize` (`lib/engines/video-compression.ts`) computes

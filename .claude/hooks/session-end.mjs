@@ -10,21 +10,11 @@
  * written deliberately via the docify-memory skill, not inferred here.
  */
 
+import { areaOf } from './lib/paths.mjs'
 import { readStdin, readSession, writeEntry, rebuildSearchIndex } from './lib/store.mjs'
 
-/** Maps a touched path to a project area, so summaries stay searchable by concern. */
-function areaOf(path = '') {
-  if (path.includes('lib/router')) return 'router'
-  if (path.includes('lib/engines')) return 'engines'
-  if (path.includes('lib/registry')) return 'registry'
-  if (path.includes('lib/seo') || path.includes('sitemap') || path.includes('robots')) return 'seo'
-  if (path.includes('components/')) return 'ui'
-  if (path.includes('app/api')) return 'backend'
-  if (path.includes('.github/')) return 'ci'
-  if (path.includes('.claude/')) return 'agent'
-  if (path.includes('app/')) return 'app'
-  return 'other'
-}
+/** How many file names one summary lists before it says how many it left out. */
+const MAX_LISTED = 15
 
 try {
   const input = await readStdin()
@@ -32,20 +22,25 @@ try {
 
   // Nothing meaningful happened — do not pollute memory with an empty entry.
   if (observations.length >= 3) {
-    const files = observations.filter((o) => o.kind === 'file')
+    // A file outside the repository carries no target: it is somebody's temp
+    // directory, and this entry is committed. It must not take a listed slot
+    // either, which is why it is dropped before anything is counted.
+    const files = observations.filter((o) => o.kind === 'file' && o.target)
     const commands = observations.filter((o) => o.kind === 'command')
     const failures = observations.filter((o) => o.failed)
 
-    const areas = [...new Set(files.map((f) => areaOf(f.target)))].filter((a) => a !== 'other')
-    const touched = [...new Set(files.map((f) => f.target))].slice(0, 15)
+    const areas = [...new Set(files.map((f) => areaOf(f.target)))].filter(Boolean)
+    const unique = [...new Set(files.map((f) => f.target))]
+    const touched = unique.slice(0, MAX_LISTED)
     const date = new Date().toISOString().slice(0, 10)
     const id = String(input.session_id || 'unknown').slice(0, 8)
 
     const body = [
       `Areas touched: ${areas.length ? areas.join(', ') : 'none identified'}`,
       '',
-      `Files changed (${files.length} operations):`,
+      `Files changed (${unique.length}):`,
       ...touched.map((f) => `- \`${f}\``),
+      unique.length > touched.length ? `- … and ${unique.length - touched.length} more` : '',
       '',
       `Commands run: ${commands.length}. Failed operations: ${failures.length}.`,
       failures.length

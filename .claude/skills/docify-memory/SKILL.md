@@ -62,12 +62,17 @@ Write an entry when the **rationale would be invisible to someone reading the co
 
 ## Entry format
 
+Every frontmatter value is double-quoted. A description reads "Session on
+2026-09-04: app, seo", and a bare colon makes that block a nested mapping to
+every YAML parser there is — `writeEntry` quotes for you, so write entries
+through the CLI rather than by hand.
+
 ```markdown
 ---
-name: ios-memory-ceiling
-description: iOS Safari terminates tabs above roughly 90MB of WASM heap
-type: constraint
-date: 2026-08-13
+name: "ios-memory-ceiling"
+description: "iOS Safari terminates tabs above roughly 90MB of WASM heap"
+type: "constraint"
+date: "2026-08-13"
 ---
 
 Measured on iPhone 13 / iOS 17 and iPhone 15 / iOS 18. ffmpeg.wasm reliably

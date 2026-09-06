@@ -1,8 +1,8 @@
 ---
-name: settings-only-where-an-engine-reads-them
-description: A tool page offers a control only when an engine on that path reads it, which is why the panel is chosen by source and target together rather than by the target's family
-type: decision
-date: 2026-09-05
+name: "settings-only-where-an-engine-reads-them"
+description: "A tool page offers a control only when an engine on that path reads it, which is why the panel is chosen by source and target together rather than by the target's family"
+type: "decision"
+date: "2026-09-05"
 ---
 
 `settingsFor(pair)` in `lib/settings/for-pair.ts` decides which panel a conversion page

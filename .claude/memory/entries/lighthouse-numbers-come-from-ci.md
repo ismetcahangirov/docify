@@ -1,8 +1,8 @@
 ---
-name: lighthouse-numbers-come-from-ci
-description: A Lighthouse score measured on the dev laptop is not the gate's score — and lhci asserts the best run unless told otherwise
-type: gotcha
-date: 2026-09-04
+name: "lighthouse-numbers-come-from-ci"
+description: "A Lighthouse score measured on the dev laptop is not the gate's score — and lhci asserts the best run unless told otherwise"
+type: "gotcha"
+date: "2026-09-04"
 ---
 
 Two independent traps, both found closing #237.

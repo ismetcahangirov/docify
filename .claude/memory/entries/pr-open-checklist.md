@@ -1,8 +1,8 @@
 ---
-name: pr-open-checklist
-description: Opening a PR is four steps, not one — code review, PR labels, issue status label, then the PR itself
-type: process
-date: 2026-08-13
+name: "pr-open-checklist"
+description: "Opening a PR is four steps, not one — code review, PR labels, issue status label, then the PR itself"
+type: "process"
+date: "2026-08-13"
 ---
 
 `CLAUDE.md` §4.5 lists what a PR must *contain*, but not what must *happen* around

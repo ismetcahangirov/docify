@@ -1,8 +1,8 @@
 ---
-name: webcodecs-over-ffmpeg
-description: WebCodecs is the primary video path; ffmpeg.wasm is a last-resort fallback
-type: decision
-date: 2026-08-13
+name: "webcodecs-over-ffmpeg"
+description: "WebCodecs is the primary video path; ffmpeg.wasm is a last-resort fallback"
+type: "decision"
+date: "2026-08-13"
 ---
 
 Video work routes to WebCodecs first (`priority: 15`) and only falls back to

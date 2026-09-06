@@ -1,8 +1,8 @@
 ---
-name: stream-copy-outranks-both-codecs
-description: A stream copy is its own engine at priority 12, ahead of WebCodecs and ffmpeg — and the webcodecs budget it is compared against is not trustworthy
-type: decision
-date: 2026-09-01
+name: "stream-copy-outranks-both-codecs"
+description: "A stream copy is its own engine at priority 12, ahead of WebCodecs and ffmpeg — and the webcodecs budget it is compared against is not trustworthy"
+type: "decision"
+date: "2026-09-01"
 ---
 
 `remux` (`lib/engines/remux.ts`, `priority: 12`) is a separate engine rather than
