@@ -111,10 +111,30 @@ function refererAllowed(request: Request, allowedOrigins: readonly string[]): bo
   )
 }
 
+/**
+ * The response headers the page is allowed to read.
+ *
+ * A cross-origin script sees seven safelisted headers and nothing else. Both of
+ * ours that carry information rather than policy are outside that seven, so
+ * without this line the browser strips them on the way in and the page reads
+ * `null` — not an error, just the fallback, quietly, every time (issue #292).
+ *
+ * `content-disposition` is the file's name; `lib/import/url.ts` puts it on the
+ * `File` it hands the queue, and without it every import is called `download`.
+ * `x-proxy-refused` is why a URL was turned down, and it is the difference
+ * between naming the reason and saying only that the status was 400.
+ *
+ * `content-type` and `content-length` are absent because they are already
+ * safelisted; naming them would suggest the list is exhaustive when it is the
+ * exceptions.
+ */
+const EXPOSED_HEADERS = 'content-disposition, x-proxy-refused'
+
 /** CORS and isolation headers for one allowed origin. */
 function crossOrigin(origin: string): Record<string, string> {
   return {
     'access-control-allow-origin': origin,
+    'access-control-expose-headers': EXPOSED_HEADERS,
     'cross-origin-resource-policy': 'cross-origin',
     vary: 'Origin',
   }
