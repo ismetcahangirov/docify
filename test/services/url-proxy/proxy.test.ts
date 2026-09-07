@@ -102,6 +102,23 @@ describe('the proxy', () => {
     expect(response.headers.get('access-control-allow-origin')).toBe('https://docify.app')
   })
 
+  it('lets the page read the two headers it actually needs', async () => {
+    const response = await ask('https://example.com/photo.heic')
+
+    // Every assertion above this one reads a header straight off a `Response`
+    // built in this process, where nothing enforces CORS. A browser enforces
+    // it: of the headers the proxy sends, a script may read `content-type` and
+    // `content-length` because they are safelisted, and nothing else unless the
+    // response names it here. `content-disposition` is not safelisted, so
+    // `filenameFrom()` in `lib/import/url.ts` was handed `null` on every import
+    // and every imported file arrived called `download` (issue #292).
+    const exposed = (response.headers.get('access-control-expose-headers') ?? '')
+      .split(',')
+      .map((name) => name.trim().toLowerCase())
+
+    expect(exposed).toContain('content-disposition')
+  })
+
   it('is never cached, because nothing here is ours to cache', async () => {
     expect((await ask('https://example.com/a.heic')).headers.get('cache-control')).toBe('no-store')
   })
@@ -318,6 +335,23 @@ describe('how a refused URL reaches the caller', () => {
 
     expect(response.status).toBe(400)
     expect(response.headers.get('x-proxy-refused')).toBe('address')
+  })
+
+  it.each([
+    ['https://victim.example.com@attacker.test/a', 'the URL guard'],
+    ['http://169.254.169.254/latest/meta-data/', 'a blocked address'],
+  ])('lets the page read why %s was refused', async (target) => {
+    const response = await ask(target)
+
+    // `refusalMessage()` reads `x-proxy-refused` before it looks at the status,
+    // and falls through to a generic line when the header is absent. Absent is
+    // what a browser saw until this was exposed, so the two refusals with a
+    // specific explanation were reported with the vague one — CLAUDE.md §2.5.
+    const exposed = (response.headers.get('access-control-expose-headers') ?? '')
+      .split(',')
+      .map((name) => name.trim().toLowerCase())
+
+    expect(exposed).toContain('x-proxy-refused')
   })
 
   it('never follows a redirect on the platform behalf', async () => {
