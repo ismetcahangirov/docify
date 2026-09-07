@@ -58,8 +58,16 @@
    * without any component restating the numbers.
    */
 
-  /* Display / H1 — Archivo, UPPERCASE */
-  --text-display: clamp(2.75rem, 9vw, 6rem);
+  /*
+   * Display / H1 — Archivo, UPPERCASE.
+   *
+   * Brought down from `clamp(2.75rem, 9vw, 6rem)` in #294. Six rem filled a
+   * laptop hero with three lines of shouting and left the heading no room to
+   * sit inside a composition; the ceiling now lands a little over four, and
+   * the 7vw middle keeps the same reflow-on-the-word behaviour that
+   * `e2e/responsive.spec.ts` measures at 320px.
+   */
+  --text-display: clamp(2.25rem, 7vw, 4.25rem);
   --text-display--line-height: 0.9;
   --text-display--letter-spacing: -0.03em;
   --text-display--font-weight: 800;
@@ -100,9 +108,49 @@
   --text-tech--letter-spacing: 0em;
   --text-tech--font-weight: 400;
 
+  /*
+   * --- Motion ---
+   *
+   * The hero's flowing curves (#294) are the only animation in the design
+   * system, and the keyframe they run is below this block rather than inside
+   * it: a keyframe is a rule, not a token, and this block is read as the
+   * palette — by `test/app/globals-tokens.test.ts`, which enumerates the
+   * declarations in it, and by anybody opening the file to find a colour.
+   *
+   * There is deliberately no `--animate-*` token either. The arcs need three of
+   * the shorthand's parts to differ per curve, and Tailwind orders its output
+   * by utility rather than by the order utilities were written in — so a
+   * shorthand token plus three overrides is a rule that lands in whichever
+   * order the build decides. `components/blocks/flowing-paths.tsx` writes the
+   * whole `animation` declaration once instead.
+   */
+
   /* --- Radius --- */
   --radius-sm: 8px;
   --radius-md: 14px;
   --radius-lg: 20px;
   --radius-xl: 28px;
+}
+
+/*
+ * The hero's one keyframe: a single turn.
+ *
+ * `components/blocks/flowing-paths.tsx` builds each curve as the rim of a
+ * circle whose centre sits well outside one corner of the block, so only a
+ * shallow sliver of the rim ever crosses it. Turning the circle sweeps the
+ * three quarters of the ring that are coloured through that sliver, and what
+ * the eye follows is the uncoloured quarter travelling along the curve.
+ *
+ * The individual `rotate` property rather than a `transform`, because the arc's
+ * `transform` is already carrying its position and the spec applies `rotate`
+ * first. Two declarations fighting over one property is how this kind of thing
+ * usually breaks.
+ */
+@keyframes flow {
+  from {
+    rotate: 0deg;
+  }
+  to {
+    rotate: 360deg;
+  }
 }

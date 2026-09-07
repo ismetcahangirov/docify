@@ -81,7 +81,7 @@ const FONT_TOKENS: ReadonlyArray<readonly [string, string]> = [
 
 /** The typography scale from the plan: size, line height, tracking, weight. */
 const TEXT_SCALE: ReadonlyArray<readonly [string, string, string, string, string]> = [
-  ['display', 'clamp(2.75rem, 9vw, 6rem)', '0.9', '-0.03em', '800'],
+  ['display', 'clamp(2.25rem, 7vw, 4.25rem)', '0.9', '-0.03em', '800'],
   ['h2', 'clamp(1.75rem, 4.5vw, 3rem)', '0.95', '-0.02em', '700'],
   ['h3', '1.125rem', '1.3', '-0.01em', '600'],
   ['eyebrow', '0.75rem', '1', '0.18em', '500'],

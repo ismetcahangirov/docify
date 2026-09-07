@@ -14,7 +14,7 @@ import {
 
 import { CapabilityStrip, type CapabilityItem } from '@/components/blocks/capability-strip'
 import { FeatureCard } from '@/components/blocks/feature-card'
-import { GridOverlay } from '@/components/blocks/grid-overlay'
+import { FlowingPaths } from '@/components/blocks/flowing-paths'
 import { SectionBlock } from '@/components/blocks/section-block'
 import { StatPair } from '@/components/blocks/stat-pair'
 import { Button } from '@/components/ui/button'
@@ -186,24 +186,33 @@ export default function HomePage() {
   return (
     <main className="flex flex-col gap-6 py-6">
       {/*
-       * The hero, and the one place the grid overlay is allowed. It is a band
-       * along the bottom of the block, inside the padding, and not a backdrop
-       * to the text: axe cannot rate the contrast of text drawn over an image
-       * node, and `e2e/a11y.spec.ts` fails a page it could not rate. The
-       * block's own bottom padding plus the content's is 48px on the
-       * narrowest screen, so a 40px band never touches the button above it.
+       * The hero (#294): the heading on the centre line, over a band of
+       * flowing curves.
+       *
+       * ## Why the curves are a band and not a backdrop
+       *
+       * They are an inline SVG, and axe cannot compute a contrast ratio for
+       * text with an image node beneath it — it reports the check as
+       * *incomplete*, which `e2e/a11y.spec.ts` treats as the failure it is. So
+       * the fans occupy the top of the block, above the eyebrow, and every
+       * word below them sits on nothing but `bg-ink`.
+       *
+       * The band is `h-40` and the content is pushed past it by an equal top
+       * padding, which is what keeps the two from meeting at any width rather
+       * than only at the one this was composed on. `overflow-hidden` on the
+       * block is what crops the curves to the rounded panel.
        */}
       <SectionBlock
         variant="dark"
         aria-labelledby="hero-heading"
         className="relative overflow-hidden"
       >
-        <GridOverlay className="inset-x-0 bottom-0 h-10 w-full" />
-        <div className="relative flex min-w-0 flex-col gap-8 py-6 sm:py-12">
+        <FlowingPaths className="inset-0 z-0 size-full" />
+        <div className="relative z-10 flex min-w-0 flex-col items-center gap-8 py-12 text-center sm:py-20">
           <p className="text-eyebrow uppercase text-fg-dark-mut">File converter</p>
           <h1
             id="hero-heading"
-            className="max-w-5xl text-display break-words hyphens-auto uppercase"
+            className="max-w-4xl text-display break-words hyphens-auto uppercase"
           >
             Convert any file, entirely in your browser
           </h1>
