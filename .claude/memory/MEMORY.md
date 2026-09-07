@@ -10,6 +10,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## decision
 
+- [decoration-behind-text-has-three-rules](entries/decoration-behind-text-has-three-rules.md) — A decorative layer under text must not be an SVG, must give every arc the same box, and must declare its own z-index — axe cannot rate contrast otherwise
 - [url-import-was-retired-then-shipped](entries/url-import-was-retired-then-shipped.md) — URL import was decided retired on 2026-09-05 and shipped on 2026-09-06 — the reasons for retiring did not stop being true, and its prerequisite #269 had been closed unimplemented
 - [a-copy-refuses-what-the-target-cannot-hold](entries/a-copy-refuses-what-the-target-cannot-hold.md) — The codec check for a stream copy lives in the engine, not the router — the router has a format pair and a size and cannot see inside the file
 - [settings-only-where-an-engine-reads-them](entries/settings-only-where-an-engine-reads-them.md) — A tool page offers a control only when an engine on that path reads it, which is why the panel is chosen by source and target together rather than by the target's family
@@ -47,6 +48,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 - [session-2026-09-06-103e550c](entries/session-2026-09-06-103e550c.md) — Session on 2026-09-06: agent (10 file ops)
 - [session-2026-09-06-b6e56b84](entries/session-2026-09-06-b6e56b84.md) — Session on 2026-09-06: router, engines, root, app, agent, docs (15 file ops)
+- [session-2026-09-06-f8d14f07](entries/session-2026-09-06-f8d14f07.md) — Session on 2026-09-06: test, root, backend, import, ui (12 file ops)
 - [session-2026-09-05-039547a6](entries/session-2026-09-05-039547a6.md) — Session on 2026-09-05: general work (0 file ops)
 - [session-2026-09-05-2f87c69e](entries/session-2026-09-05-2f87c69e.md) — Session on 2026-09-05: general work (0 file ops)
 - [session-2026-09-05-417bea57](entries/session-2026-09-05-417bea57.md) — Session on 2026-09-05: ui, agent (12 file ops)
