@@ -41,14 +41,14 @@ Then an import, as the browser makes it. The `Origin` header is the whole
 authorisation model; without it the answer is `403` by design.
 
 ```bash
-curl -i -H "Origin: https://docify.app" "https://docify-url-proxy.onrender.com/fetch?url=https%3A%2F%2Fexample.com%2Fimage.png"
+curl -i -H "Origin: https://docify-convert.vercel.app" "https://docify-url-proxy.onrender.com/fetch?url=https%3A%2F%2Fexample.com%2Fimage.png"
 ```
 
 Then the SSRF guard, from outside. Expect `400` and an `x-proxy-refused` header
 naming the check that refused it.
 
 ```bash
-curl -i -H "Origin: https://docify.app" "https://docify-url-proxy.onrender.com/fetch?url=http%3A%2F%2F169.254.169.254%2Flatest%2Fmeta-data%2F"
+curl -i -H "Origin: https://docify-convert.vercel.app" "https://docify-url-proxy.onrender.com/fetch?url=http%3A%2F%2F169.254.169.254%2Flatest%2Fmeta-data%2F"
 ```
 
 The third one is the one worth running on every deploy. A URL import proxy is a
@@ -75,12 +75,17 @@ it is the entire authorisation model, and an empty value means **nobody** rather
 than everybody. That default is deliberate — an open proxy is somebody else's
 bandwidth bill and somebody else's abuse report.
 
-Add a second origin only by editing the blueprint, so the allowlist stays
-reviewable in the history:
+There is exactly one origin, and on this address there is no second one to add:
+a `vercel.app` subdomain has no `www` hostname (issue #303).
+`test/services/url-proxy/render-blueprint.test.ts` asserts the value matches
+`SITE_ORIGIN`, so the two cannot drift apart silently.
+
+When a bought domain does arrive, add it by editing the blueprint rather than
+the dashboard, so the allowlist stays reviewable in the history:
 
 ```yaml
 - key: ALLOWED_ORIGINS
-  value: https://docify.app,https://www.docify.app
+  value: https://docify-convert.vercel.app,https://docify.example
 ```
 
 ## Auto-deploy is off

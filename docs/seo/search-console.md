@@ -1,56 +1,77 @@
 # Google Search Console
 
-The runbook behind issue #103: verify ownership of `docify.app`, submit the
-sitemap, and know which of the reports are worth reading afterwards.
+The runbook behind issue #103: verify ownership of
+`docify-convert.vercel.app`, submit the sitemap, and know which of the reports
+are worth reading afterwards.
 
-## Do this after the domain is attached
+## Do this after the project is named
 
 Not before. `SITE_ORIGIN` is a literal in `lib/seo/site.ts`, so every canonical
 tag, every sitemap entry and every Open Graph URL already claims
-`https://docify.app` — including on a `*.vercel.app` deployment, where all of
-them point at an address that deployment does not answer on.
+`https://docify-convert.vercel.app` — including on a preview deployment, where
+all of them point at an address that deployment does not answer on.
 
-Verifying the Vercel URL as a property would therefore submit a sitemap of 126
+Verifying any other URL as a property would therefore submit a sitemap of 126
 URLs on a different origin, and Search Console would report every one of them as
-excluded. See the domain section of [`docs/deploy/vercel.md`](../deploy/vercel.md).
+excluded. See the address section of
+[`docs/deploy/vercel.md`](../deploy/vercel.md).
 
 ## Verify ownership
 
-Use a **domain property**, not a URL-prefix property.
+Use a **URL-prefix property**, verified by the meta tag.
 
-A domain property verifies `docify.app` and everything under it at once: `www`,
-any future subdomain, `http` and `https` alike. A URL-prefix property verifies
-one origin, which means `https://docify.app` and `https://www.docify.app` are
-two properties with two sets of reports and half the data each.
+This is the opposite of the general advice, and the reason is the address
+(issue #303). A domain property is verified by a DNS TXT record, and a TXT
+record needs a zone — `vercel.app` is Vercel's, not ours. There is no registrar
+in this deployment and therefore no domain property to have.
 
-1. Search Console → **Add property** → **Domain** → `docify.app`.
-2. Google shows one TXT record. Add it at the registrar — the same place the
-   Vercel records went.
-3. **Verify.** Propagation is usually minutes; the button can be pressed again.
+That costs less here than it would elsewhere, because the things a domain
+property buys are things this address does not have: there is no `www`
+hostname, no second subdomain, and no `http` origin Vercel does not already
+redirect. One URL-prefix property covers the whole site.
 
-Keep the TXT record. Google re-checks it, and removing it un-verifies the
+1. Search Console → **Add property** → **URL prefix** →
+   `https://docify-convert.vercel.app`.
+2. Choose the **HTML tag** method. Google shows a
+   `<meta name="google-site-verification" content="…">` line behind a copy
+   button.
+3. Set it and rebuild — the tag is generated at build time, so it appears in the
+   next deployment and not in the running one:
+
+   ```bash
+   vercel env add GOOGLE_SITE_VERIFICATION production
+   vercel --prod
+   ```
+
+4. **Verify.** Confirm the tag is actually being served first, or the console
+   reports a failure that says nothing about which half is wrong:
+
+   ```bash
+   curl -s https://docify-convert.vercel.app/ | grep google-site-verification
+   ```
+
+Keep the variable set. Google re-checks the tag, and removing it un-verifies the
 property.
 
-### The meta-tag fallback
+### What the variable accepts
 
-`GOOGLE_SITE_VERIFICATION` renders
-`<meta name="google-site-verification" content="…">` into every page, via
-`lib/seo/verification.ts`. It exists for the cases the DNS record cannot cover —
-verifying before DNS has moved, or verifying a deployment that is not the apex
-domain — and it verifies a URL-prefix property only.
+`GOOGLE_SITE_VERIFICATION` renders the tag into every page via
+`lib/seo/verification.ts`, which is written for exactly this path — its own
+header names "a deployment that is not the apex domain" as the case it exists
+for.
 
-```bash
-vercel env add GOOGLE_SITE_VERIFICATION production
-```
+It accepts either the bare token or the whole `<meta …>` line the console offers
+behind its copy button; the tag is unwrapped, and anything that is still not a
+token is dropped rather than rendered.
 
 Set it in **Production only**. A preview deployment carrying the tag is a second
 address claiming to own the property.
 
-The variable accepts either the bare token or the whole `<meta …>` line the
-console offers behind its copy button; the tag is unwrapped and anything that is
-still not a token is dropped rather than rendered. Redeploy after setting it —
-the metadata is generated at build time, so the tag appears in the next build
-and not in the running one.
+### When a bought domain arrives
+
+Add a **domain property** then, verify it with the TXT record, and keep both
+until the redirect has been in place long enough for the reports to move. The
+meta tag costs nothing to leave in place meanwhile.
 
 ## Submit the sitemap
 

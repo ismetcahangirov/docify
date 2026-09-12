@@ -11,6 +11,7 @@ import {
   ogImageUrl,
   siteCard,
 } from '@/lib/seo/og'
+import { SITE_ORIGIN } from '@/lib/seo/site'
 
 /*
  * The words on the social card (issue #72).
@@ -149,12 +150,13 @@ describe('ogImageUrl', () => {
   it('is absolute, because the crawler reading the tag is not on this origin', () => {
     const heic = pairBySlug('heic-to-jpg')
 
-    expect(heic && ogImageUrl(heic)).toBe('https://docify.app/convert/heic-to-jpg/opengraph-image')
+    expect(heic && ogImageUrl(heic)).toBe(`${SITE_ORIGIN}/convert/heic-to-jpg/opengraph-image`)
+    expect(heic && ogImageUrl(heic)).toMatch(/^https:\/\//)
   })
 
   it('sits under the page it belongs to, which is where the file convention serves it', () => {
     for (const pair of PAIRS) {
-      expect(ogImageUrl(pair)).toBe(`https://docify.app/convert/${pair.slug}/opengraph-image`)
+      expect(ogImageUrl(pair)).toBe(`${SITE_ORIGIN}/convert/${pair.slug}/opengraph-image`)
     }
   })
 

@@ -49,7 +49,7 @@ and looking complete. The same is true of the deadline below.
 ## `Origin` is not authentication
 
 It never was. A browser sets the header honestly; `curl -H "Origin:
-https://docify.app"` does not, and the value to send is written in `render.yaml`
+https://docify-convert.vercel.app"` does not, and the value to send is written in `render.yaml`
 for anyone to read. Until issue #269 that header was the only thing standing
 between this service and an open 100 MiB-per-request proxy on the owner's
 bandwidth.

@@ -41,7 +41,7 @@ import { checkUrl } from './url-guard.js'
  *
  * It never was, and until issue #269 it was the only thing standing between
  * this service and anybody who had read `render.yaml`: a browser sets the
- * header honestly and `curl -H "Origin: https://docify.app"` does not. Two
+ * header honestly and `curl -H "Origin: https://docify-convert.vercel.app"` does not. Two
  * things stand beside it now, and only one is a defence. The `referer` check
  * removes the copy-paste case and nothing harder. The rate limit is what
  * actually bounds the cost, because it is keyed by where the connection came
@@ -100,7 +100,7 @@ function limiterFor(config: ProxyConfig): RateLimiter {
  * A missing referer passes: privacy settings and `rel="noreferrer"` both strip
  * it, and breaking the feature for the people most careful about their browsing
  * would be a poor trade for a check this weak. The trailing separator matters —
- * without it `https://docify.app.evil.test/` starts with the allowed origin.
+ * without it `https://docify-convert.vercel.app.evil.test/` starts with the allowed origin.
  */
 function refererAllowed(request: Request, allowedOrigins: readonly string[]): boolean {
   const referer = request.headers.get('referer')

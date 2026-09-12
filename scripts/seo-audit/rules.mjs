@@ -71,9 +71,12 @@ function canonicalHref(html) {
  * Whether two absolute URLs name the same resource.
  *
  * String equality, except at the root. RFC 3986 makes an empty path equivalent
- * to `/`, and Next.js resolves `https://docify.app/` against `metadataBase`
- * down to `https://docify.app` — so the home page's canonical tag and the URL
- * its own sitemap entry uses differ by one character and mean the same thing.
+ * to `/`, and Next.js resolves the origin with a trailing slash against
+ * `metadataBase` down to the bare origin — so the home page's canonical tag and
+ * the URL its own sitemap entry uses differ by one character and mean the same
+ * thing. (The origin is deliberately not spelled out here; `lib/seo/site.ts` is
+ * the one file that says it, and `test/seo/site-origin.test.ts` keeps it that
+ * way.)
  * Every crawler agrees; an audit that did not would report a critical finding
  * nobody could fix.
  */
