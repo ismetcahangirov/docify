@@ -61,49 +61,69 @@ app does not use the image optimiser.
 Everything is optional. The app builds, deploys and serves every page with none
 of them set — which is what makes a preview deployment usable without secrets.
 
-| Variable                   | Environments        | Absent means                                                                     |
-| -------------------------- | ------------------- | -------------------------------------------------------------------------------- |
-| `DATABASE_URL`             | Production, Preview | The anonymous counters are skipped; every route still works.                     |
-| `GOOGLE_SITE_VERIFICATION` | Production only     | No Search Console verification tag is rendered — see docs/seo/search-console.md. |
+| Variable                   | Environments        | Read at      | Absent means                                                                     |
+| -------------------------- | ------------------- | ------------ | -------------------------------------------------------------------------------- |
+| `DATABASE_URL`             | Production, Preview | request time | The anonymous counters are skipped; every route still works.                     |
+| `GOOGLE_SITE_VERIFICATION` | Production only     | build time   | No Search Console verification tag is rendered — see docs/seo/search-console.md. |
+| `NEXT_PUBLIC_PROXY_URL`    | Production, Preview | build time   | The converter's "from a URL" control renders nothing — see the Render runbook.   |
 
 ```bash
 vercel env add DATABASE_URL production
+vercel env add NEXT_PUBLIC_PROXY_URL production
 ```
 
-Never prefix any of these with `NEXT_PUBLIC_`. That prefix inlines a value into
-the client bundle, which for a database credential is the one place it must
-never be.
+**The "read at" column is the one that wastes an afternoon.** Only
+`DATABASE_URL` is consulted per request. The other two reach the deployment
+through a build: `GOOGLE_SITE_VERIFICATION` is baked into generated metadata,
+and `NEXT_PUBLIC_PROXY_URL` is inlined into the client bundle as a literal by
+the prefix itself. Setting either in the dashboard changes nothing about the
+deployment already running — **redeploy, or it did not happen.**
 
-`.env.example` is the list. A variable that exists only in a dashboard is a
-variable the next environment forgets.
+That prefix is also the reason `DATABASE_URL` must never carry it: it puts the
+value in the client bundle, which for a database credential is the one place it
+must never be. `NEXT_PUBLIC_PROXY_URL` carries it correctly — the browser is
+what calls the proxy, and the address of a public endpoint is not a secret.
 
-## The custom domain
+`.env.example` is the list, and `test/app/env-example.test.ts` keeps it the
+list: a variable the code reads and that file omits fails the unit job (issue
+#302). A variable that exists only in a dashboard is a variable the next
+environment forgets.
 
-The canonical URL is `https://docify.app`, and it is a literal in
+## The address
+
+The canonical URL is `https://docify-convert.vercel.app`, and it is a literal in
 `lib/seo/site.ts` rather than an environment variable — deliberately, because a
 canonical URL that varies by deployment is one that points a crawler at a
 preview build from production.
 
-That has a consequence worth stating plainly: **until the domain is attached,
-every page's canonical tag, sitemap entry and Open Graph URL claims an address
-the deployment does not answer on.** The `*.vercel.app` URL is correct for
-verifying that the app works and wrong for anything a crawler does, so leave
-Search Console (issue #103) until after this step.
+**It is a free Vercel subdomain, and it is therefore not something to attach —
+it is something to claim by naming the project** (issue #303). Name the Vercel
+project `docify-convert` and the deployment answers on
+`docify-convert.vercel.app`. Name it anything else and every canonical tag on
+the site points at a host somebody else controls, which is worse than having no
+canonical tag at all. `docify.vercel.app` and `docify-app.vercel.app` were
+already taken; that is why the name is what it is.
 
-1. **Project → Settings → Domains**, add `docify.app` and `www.docify.app`.
-2. Point the registrar at Vercel's nameservers, or add the `A` / `CNAME` records
-   the panel shows. HTTPS is provisioned automatically once the records resolve.
-3. Keep the redirect Vercel proposes — one hostname serves, the other redirects.
-   Two hostnames serving the same 128 pages is a duplicate-content problem the
-   canonical tags would then have to argue their way out of.
+So there is nothing to do at a registrar, and three consequences follow from
+that:
+
+- **No `www`.** A `vercel.app` subdomain has no second hostname, so the
+  duplicate-content question this section used to spend a paragraph on does not
+  arise, and `render.yaml` needs exactly one origin in its allowlist.
+- **No DNS record**, which changes how Search Console verification works —
+  `docs/seo/search-console.md` covers it.
+- **Moving to a bought domain later** is the literal in `lib/seo/site.ts`, the
+  allowlist in `render.yaml`, and a redirect. It is cheapest before there is
+  indexed history to carry across, and `test/seo/site-origin.test.ts` asserts
+  there is no third place to remember.
 
 ## Verifying a deployment
 
 ```bash
-curl -sI https://docify.app/ | head -20
-curl -sI https://docify.app/convert/heic-to-jpg | grep -i cross-origin
-curl -s  https://docify.app/robots.txt
-curl -s  https://docify.app/api/stats
+curl -sI https://docify-convert.vercel.app/ | head -20
+curl -sI https://docify-convert.vercel.app/convert/heic-to-jpg | grep -i cross-origin
+curl -s  https://docify-convert.vercel.app/robots.txt
+curl -s  https://docify-convert.vercel.app/api/stats
 ```
 
 The second is the one that is easy to get wrong and invisible when it is: a
