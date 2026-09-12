@@ -28,6 +28,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## gotcha
 
+- [backend-outage-and-misconfiguration-are-the-same-answer](entries/backend-outage-and-misconfiguration-are-the-same-answer.md) — A wrong DATABASE_URL and no DATABASE_URL produce the identical {"available":false}, and readTotals swallows the difference
 - [windows-build-broke-on-pnpm-junctions](entries/windows-build-broke-on-pnpm-junctions.md) — The Windows build crash was pnpm junctions plus a poisoned .next cache, not Node — and the cache half was already written down before the issue was opened
 - [a-carried-track-is-a-term-of-the-size-target](entries/a-carried-track-is-a-term-of-the-size-target.md) — An engine that copies a track past the encoder owes that track's bitrate to the size target, or the capable browser is the one that overshoots
 - [a-pixel-bound-test-needs-a-device-without-simd](entries/a-pixel-bound-test-needs-a-device-without-simd.md) — A test that means to exercise the decoded-pixel bound must route on a device with wasmSimd false, or vips answers and the assertion proves nothing
@@ -44,8 +45,13 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 - [parallel-agent-coordination](entries/parallel-agent-coordination.md) — Hazards when several agents work one repo at once — shared scratchpad, stale conditional rules, lockfile conflicts, merge order, scaffolding the shared surface first, the comments a rename leaves behind, resuming interrupted agents, and verifying the merged tree
 - [pr-open-checklist](entries/pr-open-checklist.md) — Opening a PR is four steps, not one — code review, PR labels, issue status label, then the PR itself
 
+## reference
+
+- [deployment-runs-on-three-free-tiers](entries/deployment-runs-on-three-free-tiers.md) — Where Docify is deployed, which variable belongs to which environment, and the two scopings that are not oversights
+
 ## session
 
+- [session-2026-09-12-f653e1c2](entries/session-2026-09-12-f653e1c2.md) — Session on 2026-09-12: general work (0 file ops)
 - [session-2026-09-06-103e550c](entries/session-2026-09-06-103e550c.md) — Session on 2026-09-06: agent (10 file ops)
 - [session-2026-09-06-b6e56b84](entries/session-2026-09-06-b6e56b84.md) — Session on 2026-09-06: router, engines, root, app, agent, docs (15 file ops)
 - [session-2026-09-06-f8d14f07](entries/session-2026-09-06-f8d14f07.md) — Session on 2026-09-06: test, root, backend, import, ui (12 file ops)
