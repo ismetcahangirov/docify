@@ -1,8 +1,21 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ResultPanel } from '@/components/converter/result-panel'
 import { createJob, type QueuedJob } from '@/lib/queue/queue'
+
+/*
+ * The default download-all path, so the archive can be made to fail.
+ *
+ * `onDownloadAll` short-circuits the whole thing, which is what the tests
+ * below it use; a pack that *rejects* only exists on the path the component
+ * takes when nobody injected one.
+ */
+const zipResults = vi.hoisted(() => vi.fn())
+const saveBlob = vi.hoisted(() => vi.fn())
+
+vi.mock('@/lib/queue/batch-zip', () => ({ zipResults }))
+vi.mock('@/lib/queue/save-file', () => ({ saveBlob }))
 
 /*
  * The result panel (issue #61): every finished file, one link each, and one
@@ -20,6 +33,8 @@ const revoked: string[] = []
 beforeEach(() => {
   created.length = 0
   revoked.length = 0
+  zipResults.mockReset()
+  saveBlob.mockReset()
 
   vi.stubGlobal('URL', {
     ...URL,
@@ -110,6 +125,71 @@ describe('ResultPanel — the batch archive', () => {
       'scan.jpg',
       'scan-2.jpg',
     ])
+  })
+})
+
+describe('ResultPanel — an archive that cannot be built', () => {
+  const two = [done('a', 'one.heic'), done('b', 'two.heic')]
+
+  const clickDownloadAll = () =>
+    fireEvent.click(screen.getByRole('button', { name: /download all/i }))
+
+  it('says so, rather than quietly re-enabling the button', async () => {
+    zipResults.mockRejectedValue(new Error('out of memory'))
+    render(<ResultPanel jobs={two} to="jpg" />)
+
+    clickDownloadAll()
+
+    // CLAUDE.md §2.5: name what failed, and name what the user can still do.
+    // The individual downloads above are that fallback, so a sentence that
+    // stops at "the archive could not be built" is only half the answer.
+    await waitFor(() => {
+      expect(within(panel()).getByRole('status')).toHaveTextContent(/archive|zip/i)
+    })
+    expect(within(panel()).getByRole('status')).toHaveTextContent(/still there|on its own/i)
+  })
+
+  it('leaves no unhandled rejection behind', async () => {
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+
+    try {
+      zipResults.mockRejectedValue(new Error('out of memory'))
+      render(<ResultPanel jobs={two} to="jpg" />)
+
+      clickDownloadAll()
+
+      await waitFor(() => expect(within(panel()).getByRole('status')).not.toBeEmptyDOMElement())
+      // A rejection reaches the handler a turn after the promise settles.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      expect(unhandled).not.toHaveBeenCalled()
+    } finally {
+      process.off('unhandledRejection', unhandled)
+    }
+  })
+
+  it('puts the button back so a second attempt is possible', async () => {
+    zipResults.mockRejectedValue(new Error('out of memory'))
+    render(<ResultPanel jobs={two} to="jpg" />)
+
+    clickDownloadAll()
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /download all/i })).toBeEnabled())
+  })
+
+  it('clears the message once an archive is built', async () => {
+    zipResults.mockRejectedValueOnce(new Error('out of memory'))
+    render(<ResultPanel jobs={two} to="jpg" />)
+
+    clickDownloadAll()
+    await waitFor(() => expect(within(panel()).getByRole('status')).not.toBeEmptyDOMElement())
+
+    zipResults.mockResolvedValueOnce(new Uint8Array([1, 2, 3]))
+    clickDownloadAll()
+
+    await waitFor(() => expect(saveBlob).toHaveBeenCalledOnce())
+    expect(within(panel()).getByRole('status')).toBeEmptyDOMElement()
   })
 })
 
