@@ -48,12 +48,10 @@ import { cn } from '@/lib/utils'
 export interface UrlImportProps {
   /** Called with the imported bytes, to be added to the queue like a dropped file. */
   onFile: (file: File) => void
-  /** True while a conversion is running: the field stays usable, the fetch does not. */
-  disabled?: boolean
   className?: string
 }
 
-function UrlImport({ onFile, disabled = false, className }: UrlImportProps) {
+function UrlImport({ onFile, className }: UrlImportProps) {
   const inputId = React.useId()
   const errorId = React.useId()
 
@@ -151,8 +149,15 @@ function UrlImport({ onFile, disabled = false, className }: UrlImportProps) {
          * Secondary, and without the arrow: CLAUDE.md §3 puts that on the one
          * high-emphasis action in a block, and on a converter that action is
          * the dropzone above.
+         *
+         * Disabled only while this form's own request is in flight. A
+         * conversion running in the queue is deliberately not a reason: the
+         * queue holds as many files as the visitor wants and the scheduler
+         * takes them one at a time, so importing the next one while the
+         * current one converts is the point rather than a hazard — the same
+         * reading `converter.tsx` gives for leaving the settings panel live.
          */}
-        <Button type="submit" variant="secondary" disabled={pending || disabled}>
+        <Button type="submit" variant="secondary" disabled={pending}>
           {pending ? 'Fetching…' : 'Fetch'}
         </Button>
       </div>

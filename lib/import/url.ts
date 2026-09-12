@@ -165,7 +165,26 @@ export async function importFromUrl(url: string, options: ImportOptions = {}): P
   // jsdom stringifies a `Blob` handed to the `File` constructor on some Node
   // versions and reads its bytes on others, so the same test passed on the dev
   // machine and produced a file containing "[object Blob]" in CI.
-  const bytes = await response.arrayBuffer()
+  //
+  // Guarded, because this is where the import limit that actually holds lands.
+  // `limit-stream.ts` calls the `content-length` check "the polite half": most
+  // upstreams answer chunked, so the 413 above never fires and the proxy errors
+  // the body instead — after `200` and its headers have gone out, which is HTTP
+  // rather than a shortcut. Left bare, the platform's own `TypeError` escapes
+  // and the visitor reads "Failed to fetch", which names nothing they can do
+  // (CLAUDE.md §2.5). A dropped connection arrives here in the same shape and
+  // wants the same sentence.
+  let bytes: ArrayBuffer
+  try {
+    bytes = await response.arrayBuffer()
+  } catch (reason) {
+    if (isAbort(reason)) throw reason
+
+    throw new Error(
+      'The download stopped before the whole file arrived. It may be past the 100 MB import ' +
+        'limit, or the site holding it cut the connection — download it and drop it in instead.',
+    )
+  }
 
   return new File([bytes], filenameFrom(response.headers.get('content-disposition')), {
     // The header, not `blob.type`. The proxy always sends one — falling back to
