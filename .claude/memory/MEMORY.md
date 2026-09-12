@@ -51,6 +51,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## session
 
+- [session-2026-09-12-5f6382c4](entries/session-2026-09-12-5f6382c4.md) — Session on 2026-09-12: general work (0 file ops)
 - [session-2026-09-12-f653e1c2](entries/session-2026-09-12-f653e1c2.md) — Session on 2026-09-12: general work (0 file ops)
 - [session-2026-09-06-103e550c](entries/session-2026-09-06-103e550c.md) — Session on 2026-09-06: agent (10 file ops)
 - [session-2026-09-06-b6e56b84](entries/session-2026-09-06-b6e56b84.md) — Session on 2026-09-06: router, engines, root, app, agent, docs (15 file ops)
