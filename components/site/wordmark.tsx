@@ -81,9 +81,13 @@ const PAINT = [
 ].join(' ')
 
 /**
- * The stroke, in the order it is laid down: the body of the paint, a second
- * lighter pass turned against it so the two torn edges never line up, and the
- * frame over both.
+ * The stroke, in the order it is laid down: the body of the paint, and the
+ * frame over it.
+ *
+ * Two layers, not three. A second lighter pass of the same drawing read well
+ * and cost a second rasterisation of several hundred path segments in the
+ * header of every page — work that lands before the hero the Largest
+ * Contentful Paint is measured against.
  *
  * The geometry is in `em` throughout — the mark grows with the type scale at
  * `md`, and a pixel here would leave the paint behind at the larger size. It
@@ -104,12 +108,6 @@ const LAYERS = [
     className: PAINT,
     inset: '-0.27em -0.41em -0.23em -0.38em',
     rotate: '-4deg',
-  },
-  {
-    key: 'sweep',
-    className: `${PAINT} before:opacity-45`,
-    inset: '-0.17em -0.30em -0.13em -0.27em',
-    rotate: '166deg',
   },
   {
     key: 'frame',

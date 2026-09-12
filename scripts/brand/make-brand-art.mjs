@@ -77,7 +77,16 @@ function streak(rand, { x, y, len, thick, angle }) {
   return `M${pts.map(([px, py]) => `${Math.round(px)} ${Math.round(py)}`).join(' L')} Z`
 }
 
-/** The mark, drawn into a 200x200 box: the mass, two tears, six drags, twelve flecks. */
+/**
+ * The mark, drawn into a 200x200 box: the mass, two tears, four drags, six
+ * flecks.
+ *
+ * Every point here is rasterised twice — once for the mask in the header of
+ * every page, once for the icon — on whatever device is loading the site, and
+ * the header paints before the hero the Largest Contentful Paint is measured
+ * against. So the counts are the fewest that still read as torn rather than
+ * drawn, not the most the shape could carry.
+ */
 function brushPaths(rand) {
   const parts = [
     blob(rand, {
@@ -85,7 +94,7 @@ function brushPaths(rand) {
       cy: 100,
       rx: 74,
       ry: 70,
-      points: 34,
+      points: 24,
       jitter: 0.3,
       spikeEvery: 5,
       spike: 1.06,
@@ -95,7 +104,7 @@ function brushPaths(rand) {
       cy: 78,
       rx: 48,
       ry: 40,
-      points: 24,
+      points: 16,
       jitter: 0.42,
       spikeEvery: 4,
       spike: 1.1,
@@ -105,7 +114,7 @@ function brushPaths(rand) {
       cy: 130,
       rx: 46,
       ry: 38,
-      points: 24,
+      points: 16,
       jitter: 0.44,
       spikeEvery: 4,
       spike: 1.12,
@@ -114,9 +123,7 @@ function brushPaths(rand) {
 
   for (const drag of [
     { x: 150, y: 92, len: 46, thick: 7, angle: -12 },
-    { x: 156, y: 118, len: 38, thick: 5, angle: 16 },
     { x: 44, y: 78, len: 40, thick: 6, angle: 196 },
-    { x: 52, y: 140, len: 32, thick: 4, angle: 158 },
     { x: 104, y: 34, len: 30, thick: 5, angle: -76 },
     { x: 88, y: 168, len: 28, thick: 4, angle: 96 },
   ]) {
@@ -133,9 +140,7 @@ function brushPaths(rand) {
     [30, 168, 4.0],
     [64, 186, 2.8],
     [118, 14, 3.6],
-    [72, 16, 2.6],
     [142, 190, 3.4],
-    [8, 140, 2.4],
   ]) {
     parts.push(
       blob(rand, { cx: x, cy: y, rx: r, ry: r * (0.7 + rand() * 0.6), points: 9, jitter: 0.5 }),
