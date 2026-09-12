@@ -33,7 +33,40 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  /*
+   * Two projects, because one of these files is not asserting about the DOM —
+   * it is taking a measurement (issue #300).
+   *
+   * `vitals.spec.ts` throttles the CPU to a quarter of the host's and then
+   * reads latencies off the page. Run in the shared pool it competes with
+   * however many other browsers `fullyParallel` has started, and the number it
+   * reads is about the runner rather than about the page: measured alone, the
+   * keyboard interaction on a conversion page is 24-40ms against a 200ms
+   * budget, and under eight workers the same interaction reads 320ms. Total
+   * Blocking Time inflates the same way — 140ms documented in
+   * `./e2e/support/vitals.ts`, 335ms observed contended, which is past the
+   * budget even after `measureLoad` takes the best of three.
+   *
+   * So the measurements get the machine to themselves: `dependencies` holds
+   * them until every other spec has finished, and `fullyParallel: false` keeps
+   * them from racing each other. CI was already immune — it pins `workers: 1`
+   * — which is exactly why this only ever failed on a developer's laptop, and
+   * why it was tempting to read as a page regression rather than as noise.
+   */
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      testIgnore: /vitals\.spec\.ts/,
+    },
+    {
+      name: 'vitals',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: /vitals\.spec\.ts/,
+      dependencies: ['chromium'],
+      fullyParallel: false,
+    },
+  ],
   webServer: {
     command: 'pnpm build && pnpm start',
     url: BASE_URL,
