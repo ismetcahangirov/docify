@@ -297,6 +297,62 @@ describe('JobCard — the buttons', () => {
     expect(icon?.getAttribute('class')).toMatch(/trash/)
   })
 
+  it('sits at the end of the row, and turns the accent under the pointer', () => {
+    render(<JobCard job={job()} onRemove={() => {}} />)
+
+    const button = screen.getByRole('button', { name: /remove holiday clip.mov/i })
+
+    // Away from the actions that keep the file, at the edge a destructive
+    // control belongs on.
+    expect(button).toHaveClass('ml-auto')
+    expect(button).toHaveClass('hover:text-brush')
+    expect(button).toHaveClass('cursor-pointer')
+  })
+
+  it('shares the line the routing note is on, rather than taking one of its own', () => {
+    render(
+      <JobCard
+        job={job({
+          state: 'done',
+          engine: 'ffmpeg',
+          reason: 'Universal fallback (ffmpeg)',
+          warnings: [{ code: 'QUALITY_LOSS', message: 'JPG and WEBP are both lossy formats.' }],
+        })}
+        onRemove={() => {}}
+        now={START}
+      />,
+    )
+
+    const badge = slot('route-badge') as HTMLElement
+    const button = screen.getByRole('button', { name: /remove holiday clip.mov/i })
+
+    // The note is a sentence with a column of empty card beside it, which is
+    // where the control that discards the file belongs.
+    expect(badge).toContainElement(button)
+    expect(within(badge).getByText(/both lossy formats/)).toBeInTheDocument()
+  })
+
+  it('keeps the controls under a failure, where the explanation comes first', () => {
+    render(
+      <JobCard
+        job={job({
+          state: 'failed',
+          engine: 'ffmpeg',
+          reason: 'Universal fallback (ffmpeg)',
+          failure: { message: 'The decoder gave up.' },
+        })}
+        onRemove={() => {}}
+        onRetry={() => {}}
+        now={START}
+      />,
+    )
+
+    const badge = slot('route-badge') as HTMLElement
+
+    expect(badge).not.toContainElement(screen.getByRole('button', { name: /remove/i }))
+    expect(badge).not.toContainElement(screen.getByRole('button', { name: /try converting/i }))
+  })
+
   it('removes the file from the queue', () => {
     const onRemove = vi.fn()
     render(<JobCard job={job()} onRemove={onRemove} now={START} />)

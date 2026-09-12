@@ -39,7 +39,8 @@
    *   - the brush behind the wordmark's initial, and the site icon built from
    *     the same drawing,
    *   - the word "Popular" in the home page's section heading,
-   *   - the download icon at the end of every finished result.
+   *   - the Download at the end of every finished result, and only while the
+   *     pointer is on the row.
    *
    * It is not a status colour and never carries meaning on its own — every
    * place it appears, the words say the same thing. Near-black on it is 5.5:1

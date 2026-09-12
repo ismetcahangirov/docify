@@ -2,7 +2,6 @@
 
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
-import { DownloadIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { zipResults } from '@/lib/queue/batch-zip'
@@ -195,6 +194,7 @@ function ResultPanel({ className, variant, jobs, to, onDownloadAll, ...props }: 
                   download={result.name}
                   className={cn(
                     ROW,
+                    'group cursor-pointer',
                     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current',
                   )}
                 >
@@ -210,18 +210,19 @@ function ResultPanel({ className, variant, jobs, to, onDownloadAll, ...props }: 
                       {formatBytes(result.bytes)}
                     </span>
                     {/*
-                     * The accent is the only colour in the panel and it is
-                     * decoration — the row says what it is in words, and the
-                     * icon is `aria-hidden` so the link keeps the file's name
-                     * as its whole accessible name. `--color-brush` on `ink-2`
-                     * measures 5:1, past the 3:1 a meaningful graphic owes.
+                     * The word rather than a glyph. The row is a link to a
+                     * file and what it does has a name, which is also what a
+                     * screen reader reads at the end of the row's name. The
+                     * accent arrives under the pointer only: `--color-brush`
+                     * on `ink-2` is 5:1, but a row of pink words would make
+                     * the list look like a list of warnings.
                      */}
-                    <DownloadIcon
-                      aria-hidden="true"
-                      data-slot="result-panel-download-icon"
-                      className="size-4 shrink-0 text-brush"
-                      strokeWidth={2}
-                    />
+                    <span
+                      data-slot="result-panel-download-label"
+                      className="text-body underline underline-offset-4 group-hover:text-brush"
+                    >
+                      Download
+                    </span>
                   </span>
                 </a>
               )}

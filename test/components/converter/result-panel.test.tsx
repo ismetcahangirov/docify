@@ -78,18 +78,18 @@ describe('ResultPanel — when there is nothing to show', () => {
 })
 
 describe('ResultPanel — individual downloads', () => {
-  it('ends every row with a download icon in the accent, inside the link itself', () => {
+  it('ends every row with the word Download, which takes the accent under the pointer', () => {
     render(<ResultPanel jobs={[done('a', 'IMG_1.HEIC')]} to="jpg" />)
 
     const [row] = links()
-    const icon = row.querySelector('[data-slot="result-panel-download-icon"]')
+    const label = row.querySelector('[data-slot="result-panel-download-label"]')
 
-    // Inside the link, not beside it: a second control pointing at the same
-    // file would be a second stop for anybody tabbing through the list.
-    expect(icon).not.toBeNull()
-    expect(icon).toHaveClass('text-brush')
-    expect(icon).toHaveAttribute('aria-hidden', 'true')
-    // The link still says what it is: the icon carries no name of its own.
+    // A word rather than a glyph: the row is a link to a file and the thing it
+    // does has a name. It is inside the link, not beside it — a second control
+    // pointing at the same file would be a second stop for anybody tabbing.
+    expect(label?.textContent).toBe('Download')
+    expect(label).toHaveClass('group-hover:text-brush')
+    expect(row).toHaveClass('group', 'cursor-pointer')
     expect(row).toHaveAccessibleName(/IMG_1\.jpg/)
   })
 

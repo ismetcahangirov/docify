@@ -151,6 +151,92 @@ function JobCard({
   const status = stopped(job) ? 'Stopped' : STATUS[job.state]
   const muted = mutedVariants({ variant })
 
+  /*
+   * The controls, built once and placed in one of two rows (issue #311).
+   *
+   * Where there is a routing note they go at the end of *its* line: the note is
+   * a sentence with a column of empty card to its right, and a row of its own
+   * underneath spends a whole line of height saying nothing. Where the job
+   * failed they stay below it — the explanation and the alternatives are what
+   * the reader needs first, and "Try again" above them is an answer offered
+   * before the question.
+   */
+  const controls = (
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      {isRunning(job.state) && onCancel !== undefined && (
+        <Button
+          type="button"
+          variant="secondary"
+          data-slot="job-card-cancel"
+          // One card in a list of twenty, and "Cancel" on its own names none
+          // of them.
+          aria-label={`Cancel converting ${job.file.name}`}
+          onClick={() => onCancel(job.id)}
+        >
+          Cancel
+        </Button>
+      )}
+
+      {/*
+       * A job the user stopped is `queued` with nothing coming for it: the
+       * scheduler deliberately does not start it again on its own, so without
+       * this the card reads "Waiting" and offers no control that moves it
+       * (issue #278). A job that is merely waiting its turn carries no mark
+       * and gets no button — it is already going to run.
+       */}
+      {stopped(job) && onRetry !== undefined && (
+        <Button
+          type="button"
+          variant="secondary"
+          data-slot="job-card-start"
+          aria-label={`Start converting ${job.file.name}`}
+          onClick={() => onRetry(job.id)}
+        >
+          Start
+        </Button>
+      )}
+
+      {job.state === 'failed' && onRetry !== undefined && (
+        <Button
+          type="button"
+          variant="secondary"
+          data-slot="job-card-retry"
+          aria-label={`Try converting ${job.file.name} again`}
+          onClick={() => onRetry(job.id)}
+        >
+          Try again
+        </Button>
+      )}
+
+      {onRemove !== undefined && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          data-slot="job-card-remove"
+          /*
+           * `ml-auto` puts it at the far edge, away from the buttons that
+           * keep the file: the row reads left to right as what to do with
+           * this job, and throwing it away is the end of that sentence. The
+           * accent on hover is the only colour on the card, and it arrives
+           * only under the pointer — the icon itself stays the foreground.
+           */
+          className="ml-auto hover:text-brush"
+          aria-label={`Remove ${job.file.name} from the queue`}
+          onClick={() => onRemove(job.id)}
+        >
+          {/*
+           * A bin, not a cross. A cross on a card reads as "close this" —
+           * dismiss the card, keep the file — and what the control does is
+           * throw the file out of the queue. The label already said so; the
+           * icon now says the same thing (issue #311).
+           */}
+          <Trash2Icon aria-hidden="true" data-slot="job-card-remove-icon" />
+        </Button>
+      )}
+    </div>
+  )
+
   return (
     <article
       data-slot="job-card"
@@ -217,6 +303,7 @@ function JobCard({
           engine={job.engine}
           reason={job.reason}
           warnings={job.warnings}
+          actions={job.failure === undefined ? controls : undefined}
         />
       )}
 
@@ -255,71 +342,8 @@ function JobCard({
           </div>
         ))}
 
-      <div className="flex flex-wrap items-center gap-2">
-        {isRunning(job.state) && onCancel !== undefined && (
-          <Button
-            type="button"
-            variant="secondary"
-            data-slot="job-card-cancel"
-            // One card in a list of twenty, and "Cancel" on its own names none
-            // of them.
-            aria-label={`Cancel converting ${job.file.name}`}
-            onClick={() => onCancel(job.id)}
-          >
-            Cancel
-          </Button>
-        )}
-
-        {/*
-         * A job the user stopped is `queued` with nothing coming for it: the
-         * scheduler deliberately does not start it again on its own, so without
-         * this the card reads "Waiting" and offers no control that moves it
-         * (issue #278). A job that is merely waiting its turn carries no mark
-         * and gets no button — it is already going to run.
-         */}
-        {stopped(job) && onRetry !== undefined && (
-          <Button
-            type="button"
-            variant="secondary"
-            data-slot="job-card-start"
-            aria-label={`Start converting ${job.file.name}`}
-            onClick={() => onRetry(job.id)}
-          >
-            Start
-          </Button>
-        )}
-
-        {job.state === 'failed' && onRetry !== undefined && (
-          <Button
-            type="button"
-            variant="secondary"
-            data-slot="job-card-retry"
-            aria-label={`Try converting ${job.file.name} again`}
-            onClick={() => onRetry(job.id)}
-          >
-            Try again
-          </Button>
-        )}
-
-        {onRemove !== undefined && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            data-slot="job-card-remove"
-            aria-label={`Remove ${job.file.name} from the queue`}
-            onClick={() => onRemove(job.id)}
-          >
-            {/*
-             * A bin, not a cross. A cross on a card reads as "close this" —
-             * dismiss the card, keep the file — and what the control does is
-             * throw the file out of the queue. The label already said so; the
-             * icon now says the same thing (issue #311).
-             */}
-            <Trash2Icon aria-hidden="true" data-slot="job-card-remove-icon" />
-          </Button>
-        )}
-      </div>
+      {(job.failure !== undefined || job.engine === undefined || job.reason === undefined) &&
+        controls}
     </article>
   )
 }
