@@ -1,7 +1,12 @@
 import type { Metadata } from 'next'
 
 /**
- * The Search Console ownership tag, when there is one (issue #103).
+ * The search-console ownership tags, when there are any (issues #103, #307).
+ *
+ * Two consoles, two independent tokens: Google reads
+ * `google-site-verification` and Bing reads `msvalidate.01`. Everything below
+ * about why these are environment variables, why the value is parsed, and why
+ * absence is normal applies to both.
  *
  * ## Why this is not in `lib/seo/site.ts`
  *
@@ -60,7 +65,23 @@ function tokenIn(value: string): string | null {
 }
 
 /**
+ * The name Bing reads.
+ *
+ * `Metadata['verification']` has named fields for `google`, `yandex`, `yahoo`
+ * and `me`, and an `other` bag for the rest. Bing is in the bag, under the
+ * attribute it actually renders. That is the escape hatch working as designed;
+ * the alternative is a hand-written `<meta>` in the layout, which is the thing
+ * `lib/seo/metadata.ts` exists to prevent.
+ */
+const BING_TAG = 'msvalidate.01'
+
+/**
  * The `verification` block for the root metadata, or `undefined` for no tag.
+ *
+ * Google and Bing are independent: a site is verified with each console
+ * separately, so either token alone renders alone and both together render
+ * both. Neither set renders no block at all, which is what a preview deployment
+ * and every local build must keep doing (issue #307).
  *
  * The environment is a parameter rather than read from `process.env` inside, so
  * this is testable without mutating global state — the same rule the router
@@ -69,7 +90,13 @@ function tokenIn(value: string): string | null {
 export function siteVerification(
   env: Record<string, string | undefined> = process.env,
 ): Metadata['verification'] | undefined {
-  const token = tokenIn(env.GOOGLE_SITE_VERIFICATION ?? '')
+  const google = tokenIn(env.GOOGLE_SITE_VERIFICATION ?? '')
+  const bing = tokenIn(env.BING_SITE_VERIFICATION ?? '')
 
-  return token === null ? undefined : { google: token }
+  if (google === null && bing === null) return undefined
+
+  return {
+    ...(google === null ? {} : { google }),
+    ...(bing === null ? {} : { other: { [BING_TAG]: bing } }),
+  }
 }

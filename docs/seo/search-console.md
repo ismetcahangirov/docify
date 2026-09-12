@@ -111,9 +111,38 @@ Three reports, in the order they become useful:
   the Lighthouse gate only approximates. `.claude/memory/entries/lighthouse-numbers-come-from-ci.md`
   records why a lab number measured anywhere is not the number a visitor gets.
 
-## Bing and the rest
+## Bing
 
-Not set up, and not an oversight. Bing Webmaster Tools can import a verified
-Search Console property in two clicks, which is the moment to do it — after
-this. `app/robots.ts` already names the AI crawlers explicitly and allows them,
-with the reasoning in that file.
+Verified the same way, with its own token (issue #307).
+
+Bing Webmaster Tools can also import a verified Search Console property in two
+clicks, and that used to be the recommendation here. It is the weaker option on
+a free subdomain: the verification becomes a link between two consoles rather
+than a fact stated in the repository, so it cannot be reviewed in a diff, rolled
+back, or carried to a bought domain the way a literal can. `render.yaml` makes
+the same argument about the proxy.
+
+1. [Bing Webmaster Tools](https://www.bing.com/webmasters) → **Add a site** →
+   `https://docify-convert.vercel.app`.
+2. Choose the **HTML Meta Tag** option. Bing shows
+   `<meta name="msvalidate.01" content="…" />`.
+3. Set it and rebuild — the tag is generated at build time, so it appears in the
+   next deployment and not in the running one:
+
+   ```bash
+   vercel env add BING_SITE_VERIFICATION production
+   vercel --prod
+   ```
+
+4. Confirm it is being served before pressing **Verify**:
+
+   ```bash
+   curl -s https://docify-convert.vercel.app/ | grep msvalidate
+   ```
+
+Then submit `sitemap.xml` here too. Bing's index is what several of the AI
+products cite from, which is why `app/robots.ts` names seventeen AI crawlers
+explicitly and allows them — the reasoning is in that file.
+
+`lib/seo/verification.ts` renders both tags independently: either token alone
+renders alone, and neither set renders no block at all.

@@ -72,3 +72,71 @@ describe('siteVerification', () => {
     expect(siteVerification({ GOOGLE_SITE_VERIFICATION: 'abc"123' })).toBeUndefined()
   })
 })
+
+/*
+ * Bing (issue #307).
+ *
+ * ## Why Bing is not another named field
+ *
+ * `Metadata['verification']` in Next.js has fields for `google`, `yandex`,
+ * `yahoo` and `me`, and an `other` bag for the rest. Bing is in the bag, under
+ * the name it actually renders: `msvalidate.01`. Nothing about that is a
+ * workaround — it is the escape hatch working as designed, and the alternative
+ * would be a hand-written `<meta>` in the layout, which is the one thing
+ * `lib/seo/metadata.ts` exists to stop.
+ *
+ * ## Why it is here rather than imported from the Google property
+ *
+ * Bing Webmaster Tools can inherit a verified Search Console property in two
+ * clicks, and `docs/seo/search-console.md` used to recommend exactly that. It
+ * is the weaker option once the site is on a free subdomain: the verification
+ * is then a link between two consoles rather than a fact stated in the
+ * repository, so it cannot be reviewed, rolled back, or carried to a bought
+ * domain the way a literal can.
+ */
+
+describe('siteVerification, for Bing', () => {
+  it('renders no Bing entry when only Google is set', () => {
+    const meta = siteVerification({ GOOGLE_SITE_VERIFICATION: 'google-token' })
+
+    expect(meta?.google).toBe('google-token')
+    expect(meta?.other).toBeUndefined()
+  })
+
+  it('renders the tag under the name Bing actually reads', () => {
+    const meta = siteVerification({ BING_SITE_VERIFICATION: '54DEDFDF0D0CB5F35DBA7704B575A176' })
+
+    expect(meta?.other).toEqual({ 'msvalidate.01': '54DEDFDF0D0CB5F35DBA7704B575A176' })
+  })
+
+  it('renders both when both are set, because a site is verified with each separately', () => {
+    const meta = siteVerification({
+      GOOGLE_SITE_VERIFICATION: 'google-token',
+      BING_SITE_VERIFICATION: 'bing-token',
+    })
+
+    expect(meta?.google).toBe('google-token')
+    expect(meta?.other).toEqual({ 'msvalidate.01': 'bing-token' })
+  })
+
+  it('renders nothing at all when neither is set', () => {
+    expect(siteVerification({})).toBeUndefined()
+    expect(siteVerification({ BING_SITE_VERIFICATION: '  ' })).toBeUndefined()
+  })
+
+  it('takes the content out of a whole meta tag, the way the Bing console offers it', () => {
+    const meta = siteVerification({
+      BING_SITE_VERIFICATION:
+        '<meta name="msvalidate.01" content="54DEDFDF0D0CB5F35DBA7704B575A176" />',
+    })
+
+    expect(meta?.other).toEqual({ 'msvalidate.01': '54DEDFDF0D0CB5F35DBA7704B575A176' })
+  })
+
+  it('refuses a value that is not a token, rather than rendering markup', () => {
+    expect(
+      siteVerification({ BING_SITE_VERIFICATION: '<script>alert(1)</script>' }),
+    ).toBeUndefined()
+    expect(siteVerification({ BING_SITE_VERIFICATION: 'not a token' })).toBeUndefined()
+  })
+})

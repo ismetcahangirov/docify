@@ -65,12 +65,20 @@ of them set — which is what makes a preview deployment usable without secrets.
 | -------------------------- | ------------------- | ------------ | -------------------------------------------------------------------------------- |
 | `DATABASE_URL`             | Production, Preview | request time | The anonymous counters are skipped; every route still works.                     |
 | `GOOGLE_SITE_VERIFICATION` | Production only     | build time   | No Search Console verification tag is rendered — see docs/seo/search-console.md. |
-| `NEXT_PUBLIC_PROXY_URL`    | Production, Preview | build time   | The converter's "from a URL" control renders nothing — see the Render runbook.   |
+| `NEXT_PUBLIC_PROXY_URL`    | Production          | build time   | The converter's "from a URL" control renders nothing — see the Render runbook.   |
+| `BING_SITE_VERIFICATION`   | Production only     | build time   | No Bing ownership tag is rendered — see docs/seo/search-console.md.              |
 
 ```bash
 vercel env add DATABASE_URL production
 vercel env add NEXT_PUBLIC_PROXY_URL production
 ```
+
+`NEXT_PUBLIC_PROXY_URL` is **Production only**, and that is not an oversight
+either. A preview deployment is served from
+`docify-convert-<hash>-<team>.vercel.app`, which is not in the proxy's
+`ALLOWED_ORIGINS` — setting it there would render a control that answers `403`
+every time. Left unset, the control does not render at all, and a preview is an
+ordinary Docify without URL import.
 
 **The "read at" column is the one that wastes an afternoon.** Only
 `DATABASE_URL` is consulted per request. The other two reach the deployment
