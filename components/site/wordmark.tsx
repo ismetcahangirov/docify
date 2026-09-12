@@ -51,16 +51,14 @@ import { SITE_NAME } from '@/lib/seo/site'
  * below it. The frame is `fg-dark`, the palette's white, and carries no text.
  */
 
-/** The drawing every paint layer is cut to. */
-const BRUSH_IMAGE = 'url(/brand/brush-mark.svg)'
-
 /**
  * What every layer has in common: the letter's own box, and one shape on
  * `::before`.
  *
  * The paint is a flat `--color-brush` fill cut to shape by a *mask* —
- * `public/brand/brush-mark.svg`, a torn outline with bristle drags and splatter
- * that no arrangement of `border-radius` was ever going to imitate. A mask is
+ * `--brush-image`, generated into `app/brand.css` by `pnpm brand:art`: a torn
+ * outline with bristle drags and splatter that no arrangement of
+ * `border-radius` was ever going to imitate. A mask is
  * the one way to use that drawing here: an `<img>`, an inline `<svg>` or a
  * `background-image` would each stop axe resolving what is behind the letter
  * (rule 1 above), while a masked element is a plain box with a background
@@ -103,21 +101,18 @@ const PAINT = [
 const LAYERS = [
   {
     key: 'paint',
-    masked: true,
     className: PAINT,
     inset: '-0.27em -0.41em -0.23em -0.38em',
     rotate: '-4deg',
   },
   {
     key: 'sweep',
-    masked: true,
     className: `${PAINT} before:opacity-45`,
     inset: '-0.17em -0.30em -0.13em -0.27em',
     rotate: '166deg',
   },
   {
     key: 'frame',
-    masked: false,
     className: 'before:border-2 before:border-fg-dark',
     inset: '-0.14em -0.26em -0.11em -0.27em',
     rotate: '-4deg',
@@ -148,9 +143,6 @@ export function Wordmark({ className }: { className?: string }) {
               {
                 '--brush-inset': layer.inset,
                 '--brush-rotate': layer.rotate,
-                // The frame is a border, not paint: handing it the drawing
-                // would say it were masked when nothing reads it.
-                ...(layer.masked ? { '--brush-image': BRUSH_IMAGE } : {}),
               } as React.CSSProperties
             }
           />

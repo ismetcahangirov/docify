@@ -48,22 +48,23 @@ describe('Wordmark', () => {
     expect(container.innerHTML).not.toMatch(/gradient/i)
   })
 
-  it('cuts the paint to a mask that is actually in the repository', () => {
+  it('cuts the paint to a mask the stylesheet actually declares', () => {
     const { container } = render(<Wordmark />)
     const paint = container.querySelector('[data-layer="paint"]')
-    const url = paint?.getAttribute('style')?.match(/url\(([^)]+)\)/)?.[1]
 
-    expect(paint?.className).toMatch(/mask-image/)
+    expect(paint?.className).toMatch(/mask-image:var\(--brush-image\)/)
     // Safari still needs the prefixed property, and a mask that only half
     // applies is a plain pink rectangle behind the letter.
-    expect(paint?.className).toMatch(/-webkit-mask-image/)
-    expect(url).toBeDefined()
+    expect(paint?.className).toMatch(/-webkit-mask-image:var\(--brush-image\)/)
 
     const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-    const file = join(repoRoot, 'public', url as string)
+    const brand = readFileSync(join(repoRoot, 'app', 'brand.css'), 'utf8')
 
-    expect(existsSync(file), `${url} is referenced but is not in public/`).toBe(true)
-    expect(readFileSync(file, 'utf8')).toMatch(/<svg/)
+    // Inlined rather than fetched: the header carries the mark on every page,
+    // and a request for it would sit on the critical path.
+    expect(brand).toMatch(/--brush-image:\s*url\(['"]data:image\/svg\+xml,/)
+    expect(brand).toMatch(/%3Csvg/)
+    expect(existsSync(join(repoRoot, 'public', 'brand'))).toBe(false)
   })
 
   it('hides the brush from assistive technology and from pointer events', () => {
