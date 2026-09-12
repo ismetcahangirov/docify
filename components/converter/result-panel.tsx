@@ -96,6 +96,16 @@ function ResultPanel({ className, variant, jobs, to, onDownloadAll, ...props }: 
   const results = React.useMemo(() => finishedResults(jobs, to), [jobs, to])
   const urls = useObjectUrls(results)
   const [packing, setPacking] = React.useState(false)
+  /**
+   * Why the archive could not be built, or `null`.
+   *
+   * The individual links above are a real fallback, which is what makes this a
+   * message rather than a failure: the user has lost the convenience and none
+   * of the files. The sentence has to say that, or a button that goes back to
+   * reading "Download all N as ZIP" after doing nothing looks like a button
+   * that does nothing (CLAUDE.md §2.5).
+   */
+  const [failure, setFailure] = React.useState<string | null>(null)
   const muted = mutedVariants({ variant })
 
   const downloadAll = React.useCallback(() => {
@@ -106,11 +116,22 @@ function ResultPanel({ className, variant, jobs, to, onDownloadAll, ...props }: 
     }
 
     setPacking(true)
+    setFailure(null)
     void zipResults(results)
       .then((archive) => saveBlob(archive, `docify-${to}.zip`))
-      // The button re-enables either way. A failed archive leaves every
-      // individual link above it working, which is the fallback the user
-      // already has in front of them.
+      // Caught, not merely finalised. `.finally()` runs its callback on a
+      // rejection but does not handle it — the promise it returns rejects too,
+      // and `void` discards that — so the old shape re-enabled the button,
+      // said nothing, and left an unhandled rejection behind. Packing a large
+      // batch is exactly where that happens: `blob.arrayBuffer()` and fflate
+      // can both run out of memory.
+      .catch(() =>
+        setFailure(
+          'The archive could not be built — the batch may be too large for this device to pack ' +
+            'in one go. Every file above is still there to download on its own.',
+        ),
+      )
+      // The button re-enables either way, so a second attempt is possible.
       .finally(() => setPacking(false))
   }, [onDownloadAll, results, to])
 
@@ -179,15 +200,31 @@ function ResultPanel({ className, variant, jobs, to, onDownloadAll, ...props }: 
        * adds a step and a format the user then has to unpack.
        */}
       {results.length > 1 && (
-        <div>
-          <Button
-            type="button"
-            data-slot="result-panel-download-all"
-            disabled={packing}
-            onClick={downloadAll}
+        <div className="flex min-w-0 flex-col gap-3">
+          <div>
+            <Button
+              type="button"
+              data-slot="result-panel-download-all"
+              disabled={packing}
+              onClick={downloadAll}
+            >
+              {packing ? 'Packing the ZIP' : `Download all ${results.length} as ZIP`}
+            </Button>
+          </div>
+
+          {/*
+           * Announced rather than merely shown, the same way `./url-import`
+           * reports a failed fetch: the button the user just pressed is the
+           * only other thing that changed, and it changes back.
+           */}
+          <p
+            data-slot="result-panel-failure"
+            role="status"
+            aria-live="polite"
+            className={cn('text-body text-err', failure === null && 'sr-only')}
           >
-            {packing ? 'Packing the ZIP' : `Download all ${results.length} as ZIP`}
-          </Button>
+            {failure}
+          </p>
         </div>
       )}
     </section>

@@ -30,6 +30,24 @@ const answer = (body: BodyInit | null, init: ResponseInit = {}) =>
 const refusal = (status: number, headers: Record<string, string> = {}) =>
   vi.fn(async () => new Response(null, { status, headers }))
 
+/** What an `AbortError` looks like where `DOMException` may not be constructible. */
+const abortError = () =>
+  Object.assign(new Error('The import was cancelled.'), { name: 'AbortError' })
+
+/**
+ * A body the proxy has already answered `200` for and then cannot finish.
+ *
+ * The shape `limitStream` produces at the ceiling, and the shape a dropped
+ * connection produces too: headers through, some bytes through, then an error.
+ */
+const erroringBody = (reason: Error = new TypeError('network error')) =>
+  new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array([1, 2, 3]))
+      controller.error(reason)
+    },
+  })
+
 beforeEach(() => {
   process.env.NEXT_PUBLIC_PROXY_URL = PROXY
 })
@@ -210,6 +228,46 @@ describe('importFromUrl', () => {
     })
 
     // Matched by name, never by type — see lib/abort.ts.
+    await expect(
+      importFromUrl('https://example.com/x', { fetch, signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  /*
+   * The ceiling the proxy actually enforces.
+   *
+   * `services/url-proxy/src/limit-stream.ts` calls `content-length` "the polite
+   * half": most upstreams answer chunked, so the 413 above never fires and the
+   * stream is errored instead — after `200` and its headers have gone out,
+   * which is HTTP and not a shortcut. The explanation therefore has to be
+   * written here, or the visitor reads whatever the platform threw.
+   */
+  it('explains a body that stops arriving part way through', async () => {
+    const fetch = vi.fn(async () => new Response(erroringBody(), { status: 200 }))
+
+    await expect(importFromUrl('https://example.com/big.heic', { fetch })).rejects.toThrow(
+      /100 MB|did not finish|drop it in/i,
+    )
+  })
+
+  it('does not repeat the platform’s own words for a broken body', async () => {
+    const fetch = vi.fn(async () => new Response(erroringBody(), { status: 200 }))
+
+    // CLAUDE.md §2.5: a rejection names something the user can act on, and
+    // "Failed to fetch" names nothing.
+    await expect(importFromUrl('https://example.com/big.heic', { fetch })).rejects.not.toThrow(
+      /failed to fetch|network error/i,
+    )
+  })
+
+  it('lets a cancellation during the body read through unchanged', async () => {
+    const controller = new AbortController()
+    const fetch = vi.fn(async () => {
+      controller.abort()
+
+      return new Response(erroringBody(abortError()), { status: 200 })
+    })
+
     await expect(
       importFromUrl('https://example.com/x', { fetch, signal: controller.signal }),
     ).rejects.toMatchObject({ name: 'AbortError' })
