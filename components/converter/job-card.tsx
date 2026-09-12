@@ -162,7 +162,7 @@ function JobCard({
    * before the question.
    */
   const controls = (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
       {isRunning(job.state) && onCancel !== undefined && (
         <Button
           type="button"
@@ -297,16 +297,6 @@ function JobCard({
         />
       )}
 
-      {job.engine !== undefined && job.reason !== undefined && (
-        <RouteBadge
-          variant={variant}
-          engine={job.engine}
-          reason={job.reason}
-          warnings={job.warnings}
-          actions={job.failure === undefined ? controls : undefined}
-        />
-      )}
-
       {job.failure !== undefined &&
         (job.failure.code !== undefined ? (
           <Rejection
@@ -341,9 +331,34 @@ function JobCard({
             )}
           </div>
         ))}
+      {/*
+       * The routing note and the controls share one row, and the row is
+       * rendered whatever the job is doing (issue #311).
+       *
+       * The note is a sentence with a column of empty card to its right, which
+       * is where the control that discards the file belongs — a row of its own
+       * underneath spends a whole line of height saying nothing.
+       *
+       * It is one row rather than two placements because a job crosses the
+       * boundary on its own: `engine` and `reason` arrive with the `routed`
+       * event, so every job is born without them. Moving the controls between
+       * two parents at that moment unmounts the button the user may have
+       * tabbed to, and focus falls back to the body while they are reading.
+       * The badge appears and disappears around them instead.
+       */}
+      <div className="flex min-w-0 flex-wrap items-end gap-x-4 gap-y-3">
+        {job.engine !== undefined && job.reason !== undefined && (
+          <RouteBadge
+            className="min-w-0"
+            variant={variant}
+            engine={job.engine}
+            reason={job.reason}
+            warnings={job.warnings}
+          />
+        )}
 
-      {(job.failure !== undefined || job.engine === undefined || job.reason === undefined) &&
-        controls}
+        {controls}
+      </div>
     </article>
   )
 }

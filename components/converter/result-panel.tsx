@@ -56,6 +56,20 @@ const panelVariants = cva('flex min-w-0 flex-col gap-6 rounded-lg border p-6 fon
   defaultVariants: { variant: 'dark' },
 })
 
+/**
+ * What the accent is allowed to do, per tone.
+ *
+ * `--color-brush` measures 5:1 on `ink-2` and 3.3:1 on `paper`. The first
+ * clears AA for the 15px row label; the second does not, and the palette note
+ * in app/globals.css says so — body copy never takes the accent on a light
+ * surface. The underline is the affordance in both, so the light panel loses a
+ * colour rather than a signal.
+ */
+const accentVariants = cva('', {
+  variants: { variant: { dark: 'group-hover:text-brush', light: '' } },
+  defaultVariants: { variant: 'dark' },
+})
+
 const mutedVariants = cva('', {
   variants: { variant: { dark: 'text-fg-dark-mut', light: 'text-fg-light-mut' } },
   defaultVariants: { variant: 'dark' },
@@ -171,8 +185,10 @@ function ResultPanel({ className, variant, jobs, to, onDownloadAll, ...props }: 
                * horizontal scroll the responsive contract forbids.
                */}
               {url === undefined ? (
-                <span data-slot="result-panel-name" className={ROW}>
-                  <span className="min-w-0 text-body break-all">{result.name}</span>
+                <span className={ROW}>
+                  <span data-slot="result-panel-name" className="min-w-0 text-body break-all">
+                    {result.name}
+                  </span>
                   <span
                     data-slot="result-panel-size"
                     className={cn('shrink-0 font-mono text-tech', muted)}
@@ -198,7 +214,10 @@ function ResultPanel({ className, variant, jobs, to, onDownloadAll, ...props }: 
                     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current',
                   )}
                 >
-                  <span className="min-w-0 text-body break-all underline underline-offset-4">
+                  <span
+                    data-slot="result-panel-name"
+                    className="min-w-0 text-body break-all underline underline-offset-4"
+                  >
                     {result.name}
                   </span>
 
@@ -219,7 +238,10 @@ function ResultPanel({ className, variant, jobs, to, onDownloadAll, ...props }: 
                      */}
                     <span
                       data-slot="result-panel-download-label"
-                      className="text-body underline underline-offset-4 group-hover:text-brush"
+                      className={cn(
+                        'text-body underline underline-offset-4',
+                        accentVariants({ variant }),
+                      )}
                     >
                       Download
                     </span>

@@ -370,6 +370,7 @@ describe('the settings panel (issue #265)', () => {
  */
 describe('dropping a file brings the queue into view', () => {
   const scrollIntoView = vi.fn()
+  const realScrollIntoView = Element.prototype.scrollIntoView
 
   beforeEach(() => {
     // jsdom implements no scrolling at all; `scrollIntoView` is not on the
@@ -384,7 +385,12 @@ describe('dropping a file brings the queue into view', () => {
   })
 
   afterEach(() => {
+    // Restored, not merely cleared: the spy is on a prototype and the fake
+    // `matchMedia` is a global, so a describe appended after this one would
+    // otherwise inherit both.
     scrollIntoView.mockClear()
+    Element.prototype.scrollIntoView = realScrollIntoView
+    vi.unstubAllGlobals()
   })
 
   it('lands on the settings and the queue, not past them onto the card', async () => {
@@ -411,7 +417,7 @@ describe('dropping a file brings the queue into view', () => {
     )
   })
 
-  it('does not move the page where motion is refused', async () => {
+  it('jumps rather than glides where motion is refused', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: query.includes('prefers-reduced-motion'),
       media: query,
@@ -425,6 +431,31 @@ describe('dropping a file brings the queue into view', () => {
     await waitFor(() =>
       expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' }),
     )
+  })
+
+  it('scrolls again when a second file arrives', async () => {
+    render(<Converter pair={pair} />)
+    drop(['one.heic'])
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1))
+
+    drop(['two.heic'])
+
+    // The mechanism is a count the effect compares against, so an effect that
+    // only ever ran on mount would pass every other test in this block.
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(2))
+  })
+
+  it('stays where it is when a file is taken out of the queue', async () => {
+    render(<Converter pair={pair} />)
+    drop(['one.heic'])
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByRole('button', { name: /remove one.heic from the queue/i }))
+
+    await waitFor(() => expect(screen.queryByText('one.heic')).not.toBeInTheDocument())
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
   })
 
   it('scrolls when a file arrives, not on every render of the queue', async () => {

@@ -75,16 +75,6 @@ export type RouteBadgeProps = React.ComponentProps<'div'> &
     loadCost?: number
     /** What the user should know about a job that is going to run anyway. */
     warnings?: readonly Warning[]
-    /**
-     * Controls to sit at the end of the badge's line (issue #311).
-     *
-     * The note beside them is a sentence with a column of empty card to its
-     * right, and a control on a row of its own underneath spends the height of
-     * a whole line saying nothing. The badge owns the placement because it owns
-     * the block: what the caller passes is put at the end of it, bottom-aligned
-     * with the last line of the note.
-     */
-    actions?: React.ReactNode
   }
 
 function RouteBadge({
@@ -94,7 +84,6 @@ function RouteBadge({
   reason,
   loadCost,
   warnings,
-  actions,
   ...props
 }: RouteBadgeProps) {
   const listed = warnings ?? []
@@ -105,41 +94,37 @@ function RouteBadge({
       // The id rather than the label, because this is what a test, a bug report
       // or a future analytics event needs to be stable.
       data-engine={engine}
-      className={cn('flex min-w-0 flex-wrap items-end justify-between gap-x-4 gap-y-3', className)}
+      className={cn('flex min-w-0 flex-col items-start gap-3', className)}
       {...props}
     >
-      <div className="flex min-w-0 flex-1 flex-col items-start gap-3">
-        <span data-slot="route-badge-pill" className={cn(badgeVariants({ variant }))}>
-          {/* Decoration: the accessible name is the text beside it. */}
-          <CpuIcon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.5} />
-          <span data-slot="route-badge-reason">{reason}</span>
-          <span aria-hidden="true">·</span>
-          <span data-slot="route-badge-cost">{downloadLabel(loadCost)}</span>
-        </span>
+      <span data-slot="route-badge-pill" className={cn(badgeVariants({ variant }))}>
+        {/* Decoration: the accessible name is the text beside it. */}
+        <CpuIcon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.5} />
+        <span data-slot="route-badge-reason">{reason}</span>
+        <span aria-hidden="true">·</span>
+        <span data-slot="route-badge-cost">{downloadLabel(loadCost)}</span>
+      </span>
 
-        {listed.length > 0 && (
-          <ul data-slot="route-badge-warnings" className={cn(listVariants({ variant }))}>
-            {listed.map((warning) => (
-              <li key={warning.code} data-warning={warning.code} className="flex min-w-0 gap-2">
-                {/*
-                 * `--color-warn` is a functional signal and not a brand colour,
-                 * which is the only use CLAUDE.md §3 allows it. The icon carries
-                 * no meaning the sentence does not, so it is hidden rather than
-                 * labelled twice.
-                 */}
-                <TriangleAlertIcon
-                  aria-hidden="true"
-                  className="mt-1 size-4 shrink-0 text-warn"
-                  strokeWidth={1.5}
-                />
-                <span className="min-w-0 break-words">{warning.message}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {actions !== undefined && <div className="flex shrink-0 items-center">{actions}</div>}
+      {listed.length > 0 && (
+        <ul data-slot="route-badge-warnings" className={cn(listVariants({ variant }))}>
+          {listed.map((warning) => (
+            <li key={warning.code} data-warning={warning.code} className="flex min-w-0 gap-2">
+              {/*
+               * `--color-warn` is a functional signal and not a brand colour,
+               * which is the only use CLAUDE.md §3 allows it. The icon carries
+               * no meaning the sentence does not, so it is hidden rather than
+               * labelled twice.
+               */}
+              <TriangleAlertIcon
+                aria-hidden="true"
+                className="mt-1 size-4 shrink-0 text-warn"
+                strokeWidth={1.5}
+              />
+              <span className="min-w-0 break-words">{warning.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

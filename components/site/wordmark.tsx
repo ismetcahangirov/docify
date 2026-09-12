@@ -103,18 +103,21 @@ const PAINT = [
 const LAYERS = [
   {
     key: 'paint',
+    masked: true,
     className: PAINT,
     inset: '-0.27em -0.41em -0.23em -0.38em',
     rotate: '-4deg',
   },
   {
     key: 'sweep',
+    masked: true,
     className: `${PAINT} before:opacity-45`,
     inset: '-0.17em -0.30em -0.13em -0.27em',
     rotate: '166deg',
   },
   {
     key: 'frame',
+    masked: false,
     className: 'before:border-2 before:border-fg-dark',
     inset: '-0.14em -0.26em -0.11em -0.27em',
     rotate: '-4deg',
@@ -145,7 +148,9 @@ export function Wordmark({ className }: { className?: string }) {
               {
                 '--brush-inset': layer.inset,
                 '--brush-rotate': layer.rotate,
-                '--brush-image': BRUSH_IMAGE,
+                // The frame is a border, not paint: handing it the drawing
+                // would say it were masked when nothing reads it.
+                ...(layer.masked ? { '--brush-image': BRUSH_IMAGE } : {}),
               } as React.CSSProperties
             }
           />

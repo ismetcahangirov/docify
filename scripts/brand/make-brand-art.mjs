@@ -137,10 +137,19 @@ function brushPaths(rand) {
   return parts
 }
 
-/** One `--color-*` token, read from the `@theme` block of app/globals.css. */
+/** app/globals.css with its comments blanked, read once. */
+const GLOBALS = readFileSync('app/globals.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+
+/**
+ * One `--color-*` token, read from the `@theme` block of app/globals.css.
+ *
+ * The pattern is built from a string rather than a template literal on purpose:
+ * `\s` inside a template literal is just the letter `s`, so the obvious
+ * spelling compiles to `--color-inks*:s*(...)` and matches only while nothing
+ * puts a space before the colon.
+ */
 function token(name) {
-  const css = readFileSync('app/globals.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
-  const match = css.match(new RegExp(`--color-${name}\s*:\s*([^;]+);`))
+  const match = GLOBALS.match(new RegExp('--color-' + name + '\\s*:\\s*([^;]+);'))
   if (!match) throw new Error(`app/globals.css declares no --color-${name}`)
   return match[1].trim()
 }

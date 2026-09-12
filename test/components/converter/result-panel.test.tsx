@@ -93,6 +93,17 @@ describe('ResultPanel — individual downloads', () => {
     expect(row).toHaveAccessibleName(/IMG_1\.jpg/)
   })
 
+  it('drops the accent on a light panel, where it would be under AA for 15px text', () => {
+    render(<ResultPanel jobs={[done('a', 'IMG_1.HEIC')]} to="jpg" variant="light" />)
+
+    const label = links()[0].querySelector('[data-slot="result-panel-download-label"]')
+
+    // 3.3:1 on `paper`. The underline is the affordance in both tones, so the
+    // light panel loses a colour rather than a signal.
+    expect(label).not.toHaveClass('group-hover:text-brush')
+    expect(label).toHaveClass('underline')
+  })
+
   it('gives every finished file its own download link, named for the result', () => {
     render(<ResultPanel jobs={[done('a', 'IMG_1.HEIC'), done('b', 'IMG_2.HEIC')]} to="jpg" />)
 

@@ -91,6 +91,10 @@ describe('Wordmark', () => {
     const initial = container.querySelector('[data-slot="wordmark-initial"]')
 
     expect(initial).toHaveClass('relative', 'z-10')
+    // `isolate` is what keeps those two numbers local to the mark: without a
+    // stacking context of its own they are compared against every other
+    // positioned element on the page.
+    expect(initial?.parentElement).toHaveClass('isolate')
   })
 
   it('grows from md up and stays on the type scale', () => {

@@ -318,7 +318,10 @@ function Converter({ pair }: ConverterProps) {
       <div
         ref={workspace}
         data-slot="converter-workspace"
-        className="flex min-w-0 scroll-mt-4 flex-col gap-6"
+        // `empty:hidden` because a pair with no settings and no queue would
+        // otherwise be a zero-height flex item still spending one `gap-6` — a
+        // band of nothing between the URL import and the results.
+        className="flex min-w-0 scroll-mt-4 flex-col gap-6 empty:hidden"
       >
         {/*
          * Above the queue, because it is a decision made *before* a file is
