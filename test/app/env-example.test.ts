@@ -108,6 +108,7 @@ describe('.env.example', () => {
 
   it('finds the variables at all, so an empty pass cannot look like a green one', () => {
     expect([...namesRead().keys()].sort()).toEqual([
+      'BING_SITE_VERIFICATION',
       'DATABASE_URL',
       'GOOGLE_SITE_VERIFICATION',
       'NEXT_PUBLIC_PROXY_URL',
