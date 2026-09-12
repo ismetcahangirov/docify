@@ -181,6 +181,7 @@ Neither is a finding of this audit; both are issues of their own.
 - **#103 — Google Search Console.** The sitemap is generated and reachable, and
   nothing is submitted until there is a property to submit it to.
 - **#99 — the Vercel deployment.** Every canonical URL on the site is built from
-  the `https://docify.app` literal in `lib/seo/site.ts`. Until that origin
-  serves the site, the canonical tags are correct about an address that does not
-  answer.
+  the `https://docify-convert.vercel.app` literal in `lib/seo/site.ts` (issue
+  #303 settled which address that is). Until a deployment actually answers on
+  that origin, the canonical tags are correct about an address nothing serves —
+  which makes naming the Vercel project the step this audit is waiting on.

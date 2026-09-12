@@ -47,7 +47,7 @@ Spend real time writing the copy when adding a pair. Twenty unique pages beat 12
 // lib/seo/metadata.ts
 title:       `${FROM} to ${TO} Converter — Free, In Your Browser | Docify`   // ≤ 60 chars
 description: pair-specific, 140–155 chars, includes "no upload" and "free"
-canonical:   `https://docify.app/convert/${slug}`                            // MANDATORY
+canonical:   `https://docify-convert.vercel.app/convert/${slug}`                            // MANDATORY
 openGraph:   type: 'website', dynamic OG image
 ```
 

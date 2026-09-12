@@ -59,7 +59,7 @@ services:
       # bandwidth bill and somebody else's abuse report. This is the one value
       # that has to be right for the service to do anything at all.
       - key: ALLOWED_ORIGINS
-        value: https://docify.app
+        value: https://docify-convert.vercel.app
       # 100 MiB. The same number as the code's default; stated here so it is
       # visible where the service is operated rather than only where it is
       # written.
