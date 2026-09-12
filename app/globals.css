@@ -33,11 +33,18 @@
   /*
    * --- Accent ---
    *
-   * The one hue in an otherwise monochrome palette (issue #311), and it has
-   * exactly one use: the brush behind the wordmark's initial in
-   * components/site/wordmark.tsx. It is not a brand colour and nothing else may
-   * reach for it — a second use is a palette change, not a styling decision.
-   * Near-black on it is 5.5:1, which is what lets the letter stay unchanged.
+   * The one hue in an otherwise monochrome palette (issue #311). It marks the
+   * brand and the one action the page exists to offer, and nothing else:
+   *
+   *   - the brush behind the wordmark's initial, and the site icon built from
+   *     the same drawing,
+   *   - the word "Popular" in the home page's section heading,
+   *   - the download icon at the end of every finished result.
+   *
+   * It is not a status colour and never carries meaning on its own — every
+   * place it appears, the words say the same thing. Near-black on it is 5.5:1
+   * and it is 5:1 on `ink-2`; on `paper` it is 3.3:1, which clears AA for
+   * large text and not for body copy, so a paragraph never takes it.
    */
   --color-brush: #ff2e6f;
 

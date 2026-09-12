@@ -162,7 +162,8 @@ describe('dropping files', () => {
     await waitFor(() => expect(resolveResult).toBeDefined())
     settle().resolve(converted)
 
-    const link = await screen.findByRole('link', { name: 'holiday.jpg' })
+    // The row is the link, so its name is the file and the size beside it.
+    const link = await screen.findByRole('link', { name: /^holiday\.jpg/ })
     expect(link).toHaveAttribute('download', 'holiday.jpg')
   })
 
@@ -202,7 +203,7 @@ describe('trying again', () => {
     expect(startConversion).toHaveBeenCalledTimes(2)
 
     settle().resolve(converted)
-    await screen.findByRole('link', { name: 'slow.jpg' })
+    await screen.findByRole('link', { name: /^slow\.jpg/ })
 
     await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(3))
   })
@@ -275,7 +276,7 @@ describe('starting a cancelled job again (issue #278)', () => {
     expect(startConversion).toHaveBeenCalledTimes(2)
 
     settle().resolve(converted)
-    await screen.findByRole('link', { name: 'next.jpg' })
+    await screen.findByRole('link', { name: /^next\.jpg/ })
 
     await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(3))
     expect((startConversion as ReturnType<typeof vi.fn>).mock.calls[2][0].files[0].name).toBe(
@@ -356,5 +357,87 @@ describe('the settings panel (issue #265)', () => {
     const { container } = render(<Converter pair={pairBySlug('jpg-to-pdf')!} />)
 
     expect(container.querySelector('[data-slot="settings-panel"]')).toBeNull()
+  })
+})
+
+/*
+ * Where the page goes when a file arrives (issue #311).
+ *
+ * The dropzone is at the top of a long page and the card that names the file is
+ * below the fold on a phone: dropping a file looked, from the viewport, like
+ * nothing happening. So the queue is brought into view — once per arrival, and
+ * without motion where motion is refused.
+ */
+describe('dropping a file brings the queue into view', () => {
+  const scrollIntoView = vi.fn()
+
+  beforeEach(() => {
+    // jsdom implements no scrolling at all; `scrollIntoView` is not on the
+    // prototype, so it has to be put there before anything can spy on it.
+    Element.prototype.scrollIntoView = scrollIntoView
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
+  })
+
+  afterEach(() => {
+    scrollIntoView.mockClear()
+  })
+
+  it('lands on the settings and the queue, not past them onto the card', async () => {
+    render(<Converter pair={pair} />)
+    drop(['holiday.heic'])
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled())
+
+    const target = scrollIntoView.mock.instances[0] as HTMLElement
+
+    expect(target).toHaveAttribute('data-slot', 'converter-workspace')
+    // The panel's own label is the first thing inside it, so it is what sits
+    // at the top of the viewport once the scroll settles.
+    expect(target.firstElementChild).toHaveAttribute('data-slot', 'settings-panel')
+    expect(within(target).getByText('holiday.heic')).toBeInTheDocument()
+  })
+
+  it('scrolls smoothly, unless the visitor asked for no motion', async () => {
+    render(<Converter pair={pair} />)
+    drop(['one.heic'])
+
+    await waitFor(() =>
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' }),
+    )
+  })
+
+  it('does not move the page where motion is refused', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('prefers-reduced-motion'),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
+
+    render(<Converter pair={pair} />)
+    drop(['one.heic'])
+
+    await waitFor(() =>
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' }),
+    )
+  })
+
+  it('scrolls when a file arrives, not on every render of the queue', async () => {
+    render(<Converter pair={pair} />)
+    drop(['one.heic'])
+
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1))
+
+    // The job runs, progresses and finishes: the queue re-renders throughout
+    // and the page must stay where the reader left it.
+    settle().resolve(converted)
+    await waitFor(() => expect(screen.getByText(/^Done$/i)).toBeInTheDocument())
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
   })
 })

@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
-import { CheckIcon, XIcon } from 'lucide-react'
+import { CheckIcon, Trash2Icon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -310,7 +310,13 @@ function JobCard({
             aria-label={`Remove ${job.file.name} from the queue`}
             onClick={() => onRemove(job.id)}
           >
-            <XIcon aria-hidden="true" />
+            {/*
+             * A bin, not a cross. A cross on a card reads as "close this" —
+             * dismiss the card, keep the file — and what the control does is
+             * throw the file out of the queue. The label already said so; the
+             * icon now says the same thing (issue #311).
+             */}
+            <Trash2Icon aria-hidden="true" data-slot="job-card-remove-icon" />
           </Button>
         )}
       </div>

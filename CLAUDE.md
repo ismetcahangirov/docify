@@ -77,7 +77,7 @@ Palette quick reference:
 shell #E9E8E4 · paper #F7F7F5 · ink #0D0D0D · ink-2 #171717 · ink-3 #1F1F1F
 line-light #DCDBD6 · line-dark #262626
 fg-light #0A0A0A / muted #6B6A66 · fg-dark #FAFAF9 / muted #9B9A96
-accent: brush #FF2E6F   (the wordmark's brush only — nothing else may use it)
+accent: brush #FF2E6F   (brand + the download action only — never status, never body copy)
 status: ok #3F7D4E · warn #B4762A · err #A83A2E   (functional only, not brand colours)
 ```
 

@@ -285,6 +285,18 @@ describe('JobCard — the buttons', () => {
     }
   })
 
+  it('asks with a bin rather than a cross, because it discards the file', () => {
+    render(<JobCard job={job()} onRemove={() => {}} />)
+
+    const button = screen.getByRole('button', { name: /remove holiday clip.mov/i })
+    const icon = button.querySelector('[data-slot="job-card-remove-icon"]')
+
+    // A cross is "close this", which is what the control next to it used to
+    // look like it meant. The file is not closed, it is thrown away.
+    expect(icon).not.toBeNull()
+    expect(icon?.getAttribute('class')).toMatch(/trash/)
+  })
+
   it('removes the file from the queue', () => {
     const onRemove = vi.fn()
     render(<JobCard job={job()} onRemove={onRemove} now={START} />)

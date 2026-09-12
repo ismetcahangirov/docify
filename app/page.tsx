@@ -231,8 +231,19 @@ export default function HomePage() {
         className="flex min-w-0 flex-col gap-8"
       >
         <div className="flex min-w-0 flex-col gap-2">
+          {/*
+           * One word in the accent, inside the heading rather than beside it:
+           * the colour is decoration and the heading has to read the same
+           * without it. `--color-brush` on `paper` is 3.3:1, which clears AA
+           * for large text — this heading is 28px of Archivo 700 at its
+           * smallest — and would not clear the 4.5:1 body text needs, which is
+           * why no paragraph gets the same treatment.
+           */}
           <h2 id="popular-heading" className="text-h2 uppercase">
-            Popular converters
+            <span data-slot="accent" className="text-brush">
+              Popular
+            </span>{' '}
+            converters
           </h2>
           <p className="max-w-2xl text-body text-fg-light-mut">
             The conversions people arrive with most: a photo the laptop will not open, a video the

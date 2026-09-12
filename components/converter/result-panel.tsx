@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
+import { DownloadIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { zipResults } from '@/lib/queue/batch-zip'
@@ -61,16 +62,19 @@ const mutedVariants = cva('', {
   defaultVariants: { variant: 'dark' },
 })
 
-const rowVariants = cva(
-  [
-    'flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-1',
-    'border-t py-3 first:border-t-0 first:pt-0',
-  ].join(' '),
-  {
-    variants: { variant: { dark: 'border-line-dark', light: 'border-line-light' } },
-    defaultVariants: { variant: 'dark' },
-  },
-)
+/**
+ * The inside of a row: name at one edge, size and icon at the other.
+ *
+ * `min-h-11` because the row is a link now, and the responsive contract puts
+ * the floor for anything you can tap at 44px. The list's own padding used to
+ * make the row that tall around a target that was not.
+ */
+const ROW = 'flex min-h-11 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1'
+
+const rowVariants = cva(['flex min-w-0', 'border-t py-1 first:border-t-0'].join(' '), {
+  variants: { variant: { dark: 'border-line-dark', light: 'border-line-light' } },
+  defaultVariants: { variant: 'dark' },
+})
 
 export type ResultPanelProps = Omit<React.ComponentProps<'section'>, 'children'> &
   VariantProps<typeof panelVariants> & {
@@ -168,28 +172,59 @@ function ResultPanel({ className, variant, jobs, to, onDownloadAll, ...props }: 
                * horizontal scroll the responsive contract forbids.
                */}
               {url === undefined ? (
-                <span data-slot="result-panel-name" className="min-w-0 text-body break-all">
-                  {result.name}
+                <span data-slot="result-panel-name" className={ROW}>
+                  <span className="min-w-0 text-body break-all">{result.name}</span>
+                  <span
+                    data-slot="result-panel-size"
+                    className={cn('shrink-0 font-mono text-tech', muted)}
+                  >
+                    {formatBytes(result.bytes)}
+                  </span>
                 </span>
               ) : (
+                /*
+                 * The whole row is the link (issue #311). The name alone was a
+                 * 15px target in a 44px row, and the size beside it pointed
+                 * nowhere; now everything between the two edges downloads the
+                 * file, which is also what makes room for the icon to sit at
+                 * the end rather than trailing the name.
+                 */
                 <a
                   data-slot="result-panel-download"
                   href={url}
                   download={result.name}
                   className={cn(
-                    'min-w-0 text-body break-all underline underline-offset-4',
+                    ROW,
                     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current',
                   )}
                 >
-                  {result.name}
+                  <span className="min-w-0 text-body break-all underline underline-offset-4">
+                    {result.name}
+                  </span>
+
+                  <span className="flex shrink-0 items-center gap-3">
+                    <span
+                      data-slot="result-panel-size"
+                      className={cn('font-mono text-tech', muted)}
+                    >
+                      {formatBytes(result.bytes)}
+                    </span>
+                    {/*
+                     * The accent is the only colour in the panel and it is
+                     * decoration — the row says what it is in words, and the
+                     * icon is `aria-hidden` so the link keeps the file's name
+                     * as its whole accessible name. `--color-brush` on `ink-2`
+                     * measures 5:1, past the 3:1 a meaningful graphic owes.
+                     */}
+                    <DownloadIcon
+                      aria-hidden="true"
+                      data-slot="result-panel-download-icon"
+                      className="size-4 shrink-0 text-brush"
+                      strokeWidth={2}
+                    />
+                  </span>
                 </a>
               )}
-              <span
-                data-slot="result-panel-size"
-                className={cn('shrink-0 font-mono text-tech', muted)}
-              >
-                {formatBytes(result.bytes)}
-              </span>
             </li>
           )
         })}

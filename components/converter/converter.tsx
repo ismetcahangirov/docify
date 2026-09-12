@@ -255,6 +255,42 @@ function Converter({ pair }: ConverterProps) {
     setAlternatives(alternativeTargets(task, [input], probeCapabilities()))
   }, [refusedBytes, refusedPixels, task])
 
+  /*
+   * Where the page goes when a file arrives (issue #311).
+   *
+   * The dropzone sits at the top of a page that carries the whole SEO surface
+   * below it, so on a phone the card naming the dropped file is under the fold:
+   * the drop appeared to do nothing. Bringing the work into view is the answer
+   * a file manager would give.
+   *
+   * What is brought into view is the *workspace* — the settings and the queue
+   * together — rather than the queue alone. Landing on the queue scrolls past
+   * the one panel holding a choice that is still open, and the choice belongs
+   * to the file that has just arrived.
+   *
+   * It fires on *arrival*, not on change. The queue re-renders on every
+   * progress tick, and a scroll on each of those would drag the page away from
+   * whatever the reader had scrolled to — so the effect watches the count and
+   * acts only when it grows. Removing a file therefore moves nothing either.
+   *
+   * `prefers-reduced-motion` decides the behaviour rather than whether to
+   * scroll at all: the reader still has to be where the file is, and an
+   * instant jump is what the setting asks for in place of the glide.
+   */
+  const workspace = React.useRef<HTMLDivElement>(null)
+  const arrived = React.useRef(0)
+
+  React.useEffect(() => {
+    const count = queue.jobs.length
+    const grew = count > arrived.current
+    arrived.current = count
+
+    if (!grew || workspace.current === null) return
+
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+    workspace.current.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' })
+  }, [queue.jobs.length])
+
   return (
     <div data-slot="converter" className="flex min-w-0 flex-col gap-6">
       <QueueAnnouncer jobs={queue.jobs} />
@@ -274,35 +310,47 @@ function Converter({ pair }: ConverterProps) {
       <UrlImport onFile={startOne} />
 
       {/*
-       * Above the queue, because it is a decision made *before* a file is
-       * dropped — and left enabled while a job runs, since what it holds is
-       * read when the next job starts rather than shared with the one in
-       * flight.
+       * The settings and the queue share a wrapper because they share a
+       * landing place: this is what a drop scrolls to, and its top edge is the
+       * settings panel's own — the first thing a reader sees after dropping a
+       * file is the choice they can still change about it.
        */}
-      {settings !== null && (
-        <SettingsPanel schema={settings.schema} values={values} onChange={setValues} />
-      )}
+      <div
+        ref={workspace}
+        data-slot="converter-workspace"
+        className="flex min-w-0 scroll-mt-4 flex-col gap-6"
+      >
+        {/*
+         * Above the queue, because it is a decision made *before* a file is
+         * dropped — and left enabled while a job runs, since what it holds is
+         * read when the next job starts rather than shared with the one in
+         * flight.
+         */}
+        {settings !== null && (
+          <SettingsPanel schema={settings.schema} values={values} onChange={setValues} />
+        )}
 
-      {queue.jobs.length > 0 && (
-        <ul
-          data-slot="converter-queue"
-          aria-label={`${pairTitle(pair)} queue`}
-          className="flex list-none flex-col gap-3"
-        >
-          {queue.jobs.map((job) => (
-            <li key={job.id} className="min-w-0">
-              <JobCard
-                job={job}
-                task={task}
-                alternatives={alternatives}
-                onCancel={cancel}
-                onRetry={retry}
-                onRemove={remove}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
+        {queue.jobs.length > 0 && (
+          <ul
+            data-slot="converter-queue"
+            aria-label={`${pairTitle(pair)} queue`}
+            className="flex list-none flex-col gap-3"
+          >
+            {queue.jobs.map((job) => (
+              <li key={job.id} className="min-w-0">
+                <JobCard
+                  job={job}
+                  task={task}
+                  alternatives={alternatives}
+                  onCancel={cancel}
+                  onRetry={retry}
+                  onRemove={remove}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <ResultPanel jobs={queue.jobs} to={pair.to} />
 
