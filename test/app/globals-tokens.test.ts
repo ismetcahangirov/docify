@@ -54,6 +54,8 @@ const COLOUR_TOKENS: ReadonlyArray<readonly [string, string]> = [
   ['--color-fg-light-mut', '#6B6A66'],
   ['--color-fg-dark', '#FAFAF9'],
   ['--color-fg-dark-mut', '#9B9A96'],
+  // Accent — the brush behind the wordmark's initial, and nothing else
+  ['--color-brush', '#FF2E6F'],
   // Functional status
   ['--color-ok', '#3F7D4E'],
   ['--color-warn', '#B4762A'],
@@ -96,6 +98,7 @@ const TEXT_SCALE: ReadonlyArray<readonly [string, string, string, string, string
   ['display', 'clamp(2.25rem, 7vw, 4.25rem)', '0.9', '-0.03em', '800'],
   ['h2', 'clamp(1.75rem, 4.5vw, 3rem)', '0.95', '-0.02em', '700'],
   ['h3', '1.125rem', '1.3', '-0.01em', '600'],
+  ['wordmark', '1.5rem', '1', '-0.02em', '700'],
   ['eyebrow', '0.75rem', '1', '0.18em', '500'],
   ['body', '0.9375rem', '1.65', '0em', '400'],
   ['stat', '2.25rem', '1', '-0.02em', '700'],

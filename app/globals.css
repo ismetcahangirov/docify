@@ -30,6 +30,17 @@
   --color-fg-dark: #fafaf9; /* primary on dark */
   --color-fg-dark-mut: #9b9a96; /* secondary on dark */
 
+  /*
+   * --- Accent ---
+   *
+   * The one hue in an otherwise monochrome palette (issue #311), and it has
+   * exactly one use: the brush behind the wordmark's initial in
+   * components/site/wordmark.tsx. It is not a brand colour and nothing else may
+   * reach for it — a second use is a palette change, not a styling decision.
+   * Near-black on it is 5.5:1, which is what lets the letter stay unchanged.
+   */
+  --color-brush: #ff2e6f;
+
   /* --- Functional status only (NOT brand colours) --- */
   --color-ok: #3f7d4e;
   --color-warn: #b4762a;
@@ -95,6 +106,18 @@
   --text-h3--line-height: 1.3;
   --text-h3--letter-spacing: -0.01em;
   --text-h3--font-weight: 600;
+
+  /*
+   * Wordmark — Archivo, UPPERCASE, the site header's mark from `md` up.
+   *
+   * Its own step rather than a reach for `h2`: the mark is a fixed size, and
+   * every other Archivo step in this scale is a clamp that would have the
+   * header's one word growing with the viewport alongside the hero heading.
+   */
+  --text-wordmark: 1.5rem;
+  --text-wordmark--line-height: 1;
+  --text-wordmark--letter-spacing: -0.02em;
+  --text-wordmark--font-weight: 700;
 
   /* Eyebrow — Inter, UPPERCASE, muted */
   --text-eyebrow: 0.75rem;

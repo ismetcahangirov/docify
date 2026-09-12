@@ -1,3 +1,4 @@
+import { Wordmark } from '@/components/site/wordmark'
 import { SITE_NAME } from '@/lib/seo/site'
 
 /*
@@ -21,6 +22,13 @@ import { SITE_NAME } from '@/lib/seo/site'
  * `/convert` is cross-origin isolated (see the header of `next.config.ts`),
  * and a `next/link` soft navigation would carry this document's isolation
  * across the boundary. Both links are whole-document loads on purpose.
+ *
+ * ## The mark
+ *
+ * The wordmark itself is `components/site/wordmark.tsx` — one text run with a
+ * brush drawn behind its initial (#311). It carries its own type step, so the
+ * link says only the family, the case and the focus ring; the size, including
+ * the step up at `md`, belongs to the mark.
  *
  * ## Why it declares a layer
  *
@@ -51,11 +59,10 @@ export function SiteHeader() {
         aria-label={`${SITE_NAME} home`}
         className={[
           '-mx-2 inline-flex min-h-11 items-center px-2',
-          'font-display text-h3 uppercase',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current',
         ].join(' ')}
       >
-        {SITE_NAME}
+        <Wordmark className="font-display uppercase" />
       </a>
 
       <nav aria-label="Site">

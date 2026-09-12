@@ -24,6 +24,7 @@
     "test": "vitest run",
     "test:watch": "vitest watch",
     "e2e": "playwright test",
+    "brand:art": "node scripts/brand/make-brand-art.mjs",
     "size": "node scripts/bundle-budget/cli.mjs",
     "lighthouse": "pnpm build && lhci autorun",
     "check:wasm": "node scripts/initial-bundle/cli.mjs",
