@@ -231,6 +231,47 @@ export async function measureLoad(page: Page, path: string, runs = 3): Promise<V
   return measurements
 }
 
+/**
+ * Loads `path` `runs` times, drives `interact` on each load, and answers with
+ * the worst interaction each run recorded.
+ *
+ * The interaction half of {@link measureLoad}, and it exists for exactly the
+ * reason that one gives: a latency measured while seven other browsers are
+ * throttling their own CPUs is a number about the runner. Contention can only
+ * make an interaction slower, never faster, so the lowest of several
+ * observations is the one closest to what the page actually does.
+ *
+ * Reloading between runs rather than repeating the interaction on one page is
+ * what keeps the runs comparable. A keyboard walk leaves focus where it
+ * finished, so a second walk on the same document starts somewhere else and
+ * measures something else; a fresh load puts focus back at the top every time.
+ */
+export async function measureInteraction(
+  page: Page,
+  path: string,
+  interact: () => Promise<void>,
+  runs = 3,
+): Promise<number[]> {
+  const worst: number[] = []
+
+  for (let run = 0; run < runs; run += 1) {
+    await page.goto(path)
+    await settle(page)
+    // After the load has settled, so that hydration's own work is not counted
+    // as the response to a key the user pressed afterwards.
+    await resetVitals(page)
+
+    await interact()
+    await settle(page)
+
+    // `0` for a run that registered no interaction at all, which is what the
+    // caller's own assertion has to be able to see.
+    worst.push(Math.max(0, ...(await readVitals(page)).interactions))
+  }
+
+  return worst
+}
+
 /** The lowest value of `metric` across the runs — see {@link measureLoad}. */
 export function best(measurements: Vitals[], metric: (vitals: Vitals) => number): number {
   return Math.min(...measurements.map(metric))

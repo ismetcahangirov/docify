@@ -25,6 +25,7 @@ import {
   MAX_INP_MS,
   MAX_LCP_MS,
   MAX_TBT_MS,
+  measureInteraction,
   measureLoad,
   observeVitals,
   readVitals,
@@ -90,13 +91,16 @@ test.describe('interacting with a conversion page', () => {
     // visually-hidden-but-focusable and reached with Tab by design — see the
     // header of `components/converter/dropzone.tsx`. Enter would open a native
     // picker, so what is measured stops at moving focus through the page.
-    await resetVitals(page)
-    for (let press = 0; press < 4; press += 1) await page.keyboard.press('Tab')
-    await settle(page)
+    //
+    // Best of three, like every load metric in this file. This test used to
+    // assert on a single walk, which is the one thing `measureLoad`'s own
+    // comment warns against — and it failed intermittently for exactly that
+    // reason, on a page that had not changed (issue #300).
+    const runs = await measureInteraction(page, '/convert/heic-to-jpg', async () => {
+      for (let press = 0; press < 4; press += 1) await page.keyboard.press('Tab')
+    })
 
-    const { interactions } = await readVitals(page)
-
-    expect(Math.max(0, ...interactions)).toBeLessThan(MAX_INP_MS)
+    expect(Math.min(...runs)).toBeLessThan(MAX_INP_MS)
   })
 
   test('does not shift the page when the deferred island mounts', async ({ page }) => {
