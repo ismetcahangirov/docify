@@ -43,16 +43,21 @@ import localFont from 'next/font/local'
  * that can never be drawn.
  *
  * Measured on the CI runner the gate runs on, three runs per URL, median, on
- * 2026-09-13 — `main` and this change audited within a minute of each other:
+ * 2026-09-13 — `main` audited the same afternoon rather than quoted from a
+ * previous week (runs 34749534772 and 34750473620):
  *
  *                          bytes before first paint        LCP
- *   /                        239kB → 182kB          2343ms → 2129ms
- *   /convert                 234kB → 178kB          2316ms → 2039ms
- *   /convert/heic-to-jpg     230kB → 174kB          2301ms → 2033ms
+ *   /                        239kB → 179kB          2343ms → 2070ms
+ *   /convert                 234kB → 178kB          2316ms → 2019ms
+ *   /convert/heic-to-jpg     230kB → 174kB          2301ms → 2032ms
  *
  * The Lighthouse LCP is a Lantern simulation, and what it simulates is the last
  * of those bytes arriving — which is why 57kB of fonts nobody reads is worth
- * 214ms on a page whose largest element is a heading in the HTML.
+ * 273ms on a page whose largest element is a heading in the HTML. See the
+ * memory entry `lcp-is-the-bytes-before-first-paint`.
+ *
+ * Nothing on the page moved: a full-page screenshot of `/` and of
+ * `/convert/heic-to-jpg` at 2x is byte-identical before and after.
  *
  * `scripts/subset-fonts/` cuts the files and explains itself; `pnpm
  * subset:fonts` regenerates them.
