@@ -11,8 +11,11 @@ set, preloaded; and an *extended* half holding the rest of the vendored latin
 subset, `preload: false`, which the browser fetches only for a character the
 core range does not claim.
 
-104.4kB of preloaded font became 47.4kB. On the CI runner that was LCP 2343 →
-2129 on `/`, 2316 → 2039 on `/convert`, 2301 → 2033 on `/convert/heic-to-jpg`.
+104.4kB of preloaded font became 47.4kB. On the CI runner, against a `main`
+audited the same afternoon, that was LCP 2343 → 2070 on `/`, 2316 → 2019 on
+`/convert` and 2301 → 2032 on `/convert/heic-to-jpg`. A second run of the same
+code read 2094 / 1977 / 1987, which is what the runner's own spread looks like:
+±25ms, an order of magnitude under the change.
 Why bytes are the whole of it: [[lcp-is-the-bytes-before-first-paint]].
 
 The vendored Google originals moved to `assets/fonts/` so they are not served;
