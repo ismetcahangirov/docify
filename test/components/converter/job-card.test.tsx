@@ -285,6 +285,102 @@ describe('JobCard — the buttons', () => {
     }
   })
 
+  it('asks with a bin rather than a cross, because it discards the file', () => {
+    render(<JobCard job={job()} onRemove={() => {}} />)
+
+    const button = screen.getByRole('button', { name: /remove holiday clip.mov/i })
+    const icon = button.querySelector('[data-slot="job-card-remove-icon"]')
+
+    // A cross is "close this", which is what the control next to it used to
+    // look like it meant. The file is not closed, it is thrown away.
+    expect(icon).not.toBeNull()
+    expect(icon?.getAttribute('class')).toMatch(/trash/)
+  })
+
+  it('sits at the end of the row, and turns the accent under the pointer', () => {
+    render(<JobCard job={job()} onRemove={() => {}} />)
+
+    const button = screen.getByRole('button', { name: /remove holiday clip.mov/i })
+
+    // Away from the actions that keep the file, at the edge a destructive
+    // control belongs on.
+    expect(button).toHaveClass('ml-auto')
+    expect(button).toHaveClass('hover:text-brush')
+    expect(button).toHaveClass('cursor-pointer')
+  })
+
+  it('shares the line the routing note is on, rather than taking one of its own', () => {
+    render(
+      <JobCard
+        job={job({
+          state: 'done',
+          engine: 'ffmpeg',
+          reason: 'Universal fallback (ffmpeg)',
+          warnings: [{ code: 'QUALITY_LOSS', message: 'JPG and WEBP are both lossy formats.' }],
+        })}
+        onRemove={() => {}}
+        now={START}
+      />,
+    )
+
+    const badge = slot('route-badge') as HTMLElement
+    const button = screen.getByRole('button', { name: /remove holiday clip.mov/i })
+
+    // The note is a sentence with a column of empty card beside it, which is
+    // where the control that discards the file belongs. Same row, not nested:
+    // the badge is a sibling of the controls, so it can come and go without
+    // taking them with it.
+    expect(button.parentElement?.parentElement).toBe(badge.parentElement)
+    expect(within(badge).getByText(/both lossy formats/)).toBeInTheDocument()
+  })
+
+  it('keeps the very same control through the moment the router decides', () => {
+    const remove = () => {}
+    const { rerender } = render(<JobCard job={job({ state: 'routing' })} onRemove={remove} />)
+
+    const before = screen.getByRole('button', { name: /remove holiday clip.mov/i })
+    before.focus()
+
+    // `engine` and `reason` arrive with the `routed` event, so every job
+    // crosses this boundary on its own. A control that moved to a different
+    // parent here would be unmounted mid-read, and the focus would land on the
+    // body without the user touching anything.
+    rerender(
+      <JobCard
+        job={job({ state: 'processing', engine: 'ffmpeg', reason: 'Universal fallback (ffmpeg)' })}
+        onRemove={remove}
+        now={START}
+      />,
+    )
+
+    const after = screen.getByRole('button', { name: /remove holiday clip.mov/i })
+
+    expect(after).toBe(before)
+    expect(document.activeElement).toBe(after)
+  })
+
+  it('reads the failure before it offers the controls', () => {
+    render(
+      <JobCard
+        job={job({
+          state: 'failed',
+          engine: 'ffmpeg',
+          reason: 'Universal fallback (ffmpeg)',
+          failure: { message: 'The decoder gave up.' },
+        })}
+        onRemove={() => {}}
+        onRetry={() => {}}
+        now={START}
+      />,
+    )
+
+    const failure = screen.getByText('The decoder gave up.')
+    const retry = screen.getByRole('button', { name: /try converting/i })
+
+    // "Try again" above the reason is an answer offered before the question.
+    expect(failure.compareDocumentPosition(retry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('removes the file from the queue', () => {
     const onRemove = vi.fn()
     render(<JobCard job={job()} onRemove={onRemove} now={START} />)

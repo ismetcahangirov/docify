@@ -58,7 +58,10 @@ const buttonVariants = cva(
   [
     'inline-flex shrink-0 items-center justify-center gap-2',
     'rounded-full border border-transparent font-sans text-body font-medium',
-    'transition-colors select-none',
+    // A button is a thing you press, and the browser's default arrow says
+    // otherwise. `disabled:pointer-events-none` below keeps a disabled one from
+    // claiming it.
+    'cursor-pointer transition-colors select-none',
     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current',
     'disabled:pointer-events-none disabled:opacity-50',
     "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",

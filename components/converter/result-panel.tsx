@@ -56,21 +56,38 @@ const panelVariants = cva('flex min-w-0 flex-col gap-6 rounded-lg border p-6 fon
   defaultVariants: { variant: 'dark' },
 })
 
+/**
+ * What the accent is allowed to do, per tone.
+ *
+ * `--color-brush` measures 5:1 on `ink-2` and 3.3:1 on `paper`. The first
+ * clears AA for the 15px row label; the second does not, and the palette note
+ * in app/globals.css says so — body copy never takes the accent on a light
+ * surface. The underline is the affordance in both, so the light panel loses a
+ * colour rather than a signal.
+ */
+const accentVariants = cva('', {
+  variants: { variant: { dark: 'group-hover:text-brush', light: '' } },
+  defaultVariants: { variant: 'dark' },
+})
+
 const mutedVariants = cva('', {
   variants: { variant: { dark: 'text-fg-dark-mut', light: 'text-fg-light-mut' } },
   defaultVariants: { variant: 'dark' },
 })
 
-const rowVariants = cva(
-  [
-    'flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-1',
-    'border-t py-3 first:border-t-0 first:pt-0',
-  ].join(' '),
-  {
-    variants: { variant: { dark: 'border-line-dark', light: 'border-line-light' } },
-    defaultVariants: { variant: 'dark' },
-  },
-)
+/**
+ * The inside of a row: name at one edge, size and icon at the other.
+ *
+ * `min-h-11` because the row is a link now, and the responsive contract puts
+ * the floor for anything you can tap at 44px. The list's own padding used to
+ * make the row that tall around a target that was not.
+ */
+const ROW = 'flex min-h-11 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1'
+
+const rowVariants = cva(['flex min-w-0', 'border-t py-1 first:border-t-0'].join(' '), {
+  variants: { variant: { dark: 'border-line-dark', light: 'border-line-light' } },
+  defaultVariants: { variant: 'dark' },
+})
 
 export type ResultPanelProps = Omit<React.ComponentProps<'section'>, 'children'> &
   VariantProps<typeof panelVariants> & {
@@ -168,28 +185,69 @@ function ResultPanel({ className, variant, jobs, to, onDownloadAll, ...props }: 
                * horizontal scroll the responsive contract forbids.
                */}
               {url === undefined ? (
-                <span data-slot="result-panel-name" className="min-w-0 text-body break-all">
-                  {result.name}
+                <span className={ROW}>
+                  <span data-slot="result-panel-name" className="min-w-0 text-body break-all">
+                    {result.name}
+                  </span>
+                  <span
+                    data-slot="result-panel-size"
+                    className={cn('shrink-0 font-mono text-tech', muted)}
+                  >
+                    {formatBytes(result.bytes)}
+                  </span>
                 </span>
               ) : (
+                /*
+                 * The whole row is the link (issue #311). The name alone was a
+                 * 15px target in a 44px row, and the size beside it pointed
+                 * nowhere; now everything between the two edges downloads the
+                 * file, which is also what makes room for the icon to sit at
+                 * the end rather than trailing the name.
+                 */
                 <a
                   data-slot="result-panel-download"
                   href={url}
                   download={result.name}
                   className={cn(
-                    'min-w-0 text-body break-all underline underline-offset-4',
+                    ROW,
+                    'group cursor-pointer',
                     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current',
                   )}
                 >
-                  {result.name}
+                  <span
+                    data-slot="result-panel-name"
+                    className="min-w-0 text-body break-all underline underline-offset-4"
+                  >
+                    {result.name}
+                  </span>
+
+                  <span className="flex shrink-0 items-center gap-3">
+                    <span
+                      data-slot="result-panel-size"
+                      className={cn('font-mono text-tech', muted)}
+                    >
+                      {formatBytes(result.bytes)}
+                    </span>
+                    {/*
+                     * The word rather than a glyph. The row is a link to a
+                     * file and what it does has a name, which is also what a
+                     * screen reader reads at the end of the row's name. The
+                     * accent arrives under the pointer only: `--color-brush`
+                     * on `ink-2` is 5:1, but a row of pink words would make
+                     * the list look like a list of warnings.
+                     */}
+                    <span
+                      data-slot="result-panel-download-label"
+                      className={cn(
+                        'text-body underline underline-offset-4',
+                        accentVariants({ variant }),
+                      )}
+                    >
+                      Download
+                    </span>
+                  </span>
                 </a>
               )}
-              <span
-                data-slot="result-panel-size"
-                className={cn('shrink-0 font-mono text-tech', muted)}
-              >
-                {formatBytes(result.bytes)}
-              </span>
             </li>
           )
         })}

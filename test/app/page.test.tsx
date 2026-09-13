@@ -44,6 +44,20 @@ describe('HomePage', () => {
     expect(links[0]).toHaveAttribute('href', '/convert')
   })
 
+  it('marks one word of the popular heading in the accent, and still reads as one heading', () => {
+    render(<HomePage />)
+
+    const heading = screen.getByRole('heading', { name: /popular converters/i })
+    const accent = heading.querySelector('[data-slot="accent"]')
+
+    // The colour carries no meaning of its own — the heading has to read the
+    // same to a screen reader, which is why this is a span inside it rather
+    // than two headings or an image of a word.
+    expect(accent?.textContent).toBe('Popular')
+    expect(accent).toHaveClass('text-brush')
+    expect(heading.textContent?.replace(/\s+/g, ' ').trim()).toBe('Popular converters')
+  })
+
   it('links straight to the popular conversions', () => {
     render(<HomePage />)
 

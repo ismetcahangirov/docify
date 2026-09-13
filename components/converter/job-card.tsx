@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
-import { CheckIcon, XIcon } from 'lucide-react'
+import { CheckIcon, Trash2Icon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -151,6 +151,92 @@ function JobCard({
   const status = stopped(job) ? 'Stopped' : STATUS[job.state]
   const muted = mutedVariants({ variant })
 
+  /*
+   * The controls, built once and placed in one of two rows (issue #311).
+   *
+   * Where there is a routing note they go at the end of *its* line: the note is
+   * a sentence with a column of empty card to its right, and a row of its own
+   * underneath spends a whole line of height saying nothing. Where the job
+   * failed they stay below it — the explanation and the alternatives are what
+   * the reader needs first, and "Try again" above them is an answer offered
+   * before the question.
+   */
+  const controls = (
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+      {isRunning(job.state) && onCancel !== undefined && (
+        <Button
+          type="button"
+          variant="secondary"
+          data-slot="job-card-cancel"
+          // One card in a list of twenty, and "Cancel" on its own names none
+          // of them.
+          aria-label={`Cancel converting ${job.file.name}`}
+          onClick={() => onCancel(job.id)}
+        >
+          Cancel
+        </Button>
+      )}
+
+      {/*
+       * A job the user stopped is `queued` with nothing coming for it: the
+       * scheduler deliberately does not start it again on its own, so without
+       * this the card reads "Waiting" and offers no control that moves it
+       * (issue #278). A job that is merely waiting its turn carries no mark
+       * and gets no button — it is already going to run.
+       */}
+      {stopped(job) && onRetry !== undefined && (
+        <Button
+          type="button"
+          variant="secondary"
+          data-slot="job-card-start"
+          aria-label={`Start converting ${job.file.name}`}
+          onClick={() => onRetry(job.id)}
+        >
+          Start
+        </Button>
+      )}
+
+      {job.state === 'failed' && onRetry !== undefined && (
+        <Button
+          type="button"
+          variant="secondary"
+          data-slot="job-card-retry"
+          aria-label={`Try converting ${job.file.name} again`}
+          onClick={() => onRetry(job.id)}
+        >
+          Try again
+        </Button>
+      )}
+
+      {onRemove !== undefined && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          data-slot="job-card-remove"
+          /*
+           * `ml-auto` puts it at the far edge, away from the buttons that
+           * keep the file: the row reads left to right as what to do with
+           * this job, and throwing it away is the end of that sentence. The
+           * accent on hover is the only colour on the card, and it arrives
+           * only under the pointer — the icon itself stays the foreground.
+           */
+          className="ml-auto hover:text-brush"
+          aria-label={`Remove ${job.file.name} from the queue`}
+          onClick={() => onRemove(job.id)}
+        >
+          {/*
+           * A bin, not a cross. A cross on a card reads as "close this" —
+           * dismiss the card, keep the file — and what the control does is
+           * throw the file out of the queue. The label already said so; the
+           * icon now says the same thing (issue #311).
+           */}
+          <Trash2Icon aria-hidden="true" data-slot="job-card-remove-icon" />
+        </Button>
+      )}
+    </div>
+  )
+
   return (
     <article
       data-slot="job-card"
@@ -211,15 +297,6 @@ function JobCard({
         />
       )}
 
-      {job.engine !== undefined && job.reason !== undefined && (
-        <RouteBadge
-          variant={variant}
-          engine={job.engine}
-          reason={job.reason}
-          warnings={job.warnings}
-        />
-      )}
-
       {job.failure !== undefined &&
         (job.failure.code !== undefined ? (
           <Rejection
@@ -254,65 +331,33 @@ function JobCard({
             )}
           </div>
         ))}
-
-      <div className="flex flex-wrap items-center gap-2">
-        {isRunning(job.state) && onCancel !== undefined && (
-          <Button
-            type="button"
-            variant="secondary"
-            data-slot="job-card-cancel"
-            // One card in a list of twenty, and "Cancel" on its own names none
-            // of them.
-            aria-label={`Cancel converting ${job.file.name}`}
-            onClick={() => onCancel(job.id)}
-          >
-            Cancel
-          </Button>
+      {/*
+       * The routing note and the controls share one row, and the row is
+       * rendered whatever the job is doing (issue #311).
+       *
+       * The note is a sentence with a column of empty card to its right, which
+       * is where the control that discards the file belongs — a row of its own
+       * underneath spends a whole line of height saying nothing.
+       *
+       * It is one row rather than two placements because a job crosses the
+       * boundary on its own: `engine` and `reason` arrive with the `routed`
+       * event, so every job is born without them. Moving the controls between
+       * two parents at that moment unmounts the button the user may have
+       * tabbed to, and focus falls back to the body while they are reading.
+       * The badge appears and disappears around them instead.
+       */}
+      <div className="flex min-w-0 flex-wrap items-end gap-x-4 gap-y-3">
+        {job.engine !== undefined && job.reason !== undefined && (
+          <RouteBadge
+            className="min-w-0"
+            variant={variant}
+            engine={job.engine}
+            reason={job.reason}
+            warnings={job.warnings}
+          />
         )}
 
-        {/*
-         * A job the user stopped is `queued` with nothing coming for it: the
-         * scheduler deliberately does not start it again on its own, so without
-         * this the card reads "Waiting" and offers no control that moves it
-         * (issue #278). A job that is merely waiting its turn carries no mark
-         * and gets no button — it is already going to run.
-         */}
-        {stopped(job) && onRetry !== undefined && (
-          <Button
-            type="button"
-            variant="secondary"
-            data-slot="job-card-start"
-            aria-label={`Start converting ${job.file.name}`}
-            onClick={() => onRetry(job.id)}
-          >
-            Start
-          </Button>
-        )}
-
-        {job.state === 'failed' && onRetry !== undefined && (
-          <Button
-            type="button"
-            variant="secondary"
-            data-slot="job-card-retry"
-            aria-label={`Try converting ${job.file.name} again`}
-            onClick={() => onRetry(job.id)}
-          >
-            Try again
-          </Button>
-        )}
-
-        {onRemove !== undefined && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            data-slot="job-card-remove"
-            aria-label={`Remove ${job.file.name} from the queue`}
-            onClick={() => onRemove(job.id)}
-          >
-            <XIcon aria-hidden="true" />
-          </Button>
-        )}
+        {controls}
       </div>
     </article>
   )

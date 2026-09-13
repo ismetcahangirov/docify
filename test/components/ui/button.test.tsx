@@ -6,6 +6,20 @@ import { Button, BUTTON_SIZES, buttonVariants } from '@/components/ui/button'
 import { contrastRatio } from '../../support/tokens'
 
 describe('Button', () => {
+  it('says it is pressable under the pointer, and stops saying so when disabled', () => {
+    render(
+      <>
+        <Button>Convert</Button>
+        <Button disabled>Wait</Button>
+      </>,
+    )
+
+    // A `<button>` defaults to the arrow cursor — the one piece of shadcn's
+    // reset this project had left in place.
+    expect(screen.getByRole('button', { name: 'Convert' })).toHaveClass('cursor-pointer')
+    expect(screen.getByRole('button', { name: 'Wait' })).toHaveClass('disabled:pointer-events-none')
+  })
+
   it('renders a native button carrying its accessible name', () => {
     render(<Button>Convert file</Button>)
 
