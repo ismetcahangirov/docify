@@ -180,6 +180,7 @@ const QUESTIONS: readonly { q: string; a: string }[] = [
   },
 ]
 
+/* Baseline probe for #315 — a same-day Lighthouse reading of main. Not for merge. */
 export default function HomePage() {
   const cards = featured()
 
