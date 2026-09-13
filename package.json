@@ -12,6 +12,7 @@
     "dev": "pnpm vendor && next dev",
     "build": "pnpm vendor && next build",
     "vendor": "node scripts/vendor-wasm-vips/cli.mjs && node scripts/vendor-pdfjs/cli.mjs && node scripts/vendor-ffmpeg/cli.mjs",
+    "subset:fonts": "node scripts/subset-fonts/cli.mjs",
     "db:migrate": "node scripts/db-migrate/cli.mjs",
     "analytics": "node scripts/analytics/cli.mjs",
     "start": "next start",
@@ -70,6 +71,7 @@
     "jsdom": "^30.0.1",
     "lint-staged": "^16.4.0",
     "prettier": "^3.9.6",
+    "subset-font": "^2.7.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"

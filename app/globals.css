@@ -39,7 +39,17 @@
    * --- Typography ---
    *
    * The three families are self-hosted and exposed on <html> as
-   * --font-archivo / --font-inter / --font-jetbrains-mono.
+   * --font-archivo / --font-inter / --font-jetbrains-mono, each followed by its
+   * -ext half.
+   *
+   * The two halves are one family in two files: the core one covers the
+   * codepoints these pages render and is preloaded, the -ext one covers the
+   * rest of the latin subset and is fetched only if a character needs it. The
+   * order here is what makes that work — a face is matched by unicode-range
+   * before it is matched by availability, so ASCII resolves to the core face
+   * and never reaches the second. See the header of app/fonts.ts, which also
+   * says why the metric-adjusted fallback hangs off the -ext half rather than
+   * the core one.
    *
    * The generic sits *inside* var() on purpose. A var() reference to an
    * undefined property invalidates the whole declaration at computed-value
@@ -48,9 +58,11 @@
    * before the families land, and keeps it readable if one of them ever fails
    * to load.
    */
-  --font-display: var(--font-archivo, ui-sans-serif), system-ui, sans-serif;
-  --font-sans: var(--font-inter, ui-sans-serif), system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains-mono, ui-monospace), monospace;
+  --font-display:
+    var(--font-archivo, ui-sans-serif), var(--font-archivo-ext, system-ui), sans-serif;
+  --font-sans: var(--font-inter, ui-sans-serif), var(--font-inter-ext, system-ui), sans-serif;
+  --font-mono:
+    var(--font-jetbrains-mono, ui-monospace), var(--font-jetbrains-mono-ext, monospace), monospace;
 
   /*
    * Type scale. Each step bundles size, leading, tracking and weight so that
