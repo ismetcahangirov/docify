@@ -50,6 +50,28 @@ Anything that is not bytes-before-first-paint is not worth measuring twice:
 What was left was the fonts: 105kB of the 235kB, and 148 of their 230 codepoints
 were never drawn by any page. See [[fonts-are-two-files-per-family]].
 
+## It is not a smooth slope: the document has a cliff at ~14.6kB
+
+Found on the rebased #312, which added ~2kB to every page and paid 150ms on two
+of them and nothing on the third:
+
+| page | document + stylesheet | FCP |
+| --- | --- | --- |
+| `/` | 22.0kB → 25.3kB | 773ms → 919ms |
+| `/convert` | 22.2kB → 24.4kB | 770ms → 919ms |
+| `/convert/heic-to-jpg` | 16.2kB → 18.2kB | 768ms → **768ms** |
+
+The two that paid are the two whose *document* crossed 14.6kB — 13,840 → 15,747
+and 14,013 → 14,826. The one that did not is 8.6kB and still comfortably inside.
+That number is Lantern's initial congestion window, ten packets of 1460 bytes,
+and crossing it costs a whole 150ms round trip however few bytes do the
+crossing.
+
+So the 4–5ms per kilobyte above is an average over the whole set. The
+render-blocking chain — the document, then the stylesheet — is charged in round
+trips instead, and a page sitting just under the line is one paragraph of copy
+away from an extra one.
+
 ## The corollary for the gate
 
 `largest-contentful-paint` on `/` is, in practice, a budget on how much the
