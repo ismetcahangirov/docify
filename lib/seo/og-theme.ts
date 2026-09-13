@@ -18,9 +18,10 @@
  * ## The face
  *
  * There isn't one. `next/og` bundles Noto Sans and satori cannot read WOFF2,
- * which is the only format `public/fonts/` ships — a variable Archivo as WOFF2
- * is unreadable to it, and shipping a second copy as TTF would put a duplicate
- * of the display face in the repository purely for an image. The cards
+ * which is the only format this repository holds a font in — `assets/fonts/`
+ * and the halves cut from it into `public/fonts/` are WOFF2 throughout, and
+ * shipping a second copy of Archivo as TTF would put a duplicate of the display
+ * face in the repository purely for an image. The cards
  * therefore lean on layout, scale and the monochrome palette for their
  * identity, and not on the typeface. If Archivo ever ships as TTF this is the
  * file that would gain a `fonts` option.

@@ -69,14 +69,26 @@ const RADIUS_TOKENS: ReadonlyArray<readonly [string, string]> = [
 
 /**
  * The self-hosted families are exposed on `<html>` as `--font-archivo`,
- * `--font-inter` and `--font-jetbrains-mono`. The generic has to sit *inside*
- * `var()`: a reference to an undefined property invalidates the declaration at
- * computed-value time, discarding anything listed after it.
+ * `--font-inter` and `--font-jetbrains-mono`, each followed by the `-ext` half
+ * that carries the rest of the latin subset (issue #315). The core half has to
+ * come first: a face is matched by `unicode-range` before it is matched by
+ * availability, and the order is what keeps an ASCII page from ever reaching —
+ * and fetching — the second file.
+ *
+ * The generic has to sit *inside* `var()`: a reference to an undefined property
+ * invalidates the declaration at computed-value time, discarding anything
+ * listed after it.
  */
 const FONT_TOKENS: ReadonlyArray<readonly [string, string]> = [
-  ['--font-display', 'var(--font-archivo, ui-sans-serif), system-ui, sans-serif'],
-  ['--font-sans', 'var(--font-inter, ui-sans-serif), system-ui, sans-serif'],
-  ['--font-mono', 'var(--font-jetbrains-mono, ui-monospace), monospace'],
+  [
+    '--font-display',
+    'var(--font-archivo, ui-sans-serif), var(--font-archivo-ext, system-ui), sans-serif',
+  ],
+  ['--font-sans', 'var(--font-inter, ui-sans-serif), var(--font-inter-ext, system-ui), sans-serif'],
+  [
+    '--font-mono',
+    'var(--font-jetbrains-mono, ui-monospace), var(--font-jetbrains-mono-ext, monospace), monospace',
+  ],
 ]
 
 /** The typography scale from the plan: size, line height, tracking, weight. */

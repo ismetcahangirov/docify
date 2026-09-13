@@ -10,6 +10,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## decision
 
+- [fonts-are-two-files-per-family](entries/fonts-are-two-files-per-family.md) — Each self-hosted family is a preloaded core file and an on-demand extended one — and the split has three traps that all fail silently
 - [decoration-behind-text-has-three-rules](entries/decoration-behind-text-has-three-rules.md) — A decorative layer under text must not be an SVG, must give every arc the same box, and must declare its own z-index — axe cannot rate contrast otherwise
 - [url-import-was-retired-then-shipped](entries/url-import-was-retired-then-shipped.md) — URL import was decided retired on 2026-09-05 and shipped on 2026-09-06 — the reasons for retiring did not stop being true, and its prerequisite #269 had been closed unimplemented
 - [a-copy-refuses-what-the-target-cannot-hold](entries/a-copy-refuses-what-the-target-cannot-hold.md) — The codec check for a stream copy lives in the engine, not the router — the router has a format pair and a size and cannot see inside the file
@@ -28,6 +29,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## gotcha
 
+- [lcp-is-the-bytes-before-first-paint](entries/lcp-is-the-bytes-before-first-paint.md) — Lighthouse's LCP here is not a paint time — it is the simulated arrival of the last byte fetched before first paint, so the only lever is the size of that set
 - [backend-outage-and-misconfiguration-are-the-same-answer](entries/backend-outage-and-misconfiguration-are-the-same-answer.md) — A wrong DATABASE_URL and no DATABASE_URL produce the identical {"available":false}, and readTotals swallows the difference
 - [windows-build-broke-on-pnpm-junctions](entries/windows-build-broke-on-pnpm-junctions.md) — The Windows build crash was pnpm junctions plus a poisoned .next cache, not Node — and the cache half was already written down before the issue was opened
 - [a-carried-track-is-a-term-of-the-size-target](entries/a-carried-track-is-a-term-of-the-size-target.md) — An engine that copies a track past the encoder owes that track's bitrate to the size target, or the capable browser is the one that overshoots
@@ -51,6 +53,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## session
 
+- [session-2026-09-12-20eaaadd](entries/session-2026-09-12-20eaaadd.md) — Session on 2026-09-12: ui, test (2 file ops)
 - [session-2026-09-12-5f6382c4](entries/session-2026-09-12-5f6382c4.md) — Session on 2026-09-12: general work (0 file ops)
 - [session-2026-09-12-f653e1c2](entries/session-2026-09-12-f653e1c2.md) — Session on 2026-09-12: general work (0 file ops)
 - [session-2026-09-06-103e550c](entries/session-2026-09-06-103e550c.md) — Session on 2026-09-06: agent (10 file ops)
