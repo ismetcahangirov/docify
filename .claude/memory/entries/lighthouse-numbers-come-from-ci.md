@@ -31,6 +31,22 @@ score.** To get the runner's numbers without an artifact, push a branch that
 asserts impossible thresholds as `warn` — `lhci` prints the measured value and
 all three runs for every assertion — then revert it in the same PR.
 
+## next/font emits no preload links on a Windows build
+
+Found in #315, and it is the reason a local FCP looks nothing like the runner's.
+`NextFontManifestPlugin` collects the font modules by testing
+`mod.request.includes('/next-font-loader/index.js?')`. On Windows that request
+carries backslashes, nothing matches, `next-font-manifest.json` comes out as
+`{"app":{}}`, and the built HTML has no `<link rel=preload as=font>` at all. The
+fonts are then discovered from the stylesheet instead, a round trip later.
+
+Measured on the same build of the same commit: FCP 1664ms locally, 764ms on the
+runner. Injecting the three preload links into the prerendered HTML by hand took
+the local figure to 760ms and CLS to zero. It is a Next bug and it does not
+affect production, which builds on Linux — but a local A/B is comparing a page
+that preloads its fonts against one that does not, and FCP and CLS are not
+transferable between the two. LCP is: it moved by 5ms.
+
 ## lhci asserts the best run, not the median
 
 `aggregationMethod` defaults to `optimistic`, which takes the **best** value
@@ -53,4 +69,5 @@ hidden paths by default, so every run logs `No files were found` and stays green
 on `if-no-files-found: warn`. Issue #250. Fixing it needs a `.github/workflows/`
 edit, which the session token cannot push — `repo` scope without `workflow`.
 
-Related: [[converter-is-a-deferred-island]], [[barrel-imports-cost-a-budget]]
+Related: [[converter-is-a-deferred-island]], [[barrel-imports-cost-a-budget]],
+[[lcp-is-the-bytes-before-first-paint]]
