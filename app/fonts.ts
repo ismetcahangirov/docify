@@ -25,16 +25,37 @@ import localFont from 'next/font/local'
  * They are still all here, and any character still renders in its own typeface.
  * What changed is when the bytes arrive. Each family declares two faces:
  *
- * - **core** — `CORE_UNICODE_RANGE` below, preloaded. 47kB for all three.
- * - **extended** — the rest, *no* `unicode-range`, `preload: false`. The
- *   browser matches a face by unicode-range before it matches by availability,
- *   so an ASCII page never selects this face and never fetches it; a page with
- *   an ï falls through to it and fetches it then.
+ * - **core** — the range these pages set, preloaded. 47kB for all three.
+ * - **extended** — the rest of what the source file maps, `preload: false`.
  *
- * That took the bytes the browser must have before the first paint on `/` from
- * 235kB to 178kB, and the Lighthouse LCP the CI gate measures from 2444ms to
- * the number in the pull request for #315. `scripts/subset-fonts/` cuts the
- * files and explains itself; `pnpm subset:fonts` regenerates them.
+ * A face is matched by `unicode-range` before it is matched by availability, so
+ * an ASCII page selects the core face and never so much as looks at the second
+ * one; a page with an ï falls through to it and fetches it then. Both ranges
+ * are written out below because a `@font-face` needs a literal, and both are
+ * checked against the shipped woff2 files by `test/subset-fonts.test.ts` — the
+ * risk of writing a coverage down is writing it down wrong, and a codepoint
+ * that fell out of both halves would render in Arial with nothing to say so.
+ *
+ * The extended face is given a range rather than left unscoped for the same
+ * reason. An unscoped face claims every codepoint there is: it would be a
+ * candidate for ASCII while the core file is still in flight, and for a
+ * Japanese file name it has no glyph for — two ways to spend 22kB on something
+ * that can never be drawn.
+ *
+ * Measured on the CI runner the gate runs on, three runs per URL, median, on
+ * 2026-09-13 — `main` and this change audited within a minute of each other:
+ *
+ *                          bytes before first paint        LCP
+ *   /                        239kB → 182kB          2343ms → 2129ms
+ *   /convert                 234kB → 178kB          2316ms → 2039ms
+ *   /convert/heic-to-jpg     230kB → 174kB          2301ms → 2033ms
+ *
+ * The Lighthouse LCP is a Lantern simulation, and what it simulates is the last
+ * of those bytes arriving — which is why 57kB of fonts nobody reads is worth
+ * 214ms on a page whose largest element is a heading in the HTML.
+ *
+ * `scripts/subset-fonts/` cuts the files and explains itself; `pnpm
+ * subset:fonts` regenerates them.
  *
  * ## What the ordering in app/globals.css owes this file
  *
@@ -45,6 +66,13 @@ import localFont from 'next/font/local'
  * extended file would never load at all. So the whole tail of the stack hangs
  * off the extended face, which is last, and `app/globals.css` composes
  * `--font-display` / `--font-sans` / `--font-mono` as core, then extended.
+ *
+ * That has a consequence in the subsetter, of all places. Next measures the
+ * `size-adjust` of that fallback from the file the face points at, over the
+ * lowercase alphabet — and gives up if any of it is missing. The extended half
+ * owns no ASCII, so `scripts/subset-fonts/` keeps a–z in it as ballast the
+ * range never reaches, and Inter's fallback stays at the 107.89% it measured
+ * before this split rather than silently flattening to 100%.
  *
  * Only the `latin` subset is shipped, upright only, and JetBrains Mono at a
  * single weight. Italics and mono bold are therefore synthesised by the browser
@@ -60,9 +88,9 @@ import localFont from 'next/font/local'
  *
  * The option objects have to be inline literals — the Next font loader reads
  * them at compile time and rejects anything it cannot statically evaluate.
- * That is why the range below is written out here rather than imported from
- * `scripts/subset-fonts/ranges.mjs`, which computes the identical string;
- * `test/app/fonts.test.ts` asserts the two have not drifted apart.
+ * That is why the two ranges below are written out here rather than imported
+ * from `scripts/subset-fonts/ranges.mjs`, which computes the identical strings;
+ * `test/app/fonts.test.ts` asserts they have not drifted apart.
  */
 
 /** Display face, core: headings, stat figures. Variable, so 700 and 800 cost one file. */
@@ -100,6 +128,13 @@ export const archivoExtended = localFont({
   display: 'swap',
   preload: false,
   fallback: ['ui-sans-serif', 'system-ui', 'sans-serif'],
+  declarations: [
+    {
+      prop: 'unicode-range',
+      value:
+        'U+0, U+D, U+A1-A8, U+AA, U+AC-BA, U+BC-D6, U+D8-FF, U+102, U+131, U+152-153, U+2BB-2BC, U+2C6, U+2DA, U+2DC, U+300-301, U+303-304, U+308-309, U+323, U+2002, U+2009, U+200B, U+201A, U+201E, U+2022, U+2032-2033, U+2039-203A, U+2044, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF',
+    },
+  ],
 })
 
 /** Body face, core: paragraphs, card titles, eyebrows. */
@@ -136,6 +171,13 @@ export const interExtended = localFont({
   display: 'swap',
   preload: false,
   fallback: ['ui-sans-serif', 'system-ui', 'sans-serif'],
+  declarations: [
+    {
+      prop: 'unicode-range',
+      value:
+        'U+0, U+D, U+A1-A8, U+AA, U+AC-BA, U+BC-D6, U+D8-FF, U+102, U+131, U+152-153, U+2BB-2BC, U+2C6, U+2DA, U+2DC, U+300-301, U+303-304, U+308-309, U+323, U+2002, U+2009, U+200B, U+201A, U+201E, U+2022, U+2032-2033, U+2039-203A, U+2044, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF',
+    },
+  ],
 })
 
 /**
@@ -183,6 +225,13 @@ export const jetbrainsMonoExtended = localFont({
   preload: false,
   adjustFontFallback: false,
   fallback: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+  declarations: [
+    {
+      prop: 'unicode-range',
+      value:
+        'U+0, U+D, U+A1-A8, U+AA, U+AC-BA, U+BC-D6, U+D8-FF, U+102, U+131, U+152-153, U+2BB-2BC, U+2C6, U+2DA, U+2DC, U+300-301, U+303-304, U+308-309, U+323, U+2002, U+2009, U+200B, U+201A, U+201E, U+2022, U+2032-2033, U+2039-203A, U+2044, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF',
+    },
+  ],
 })
 
 /** Applied to `<html>` in app/layout.tsx so every subtree inherits the variables. */

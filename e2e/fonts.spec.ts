@@ -105,12 +105,12 @@ test.describe('font delivery', () => {
    * The split of issue #315, measured where it pays: the network.
    *
    * Each family is a *core* file covering what these pages render plus an
-   * unscoped *extended* one covering the rest of the latin subset. The saving
-   * is entirely in the second never being fetched — 38kB across the three
+   * *extended* one covering the rest of the latin subset. The saving is
+   * entirely in the second never being fetched — 50kB across the three
    * families, on the critical path of every page view, for characters no page
-   * here renders. The browser is what decides that, from the core face's
-   * `unicode-range` and the order of the stack, so it has to be observed in a
-   * browser rather than asserted about the configuration.
+   * here renders. The browser is what decides that, from the two faces'
+   * `unicode-range` descriptors, so it has to be observed in a browser rather
+   * than asserted about the configuration.
    *
    * Counting requests rather than reading file names: Next hashes every emitted
    * font into `/_next/static/media/`, and nothing in the URL says which half it
@@ -169,6 +169,47 @@ test.describe('font delivery', () => {
       })
 
       expect(requested.size).toBe(6)
+    })
+
+    /*
+     * The saving has to survive the swap window, which is the one moment the
+     * counting test above cannot see: over loopback the preloaded core face is
+     * in hand before the first paint, so the page is never actually rendered
+     * with an unloaded webfont at the head of its stack.
+     *
+     * `font-display: swap` says the browser renders with "the next available
+     * font in the fallback list" meanwhile — and the next entry is the other
+     * half of the same family. If reaching past a loading face counted as using
+     * the one behind it, every visitor on a slow connection would fetch both
+     * halves and the whole change would be worth nothing in the field while
+     * still measuring well in the lab.
+     *
+     * It does not, because the extended face declares a `unicode-range` that
+     * excludes ASCII: it is not a candidate for this text at all, loaded or
+     * not. This holds the browser to that.
+     */
+    test('does not reach for the extended half while the core half is still loading', async ({
+      page,
+    }) => {
+      const requested = new Set<string>()
+      page.on('request', (request) => {
+        if (FONT_FILE.test(request.url())) requested.add(new URL(request.url()).pathname)
+      })
+
+      // Every font on the route is delayed, so the page paints, and keeps
+      // painting, with nothing but the metric-adjusted fallback available.
+      await page.route(/\/_next\/static\/media\/.*\.woff2$/, async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 3000))
+        await route.continue()
+      })
+
+      await page.goto('/', { waitUntil: 'commit' })
+      await page.locator('#hero-heading').waitFor({ state: 'visible' })
+      await page.waitForTimeout(1000)
+
+      // Still inside the swap window: the three core faces are requested and
+      // unanswered, and nothing has gone looking for their extended halves.
+      expect(requested.size).toBe(3)
     })
 
     test('exposes the extended half of each family as its own CSS variable', async ({ page }) => {

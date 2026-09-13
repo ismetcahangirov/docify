@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { CORE_UNICODE_RANGE } from '../../scripts/subset-fonts/ranges.mjs'
+import { CORE_UNICODE_RANGE, EXTENDED_UNICODE_RANGE } from '../../scripts/subset-fonts/ranges.mjs'
 
 interface LocalFontSource {
   path: string
@@ -54,6 +54,21 @@ const {
 const appDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../app')
 
 const [archivoCall, archivoExtCall, interCall, interExtCall, monoCall, monoExtCall] = fontCalls
+
+/** The codepoints a `unicode-range` descriptor names, parsed back out of it. */
+function rangeOf(descriptor: string): Set<number> {
+  const codepoints = new Set<number>()
+
+  for (const part of descriptor.split(',')) {
+    const [first, last] = part.trim().replace(/^U\+/, '').split('-')
+    const from = parseInt(first, 16)
+    const to = last === undefined ? from : parseInt(last, 16)
+
+    for (let codepoint = from; codepoint <= to; codepoint += 1) codepoints.add(codepoint)
+  }
+
+  return codepoints
+}
 
 /** The half of each family that is preloaded, and the half that is not. */
 const CORE_CALLS = [archivoCall, interCall, monoCall]
@@ -143,14 +158,26 @@ describe('app/fonts', () => {
       }
     })
 
-    // No unicode-range on the extended face: it is the "everything else" tier,
-    // reached only for a character the core face's range does not claim. Give
-    // it one and any codepoint missing from both lists falls out of the family
-    // altogether.
-    it('leaves the extended half unscoped so it answers for whatever the core does not', () => {
+    // The extended face is scoped too, to the complement of the core range over
+    // everything the vendored files map. Leave it unscoped and it claims every
+    // codepoint in existence: a candidate for ASCII while the core file is
+    // still in flight, and for a Japanese file name it has no glyph for.
+    it('scopes the extended half to what the core half does not claim', () => {
       for (const call of EXTENDED_CALLS) {
-        expect(call.declarations).toBeUndefined()
+        expect(call.declarations).toEqual([
+          { prop: 'unicode-range', value: EXTENDED_UNICODE_RANGE },
+        ])
       }
+    })
+
+    // Two ranges over one family: a codepoint claimed by both would be drawn
+    // from whichever face loaded first, and one claimed by neither would fall
+    // out of the family entirely and render in the fallback face.
+    it('claims each codepoint in one half or the other, never both', () => {
+      const core = rangeOf(CORE_UNICODE_RANGE)
+      const extended = rangeOf(EXTENDED_UNICODE_RANGE)
+
+      expect([...core].filter((codepoint) => extended.has(codepoint))).toEqual([])
     })
   })
 

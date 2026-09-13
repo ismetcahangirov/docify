@@ -1,49 +1,25 @@
 /**
- * The codepoint arithmetic behind the two-file split of every self-hosted
- * family (issue #315).
+ * The half of every self-hosted family that is preloaded (issue #315).
+ *
+ * One declaration, `CORE`, and everything else here is derived from it: the
+ * `unicode-range` the core faces in `app/fonts.ts` declare, the characters the
+ * subsetter is asked to keep, and the set the assertions in
+ * `test/subset-fonts.test.ts` check the shipped files against.
+ *
+ * `EXTENDED` names the other half for the stylesheet, but nothing is *cut* from
+ * it: `cli.mjs` derives each extended file from its source font's own cmap, and
+ * the test asserts the two agree. The first version of this did cut from a
+ * written-down range — Google's published `latin` minus `CORE` — and silently
+ * lost the six codepoints the files carry that the published range does not
+ * name.
  *
  * A range is `[first, last]`, inclusive, and a list of them is always sorted
- * and non-overlapping. That is the only shape any function here accepts or
- * returns, so the CSS string, the character list handed to the subsetter and
- * the assertions in `test/subset-fonts.test.ts` are all derived from the same
- * two declarations below rather than restated three times.
+ * and non-overlapping.
  */
 
 /**
  * @typedef {readonly [number, number]} Range An inclusive codepoint range.
  */
-
-/**
- * Google's `latin` subset — the coverage of the three woff2 files vendored in
- * `assets/fonts/`, written as the `unicode-range` Google's own stylesheet
- * declares for it.
- *
- * It is the *whole* of what those files contain (230 codepoints across the
- * three of them), and therefore the whole of what the two halves below have to
- * account for between them.
- */
-export const LATIN = /** @type {readonly Range[]} */ ([
-  [0x0000, 0x00ff],
-  [0x0131, 0x0131],
-  [0x0152, 0x0153],
-  [0x02bb, 0x02bc],
-  [0x02c6, 0x02c6],
-  [0x02da, 0x02da],
-  [0x02dc, 0x02dc],
-  [0x0304, 0x0304],
-  [0x0308, 0x0308],
-  [0x0329, 0x0329],
-  [0x2000, 0x206f],
-  [0x2074, 0x2074],
-  [0x20ac, 0x20ac],
-  [0x2122, 0x2122],
-  [0x2191, 0x2191],
-  [0x2193, 0x2193],
-  [0x2212, 0x2212],
-  [0x2215, 0x2215],
-  [0xfeff, 0xfeff],
-  [0xfffd, 0xfffd],
-])
 
 /**
  * The half that is preloaded: every printable ASCII character, plus the five
@@ -76,6 +52,60 @@ export const CORE = /** @type {readonly Range[]} */ ([
 ])
 
 /**
+ * The half that is not preloaded: everything else the three vendored files map.
+ *
+ * Written down here because a `@font-face` needs a literal, and *checked*
+ * against the fonts: `test/subset-fonts.test.ts` asserts that this covers every
+ * codepoint of every source file that `CORE` does not, and that the shipped
+ * extended files map exactly the intersection. The subsetter never reads this
+ * list — it derives each extended file from its source's own cmap — so the two
+ * cannot silently disagree about what is in the file, only about what the
+ * stylesheet claims, and that is what the assertion is for.
+ *
+ * It is declared at all rather than left off the `@font-face` because a face
+ * with no `unicode-range` claims every codepoint in existence. That face would
+ * be a candidate for ASCII during the core file's swap window, and for a
+ * Japanese file name it has no glyph for — two ways to fetch 22kB that can
+ * never be drawn.
+ */
+export const EXTENDED = /** @type {readonly Range[]} */ ([
+  [0x0000, 0x0000],
+  [0x000d, 0x000d],
+  [0x00a1, 0x00a8],
+  [0x00aa, 0x00aa],
+  [0x00ac, 0x00ba],
+  [0x00bc, 0x00d6],
+  [0x00d8, 0x00ff],
+  [0x0102, 0x0102],
+  [0x0131, 0x0131],
+  [0x0152, 0x0153],
+  [0x02bb, 0x02bc],
+  [0x02c6, 0x02c6],
+  [0x02da, 0x02da],
+  [0x02dc, 0x02dc],
+  [0x0300, 0x0301],
+  [0x0303, 0x0304],
+  [0x0308, 0x0309],
+  [0x0323, 0x0323],
+  [0x2002, 0x2002],
+  [0x2009, 0x2009],
+  [0x200b, 0x200b],
+  [0x201a, 0x201a],
+  [0x201e, 0x201e],
+  [0x2022, 0x2022],
+  [0x2032, 0x2033],
+  [0x2039, 0x203a],
+  [0x2044, 0x2044],
+  [0x20ac, 0x20ac],
+  [0x2122, 0x2122],
+  [0x2191, 0x2191],
+  [0x2193, 0x2193],
+  [0x2212, 0x2212],
+  [0x2215, 0x2215],
+  [0xfeff, 0xfeff],
+])
+
+/**
  * Every codepoint of a range list, ascending.
  *
  * @param {readonly Range[]} ranges
@@ -91,42 +121,6 @@ export function codepointsOf(ranges) {
 
   return codepoints.sort((a, b) => a - b)
 }
-
-/**
- * `minuend` with every codepoint of `subtrahend` removed, renormalised into the
- * fewest ranges that describe the result.
- *
- * Written over the codepoints rather than over the interval endpoints because
- * the lists here are a few hundred entries long and the endpoint arithmetic is
- * where this kind of function is usually wrong.
- *
- * @param {readonly Range[]} minuend
- * @param {readonly Range[]} subtrahend
- * @returns {Range[]}
- */
-export function subtractRanges(minuend, subtrahend) {
-  const removed = new Set(codepointsOf(subtrahend))
-  /** @type {Range[]} */
-  const result = []
-
-  for (const codepoint of codepointsOf(minuend)) {
-    if (removed.has(codepoint)) continue
-
-    const last = result.at(-1)
-
-    if (last !== undefined && last[1] === codepoint - 1)
-      result[result.length - 1] = [last[0], codepoint]
-    else result.push([codepoint, codepoint])
-  }
-
-  return result
-}
-
-/**
- * The half that is not preloaded: the rest of the vendored coverage, fetched
- * only when a page actually renders a character in it.
- */
-export const EXTENDED = subtractRanges(LATIN, CORE)
 
 /**
  * A range list as the `unicode-range` descriptor of a `@font-face`.
@@ -154,6 +148,9 @@ export function cssUnicodeRange(ranges) {
  */
 export const CORE_UNICODE_RANGE = cssUnicodeRange(CORE)
 
+/** The descriptor the extended faces declare. Same arrangement as the core one. */
+export const EXTENDED_UNICODE_RANGE = cssUnicodeRange(EXTENDED)
+
 /**
  * The characters of a range list, as the text the subsetter is asked to keep.
  *
@@ -165,3 +162,20 @@ export function textOf(ranges) {
     .map((codepoint) => String.fromCodePoint(codepoint))
     .join('')
 }
+
+/**
+ * The characters Next's metric-adjusted fallback is measured over, kept in the
+ * extended files on top of what they are for.
+ *
+ * `getFallbackMetricsFromFontFile` derives `size-adjust` from the average
+ * advance of the lowercase alphabet, and gives up — leaving 100% — if the file
+ * is missing any of it. The extended half is the only face in each stack that
+ * declares that fallback (see the header of `app/fonts.ts`), and the core half
+ * owns every ASCII letter, so without these the correction Inter had before
+ * this split (107.89%) would quietly become none at all and text would reflow
+ * when the real face landed.
+ *
+ * They are ballast: `EXTENDED` does not claim U+0061–U+007A, so no character is
+ * ever drawn from them.
+ */
+export const FALLBACK_METRIC_TEXT = ` ${textOf([[0x0061, 0x007a]])}`

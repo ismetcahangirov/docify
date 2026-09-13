@@ -39,8 +39,9 @@ import { fileURLToPath } from 'node:url'
 
 import subsetFont from 'subset-font'
 
+import { coverageOf } from './coverage.mjs'
 import { FAMILIES, OUTPUT_DIR, SOURCE_DIR } from './families.mjs'
-import { CORE, EXTENDED, textOf } from './ranges.mjs'
+import { codepointsOf, CORE, FALLBACK_METRIC_TEXT, textOf } from './ranges.mjs'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -71,19 +72,33 @@ async function cut(source, text, features) {
 
 async function main() {
   const coreText = textOf(CORE)
-  const extendedText = textOf(EXTENDED)
+  const core = new Set(codepointsOf(CORE))
 
   for (const family of FAMILIES) {
     const source = await readFile(join(repoRoot, SOURCE_DIR, family.source))
 
-    const core = await cut(source, coreText, family.features)
+    /*
+     * The other half is whatever this file maps and the core range does not —
+     * read out of the file rather than written down. The first version of this
+     * subtracted the core range from Google's published `latin` range instead
+     * and silently dropped Ă and five Vietnamese combining marks, which these
+     * files carry and that range does not name.
+     */
+    const extendedText =
+      [...coverageOf(source)]
+        .filter((codepoint) => !core.has(codepoint))
+        .sort((a, b) => a - b)
+        .map((codepoint) => String.fromCodePoint(codepoint))
+        .join('') + FALLBACK_METRIC_TEXT
+
+    const coreFile = await cut(source, coreText, family.features)
     const extended = await cut(source, extendedText, family.features)
 
-    await writeFile(join(repoRoot, OUTPUT_DIR, family.core), core)
+    await writeFile(join(repoRoot, OUTPUT_DIR, family.core), coreFile)
     await writeFile(join(repoRoot, OUTPUT_DIR, family.extended), extended)
 
     console.log(
-      `${family.source}: ${kb(source.length)} → ${kb(core.length)} core (preloaded) + ` +
+      `${family.source}: ${kb(source.length)} → ${kb(coreFile.length)} core (preloaded) + ` +
         `${kb(extended.length)} extended (on demand)`,
     )
   }
