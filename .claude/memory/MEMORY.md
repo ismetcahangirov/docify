@@ -10,6 +10,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## decision
 
+- [free-tier-warmth-is-bought-not-held](entries/free-tier-warmth-is-bought-not-held.md) — The URL proxy is woken on intent rather than held awake, because Render's 750 free hours a month is 6 hours more than a 31-day month
 - [fonts-are-two-files-per-family](entries/fonts-are-two-files-per-family.md) — Each self-hosted family is a preloaded core file and an on-demand extended one — and the split has three traps that all fail silently
 - [decoration-behind-text-has-three-rules](entries/decoration-behind-text-has-three-rules.md) — A decorative layer under text must not be an SVG, must give every arc the same box, and must declare its own z-index — axe cannot rate contrast otherwise
 - [url-import-was-retired-then-shipped](entries/url-import-was-retired-then-shipped.md) — URL import was decided retired on 2026-09-05 and shipped on 2026-09-06 — the reasons for retiring did not stop being true, and its prerequisite #269 had been closed unimplemented

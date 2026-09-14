@@ -60,6 +60,56 @@ export function isUrlImportConfigured(): boolean {
 }
 
 /**
+ * Wakes the proxy, because a free Render instance sleeps and a boot is a minute
+ * (issue #319).
+ *
+ * ## Why this is not a keep-alive
+ *
+ * Render's free plan allows 750 instance hours a month across the whole
+ * workspace, and a 31-day month run continuously is 744 of them. A cron holding
+ * the instance awake would spend the entire budget so that a control almost
+ * nobody uses is faster, and would leave no room for a second free service
+ * ever. This spends nothing at all until somebody reaches for the field.
+ *
+ * ## What it actually buys
+ *
+ * Not the minute. A boot is about that, and pasting a URL and pressing Fetch is
+ * a few seconds, so the honest claim is that those seconds now overlap the boot
+ * instead of following it. That is the whole of it, and it is worth having
+ * because it is free.
+ *
+ * ## Why `no-cors`, and why nothing reads the answer
+ *
+ * `/healthz` is answered in `services/url-proxy/src/proxy.ts` before the origin
+ * allowlist and before the rate limiter — which is what makes it the right path
+ * to knock on: a warm-up needs no origin to be allowed and spends none of
+ * `RATE_LIMIT_PER_MINUTE`. The cost of being answered that early is that it
+ * carries no CORS headers, so the response is opaque here. That is not a
+ * limitation to work around: the request arriving is the entire point, and the
+ * body says `ok` whatever happens.
+ *
+ * ## Why it returns nothing
+ *
+ * There is no outcome a caller could act on. A warm-up that fails leaves the
+ * import exactly where it would have been without one, and an unhandled
+ * rejection would be the only thing a visitor ever learned about a feature they
+ * have not used yet. It is swallowed deliberately.
+ */
+export function warmUrlImport(options: { fetch?: FetchLike } = {}): void {
+  const proxy = endpoint()
+  if (proxy === null) return
+
+  const call = options.fetch ?? globalThis.fetch.bind(globalThis)
+
+  void call(`${proxy}/healthz`, {
+    mode: 'no-cors',
+    credentials: 'omit',
+    // A cached 'ok' would wake nothing, which is the only thing this is for.
+    cache: 'no-store',
+  }).catch(() => {})
+}
+
+/**
  * The name to give the imported bytes.
  *
  * The proxy already strips separators and quotes out of what it sends, so this

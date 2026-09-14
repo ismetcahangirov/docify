@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { importFromUrl, isUrlImportConfigured, PROXY_UNCONFIGURED } from '@/lib/import/url'
+import {
+  importFromUrl,
+  isUrlImportConfigured,
+  PROXY_UNCONFIGURED,
+  warmUrlImport,
+} from '@/lib/import/url'
 
 /*
  * Importing a file the visitor named by URL (issue #270).
@@ -281,5 +286,66 @@ describe('importFromUrl', () => {
     await expect(importFromUrl('file:///etc/passwd', { fetch })).rejects.toThrow(/http/i)
     await expect(importFromUrl('not a url at all', { fetch })).rejects.toThrow(/valid/i)
     expect(fetch).not.toHaveBeenCalled()
+  })
+})
+
+describe('warmUrlImport', () => {
+  it('asks the proxy’s health path, which is the one that needs no CORS', async () => {
+    const fetch = vi.fn(async () => new Response('ok'))
+
+    warmUrlImport({ fetch })
+
+    expect(fetch).toHaveBeenCalledWith(`${PROXY}/healthz`, expect.anything())
+  })
+
+  it('sends a request nothing reads back', async () => {
+    const fetch = vi.fn(async () => new Response('ok'))
+
+    warmUrlImport({ fetch })
+
+    // `/healthz` is answered before the origin allowlist and sends no CORS
+    // headers with it, so a readable response was never on offer. Waking the
+    // instance is the whole payload.
+    expect(fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ mode: 'no-cors', credentials: 'omit', cache: 'no-store' }),
+    )
+  })
+
+  it('asks nothing where no proxy is deployed', () => {
+    delete process.env.NEXT_PUBLIC_PROXY_URL
+    const fetch = vi.fn(async () => new Response('ok'))
+
+    warmUrlImport({ fetch })
+
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('stays quiet when the proxy cannot be reached', async () => {
+    const fetch = vi.fn(async () => {
+      throw new TypeError('network error')
+    })
+
+    // Nobody asked for this request and nobody is waiting on it. An unhandled
+    // rejection in the console would be the only thing a visitor ever learned
+    // about a warm-up, and it would be noise about a feature they have not
+    // used yet.
+    expect(() => warmUrlImport({ fetch })).not.toThrow()
+    await expect(Promise.resolve()).resolves.toBeUndefined()
+  })
+
+  it('returns before the request settles', async () => {
+    let settle = () => {}
+    const fetch = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          settle = () => resolve(new Response('ok'))
+        }),
+    )
+
+    // A boot takes about a minute. Anything that awaited this would be holding
+    // an event handler open for that minute.
+    expect(warmUrlImport({ fetch })).toBeUndefined()
+    settle()
   })
 })
