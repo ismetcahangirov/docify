@@ -4,7 +4,7 @@ import * as React from 'react'
 
 import { Button } from '@/components/ui/button'
 import { isAbort } from '@/lib/abort'
-import { importFromUrl, isUrlImportConfigured } from '@/lib/import/url'
+import { importFromUrl, isUrlImportConfigured, warmUrlImport } from '@/lib/import/url'
 import { cn } from '@/lib/utils'
 
 /*
@@ -43,7 +43,26 @@ import { cn } from '@/lib/utils'
  * that listener from also reading a URL pasted into the field below as an
  * attempt to add a file, and it already covers `INPUT` — which is the whole
  * reason this is an `<input>` and not a contenteditable of some kind.
+ *
+ * ## Why focusing the field reaches the network
+ *
+ * The proxy is a free Render instance, and a free instance sleeps after fifteen
+ * quiet minutes and takes about a minute to boot. Focus is the earliest honest
+ * signal that somebody intends to import something, so the boot starts there
+ * and runs while they paste the URL rather than after they press Fetch
+ * (issue #319). `warmUrlImport` explains what that does and does not buy, and
+ * why a cron keeping the instance awake would be the wrong trade.
  */
+
+/**
+ * How long a warm-up is taken to be good for.
+ *
+ * Render sleeps a free instance after fifteen quiet minutes, so ten leaves a
+ * margin: a page open past this has been looking at an instance that may have
+ * gone back to sleep, and a second knock costs one request against a service
+ * that rate-limits at thirty a minute and does not count `/healthz` at all.
+ */
+const WARM_INTERVAL_MS = 10 * 60_000
 
 export interface UrlImportProps {
   /** Called with the imported bytes, to be added to the queue like a dropped file. */
@@ -70,6 +89,31 @@ function UrlImport({ onFile, className }: UrlImportProps) {
   const inFlight = React.useRef<AbortController | null>(null)
 
   React.useEffect(() => () => inFlight.current?.abort(), [])
+
+  /**
+   * When the proxy was last knocked on, so that a field focused twice does not
+   * send two requests.
+   *
+   * `0` rather than `null` because the comparison below then reads the same on
+   * the first focus as on one an hour later, which is the answer wanted in both
+   * cases.
+   */
+  const lastWarm = React.useRef(0)
+
+  /**
+   * Knocks, at most once per {@link WARM_INTERVAL_MS}.
+   *
+   * A ref rather than state: nothing about this renders, and re-rendering the
+   * form because somebody clicked into it would be a visible cost for an
+   * invisible feature.
+   */
+  const warm = () => {
+    const now = Date.now()
+    if (now - lastWarm.current < WARM_INTERVAL_MS) return
+
+    lastWarm.current = now
+    warmUrlImport()
+  }
 
   // Read once per render; it is a build-time constant, so this is the same
   // answer on the server and on the client and cannot desynchronise hydration.
@@ -129,6 +173,7 @@ function UrlImport({ onFile, className }: UrlImportProps) {
           placeholder="https://example.com/photo.heic"
           value={url}
           disabled={pending}
+          onFocus={warm}
           aria-describedby={error === null ? undefined : errorId}
           aria-invalid={error === null ? undefined : true}
           onChange={(event) => {

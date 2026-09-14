@@ -15,8 +15,9 @@ import { UrlImport } from '@/components/converter/url-import'
 
 const importFromUrl = vi.hoisted(() => vi.fn())
 const isUrlImportConfigured = vi.hoisted(() => vi.fn(() => true))
+const warmUrlImport = vi.hoisted(() => vi.fn())
 
-vi.mock('@/lib/import/url', () => ({ importFromUrl, isUrlImportConfigured }))
+vi.mock('@/lib/import/url', () => ({ importFromUrl, isUrlImportConfigured, warmUrlImport }))
 
 const field = () => screen.getByLabelText(/paste a link/i)
 const fetchButton = () => screen.getByRole('button', { name: /fetch/i })
@@ -30,6 +31,7 @@ function ask(url: string) {
 beforeEach(() => {
   isUrlImportConfigured.mockReturnValue(true)
   importFromUrl.mockReset()
+  warmUrlImport.mockReset()
 })
 
 afterEach(() => {
@@ -158,5 +160,59 @@ describe('the URL import form', () => {
     // 44px, the floor the whole app is held to. Asserted on the class because
     // jsdom lays nothing out; the e2e sweep measures the rendered box.
     expect(field().className).toContain('min-h-11')
+  })
+})
+
+describe('waking the proxy', () => {
+  /*
+   * Issue #319. The proxy runs on a free Render instance, which sleeps after
+   * fifteen minutes and takes about a minute to boot. Reaching for the field is
+   * the earliest honest signal that somebody is going to use it, so the boot
+   * starts there rather than on submit.
+   */
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('knocks on the proxy when the field is focused', () => {
+    render(<UrlImport onFile={vi.fn()} />)
+
+    fireEvent.focus(field())
+
+    expect(warmUrlImport).toHaveBeenCalledTimes(1)
+  })
+
+  it('knocks once for a field focused again straight away', () => {
+    render(<UrlImport onFile={vi.fn()} />)
+
+    fireEvent.focus(field())
+    fireEvent.blur(field())
+    fireEvent.focus(field())
+
+    // Tabbing through a form, or clicking back into the field after a typo,
+    // is not a second instance to wake.
+    expect(warmUrlImport).toHaveBeenCalledTimes(1)
+  })
+
+  it('knocks again once the instance has had time to fall asleep', () => {
+    vi.useFakeTimers()
+    render(<UrlImport onFile={vi.fn()} />)
+
+    fireEvent.focus(field())
+    vi.advanceTimersByTime(16 * 60_000)
+    fireEvent.focus(field())
+
+    // A page left open longer than the sleep window is looking at a cold
+    // instance again, and the first warm-up has expired with it.
+    expect(warmUrlImport).toHaveBeenCalledTimes(2)
+  })
+
+  it('knocks on nothing where no proxy is configured', () => {
+    isUrlImportConfigured.mockReturnValue(false)
+
+    render(<UrlImport onFile={vi.fn()} />)
+
+    expect(warmUrlImport).not.toHaveBeenCalled()
   })
 })
