@@ -10,6 +10,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## decision
 
+- [the-budget-is-advice-the-ceiling-is-not](entries/the-budget-is-advice-the-ceiling-is-not.md) — Two things refuse a large file and only one of them may be overruled — the memory budget is an estimate the user owns, the bitmap ceiling is a platform fact
 - [free-tier-warmth-is-bought-not-held](entries/free-tier-warmth-is-bought-not-held.md) — The URL proxy is woken on intent rather than held awake, because Render's 750 free hours a month is 6 hours more than a 31-day month
 - [fonts-are-two-files-per-family](entries/fonts-are-two-files-per-family.md) — Each self-hosted family is a preloaded core file and an on-demand extended one — and the split has three traps that all fail silently
 - [decoration-behind-text-has-three-rules](entries/decoration-behind-text-has-three-rules.md) — A decorative layer under text must not be an SVG, must give every arc the same box, and must declare its own z-index — axe cannot rate contrast otherwise
@@ -54,6 +55,7 @@ Search with the `docify-memory` skill; do not paste whole entries into context.
 
 ## session
 
+- [session-2026-09-14-98a209d3](entries/session-2026-09-14-98a209d3.md) — Session on 2026-09-14: general work (0 file ops)
 - [session-2026-09-12-20eaaadd](entries/session-2026-09-12-20eaaadd.md) — Session on 2026-09-12: ui, test (2 file ops)
 - [session-2026-09-12-5f6382c4](entries/session-2026-09-12-5f6382c4.md) — Session on 2026-09-12: general work (0 file ops)
 - [session-2026-09-12-f653e1c2](entries/session-2026-09-12-f653e1c2.md) — Session on 2026-09-12: general work (0 file ops)
