@@ -1,0 +1,62 @@
+# Which browsers the bundle is compiled for (issue #321).
+#
+# Without this file the target is Next.js's default — Chrome 64, Edge 79,
+# Firefox 67, Safari 12 — and SWC down-levels our own source for browsers that
+# cannot run this product at all. Docify converts nothing without WebAssembly
+# and a Web Worker, and its engines need more than that again:
+# `createImageBitmap` and `OffscreenCanvas` for the canvas path,
+# `SharedArrayBuffer` behind cross-origin isolation for the threaded builds,
+# `VideoEncoder`/`VideoDecoder` for the WebCodecs path. Safari shipped neither
+# `OffscreenCanvas` nor WebCodecs until 16.4, so a Safari 12 that is handed
+# down-levelled bytes reaches the converter and is turned away by `route()`
+# anyway.
+#
+# ## What this is measured to be worth
+#
+# Two clean builds on the same machine, 2026-09-17, totalled over every file in
+# `.next/static/chunks`:
+#
+#   without this file   4 890 417 bytes raw   1 628 570 gzipped
+#   with it             4 882 624 bytes raw   1 626 543 gzipped
+#
+# 7.8 kB raw, 2.0 kB gzipped. Real, and small.
+#
+# ## What it is *not* worth, against what #321 expected
+#
+# It does not clear Lighthouse's `legacy-javascript` audit, and no browserslist
+# can. The polyfills that audit names — `Array.prototype.at`, `Object.hasOwn`,
+# `String.prototype.trimStart` and the rest — are not compiler output. They are
+# `next/dist/build/polyfills/polyfill-module.js`, which
+# `next/dist/client/app-globals.js` requires unconditionally, so they are in the
+# bundle whatever the target says. That module is 1380 bytes, not the 11.7 kB
+# Lighthouse estimates; the audit sizes a polyfill by what core-js would have
+# spent on it, and Next hand-wrote these.
+#
+# Removing it is possible — a webpack alias onto an empty module — and is
+# deliberately not done here. It also defines `URL.canParse`, which is Safari
+# 17, well above the floor below, and it is an internal path a Next upgrade may
+# move without telling us. 1380 bytes is not worth either.
+#
+# ## Why these floors
+#
+# Set by the newest method Next's polyfill module covers rather than by the
+# engines: `Object.hasOwn` is Chrome 93, Firefox 92 and Safari 15.4. Everything
+# the engines require is stricter than that already, so this is the lowest floor
+# at which our own compiled source needs none of those methods down-levelled,
+# and the static pages lose no browser that could have read them.
+#
+# Read by Next through `browserslist.loadConfig` — `next/dist/build/utils.js` —
+# and passed to SWC as its target. Raising a floor is a product decision about
+# who can open the site, which is why it is here and not among the headers in
+# `next.config.ts`.
+
+chrome >= 93
+edge >= 93
+firefox >= 92
+safari >= 15.4
+ios_saf >= 15.4
+opera >= 79
+samsung >= 17
+and_chr >= 93
+and_ff >= 92
+not dead
