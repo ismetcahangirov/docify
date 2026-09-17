@@ -219,13 +219,37 @@ export interface Capabilities {
   browser: Browser
 }
 
+/**
+ * What the caller is allowed to tell `route()` about this particular attempt.
+ *
+ * Not a second `Capabilities`. Everything here is a decision a *person* made,
+ * which is why it is separate from the device description: `caps` says what the
+ * browser can do and this says what the user has agreed to.
+ */
+export interface RouteOptions {
+  /**
+   * The user has been shown the memory refusal and asked for the job anyway.
+   *
+   * Only the memory budget yields. It is an estimate — five of the ten `MEMORY`
+   * rows are unmeasured and `deviceMemoryGb` is coarse, clamped and absent
+   * outside Chromium — and an estimate about somebody's own tab is advice. The
+   * bitmap ceiling and the capability gate are facts and do not move: see
+   * `fitsBitmapCeiling`, whose failure mode is a blank image rather than a
+   * crash, and `missingCapability`, where there is no degree to accept.
+   *
+   * Never default this to `true` anywhere. It means "a human read the numbers",
+   * and nothing but a human answering can make that sentence true.
+   */
+  allowOverBudget?: boolean
+}
+
 /** Why the router refused the job. Each code maps to its own user-facing copy. */
 export type RejectionCode =
   'FILE_TOO_LARGE' | 'UNSUPPORTED_PAIR' | 'DEVICE_TOO_WEAK' | 'CODEC_UNAVAILABLE' | 'EMPTY_INPUT'
 
 /** The job will run, but the user should know something about how. */
 export type WarningCode =
-  'SLOW_PATH' | 'QUALITY_LOSS' | 'LARGE_DOWNLOAD' | 'NO_ISOLATION' | 'LAYOUT_LOSS'
+  'SLOW_PATH' | 'QUALITY_LOSS' | 'LARGE_DOWNLOAD' | 'NO_ISOLATION' | 'LAYOUT_LOSS' | 'OVER_BUDGET'
 
 export interface Warning {
   code: WarningCode
@@ -254,6 +278,19 @@ export interface RouteRejection {
   message: string
   /** A concrete, actionable next step. May never be empty or generic. */
   suggestion: string
+  /**
+   * Whether `RouteOptions.allowOverBudget` would turn this refusal into a job.
+   *
+   * Required rather than optional, so that a new rejection has to answer the
+   * question rather than inherit `undefined` — which the UI would read as "no
+   * way through" for a refusal that has one, and which is the silent half of
+   * the bug either way.
+   *
+   * True only for a memory refusal with an engine behind it that the bitmap
+   * ceiling also accepts. Everything else is false: an empty file, an
+   * unsupported pair and a missing codec are not matters of degree.
+   */
+  overridable: boolean
 }
 
 /** Discriminated on `ok`, so consumers narrow with a single check. */

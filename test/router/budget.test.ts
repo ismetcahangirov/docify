@@ -9,6 +9,8 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import {
   fitsBitmapCeiling,
+  grantedBytes,
+  MAX_DECODED_BYTES_PER_PIXEL,
   heldPixels,
   ANDROID_BUDGET_BYTES,
   DESKTOP_BUDGET_CAP_BYTES,
@@ -24,7 +26,9 @@ import {
   peakBytes,
 } from '@/lib/router/budget'
 import { jobInput } from '@/lib/router/job'
-import type { Capabilities, EngineId, EngineMemory } from '@/lib/router/types'
+import { PDFLIB_DECODED_BYTES_PER_PIXEL } from '@/lib/engines/raster-limits'
+import { VIPS_WHOLE_IMAGE_BYTES_PER_PIXEL } from '@/lib/engines/vips-pipeline'
+import type { Capabilities, EngineId, EngineMemory, RouteSuccess } from '@/lib/router/types'
 
 const MB = 1024 * 1024
 const GB = 1024 * MB
@@ -502,5 +506,121 @@ describe('the browser bitmap ceiling', () => {
     ])
 
     expect(fitsBitmapCeiling('canvas', job)).toBe(true)
+  })
+})
+
+/*
+ * What the worker is allowed to spend (issue #322).
+ *
+ * The number handed to `EngineInput.budgetBytes`, and the one place the two
+ * halves of the memory model have to be reconciled. The router charges a job by
+ * its *bytes*; `lib/engines/raster-limits.ts` charges it again, inside the
+ * worker, by its decoded *pixels*. For an ordinary job that second bound is the
+ * whole point and must not move. For a job the user has explicitly taken past
+ * the budget it is the same estimate they just overruled, and leaving it in
+ * place buys a second refusal — after the engine download, with no way through
+ * and no numbers connecting it to the sentence they accepted.
+ */
+describe('grantedBytes', () => {
+  const accepted = (engine: EngineId): RouteSuccess => ({
+    ok: true,
+    engine,
+    reason: engine,
+    loadCost: 0,
+    warnings: [{ code: 'OVER_BUDGET', message: 'This job is expected to need about …' }],
+  })
+
+  const ordinary = (engine: EngineId): RouteSuccess => ({
+    ok: true,
+    engine,
+    reason: engine,
+    loadCost: 0,
+    warnings: [],
+  })
+
+  it('is exactly the device budget for a job the router simply accepted', () => {
+    const job = jobInput(10 * MB)
+
+    expect(grantedBytes(ordinary('vips'), job, desktop)).toBe(budgetBytes(desktop))
+  })
+
+  it('leaves the decoded-pixel guard standing on a job that fits', () => {
+    // The safety property, and the reason this cannot be unconditional. A
+    // 24 megapixel photograph of 5 MB routes comfortably on bytes and still
+    // costs 192 MB to hold decoded. That second bound is exactly what
+    // `assertDecodedPixelsFit` exists for, and an accepted job must not
+    // dissolve it.
+    const job = jobInput([{ bytes: 5 * MB, pixels: 24_000_000 }])
+
+    expect(grantedBytes(ordinary('vips'), job, ios)).toBe(IOS_BUDGET_BYTES)
+  })
+
+  it('covers what the router predicted, once the user has overruled it', () => {
+    const job = jobInput(300 * MB)
+
+    expect(grantedBytes(accepted('vips'), job, ios)).toBeGreaterThanOrEqual(
+      peakBytes(MEMORY.vips, job),
+    )
+  })
+
+  it('covers what the engine will charge per decoded pixel, so nothing refuses twice', () => {
+    // The case the byte model cannot see. `MEMORY.vips.bytesPerPixel` is 0 —
+    // libvips streams scanlines and never materialises the bitmap — but a
+    // rotation reads bottom-up, so `assertPipelineFits` charges 8 bytes a pixel
+    // against this very number. 24 megapixels is 192 MB of it; the router's own
+    // prediction for the job is 100 MB.
+    const job = jobInput([{ bytes: 25 * MB, pixels: 24_000_000 }])
+
+    expect(grantedBytes(accepted('vips'), job, ios)).toBeGreaterThanOrEqual(
+      MAX_DECODED_BYTES_PER_PIXEL * 24_000_000,
+    )
+  })
+
+  it('scopes the pixel cost the way the engine holds its files', () => {
+    // pdf-lib opens every image at once and `pdf-from-images` accumulates the
+    // decoded pixels across the job, so the total binds it rather than the
+    // largest — the same scope `heldPixels` already applies to bytes.
+    const files = [
+      { bytes: 8 * MB, pixels: 12_000_000 },
+      { bytes: 8 * MB, pixels: 12_000_000 },
+    ]
+    const job = jobInput(files)
+
+    expect(grantedBytes(accepted('pdflib'), job, ios)).toBeGreaterThanOrEqual(
+      MAX_DECODED_BYTES_PER_PIXEL * 24_000_000,
+    )
+  })
+
+  it('never drops below the device budget, whatever the job', () => {
+    const job = jobInput(1)
+
+    expect(grantedBytes(accepted('vips'), job, desktop)).toBe(budgetBytes(desktop))
+  })
+})
+
+/*
+ * The contract `lib/router/budget.ts` depends on (issue #322).
+ *
+ * `grantedBytes` has to predict this guard to keep a job the user accepted over
+ * budget from being refused a second time inside the worker. It cannot read the
+ * rate off `MEMORY`, because the two engines that use this guard both carry
+ * `bytesPerPixel: 0` there on purpose. It uses one constant instead, and this is
+ * what keeps that constant true: a third caller charging more than 8 fails here
+ * rather than quietly reopening the double refusal.
+ */
+describe('MAX_DECODED_BYTES_PER_PIXEL', () => {
+  it('is at least what every caller of the guard charges', () => {
+    const charged = [PDFLIB_DECODED_BYTES_PER_PIXEL, VIPS_WHOLE_IMAGE_BYTES_PER_PIXEL]
+
+    for (const rate of charged) expect(rate).toBeLessThanOrEqual(MAX_DECODED_BYTES_PER_PIXEL)
+  })
+
+  it('is not larger than it needs to be, so the grant stays honest', () => {
+    // A ceiling padded past the worst real rate would hand an accepted job more
+    // allowance than any engine will ask for, which is memory the router
+    // promised nobody would spend.
+    const charged = [PDFLIB_DECODED_BYTES_PER_PIXEL, VIPS_WHOLE_IMAGE_BYTES_PER_PIXEL]
+
+    expect(MAX_DECODED_BYTES_PER_PIXEL).toBe(Math.max(...charged))
   })
 })

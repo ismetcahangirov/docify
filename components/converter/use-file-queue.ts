@@ -9,10 +9,11 @@ import type { JobPatch, QueueAction, QueuedJob } from '@/lib/queue/queue'
 import { createJob, queueReducer } from '@/lib/queue/queue'
 import type { JobEvent } from '@/lib/queue/state'
 import { isFinished, isRunning } from '@/lib/queue/state'
-import { budgetBytes } from '@/lib/router/budget'
+import { grantedBytes } from '@/lib/router/budget'
 import { probeCapabilities } from '@/lib/router/capabilities'
 import { route } from '@/lib/router/route'
-import type { Capabilities, ConversionTask, EngineId, RouteFile } from '@/lib/router/types'
+import { jobInput } from '@/lib/router/job'
+import type { ConversionTask, EngineId, RouteFile } from '@/lib/router/types'
 import { reportConversion } from '@/lib/stats/report'
 import { cancelConversion, startConversion } from '@/lib/worker/jobs'
 
@@ -97,6 +98,17 @@ export interface FileQueue {
    * retry joins the line rather than jumping it (issue #263).
    */
   retry(id: string): void
+  /**
+   * Accepts a memory refusal's risk and puts the job back in the line to be
+   * routed again, this time over budget (issue #322).
+   *
+   * Only ever called from a card whose rejection the router marked
+   * `overridable`. Like `retry` it does not start anything: the scheduler owns
+   * "one at a time", and a second job alongside the one in flight is the
+   * out-of-memory case that rule exists to prevent — which matters most for a
+   * job that is already over the budget.
+   */
+  convertAnyway(id: string): void
   /** Takes a file out of the list, stopping its conversion if one is running. */
   remove(id: string): void
   /** Drops everything that has finished, leaving whatever is still in flight. */
@@ -174,6 +186,15 @@ export function useFileQueue(): FileQueue {
 
   const retry = React.useCallback((id: string) => advance(id, 'retry'), [advance])
 
+  // The same move as `retry` — back to `queued`, the old outcome dropped —
+  // carrying the one thing that makes the next attempt different. The mark
+  // rides on the job rather than on this call because the scheduler, not this
+  // hook, decides when the job is actually run.
+  const convertAnyway = React.useCallback(
+    (id: string) => advance(id, 'retry', { overBudget: true }),
+    [advance],
+  )
+
   const run = React.useCallback(
     async (id: string, task: ConversionTask, settings: JobSettings = {}) => {
       const job = latest.current.find((candidate) => candidate.id === id)
@@ -196,7 +217,9 @@ export function useFileQueue(): FileQueue {
       // `queued` and nothing below may happen — least of all the download.
       if (!isCurrent()) return
 
-      const decision = route(task, [header], caps)
+      // `job` is the render the run started from, so the mark is the one the
+      // card was showing when the user pressed the button.
+      const decision = route(task, [header], caps, { allowOverBudget: job.overBudget === true })
 
       if (!decision.ok) {
         advance(id, 'fail', {
@@ -208,6 +231,9 @@ export function useFileQueue(): FileQueue {
             message: decision.message,
             suggestion: decision.suggestion,
             code: decision.code,
+            // Whether the card may offer a way through. The router's answer,
+            // carried rather than re-derived (issue #322).
+            overridable: decision.overridable,
           },
         })
 
@@ -232,7 +258,9 @@ export function useFileQueue(): FileQueue {
         task,
         settings,
         engine: decision.engine,
-        caps,
+        // What this job may spend, which is the device budget for everything
+        // except a job the user has just taken past it. See `grantedBytes`.
+        budgetBytes: grantedBytes(decision, jobInput([header]), caps),
         running: running.current,
         dispatch,
         isCurrent,
@@ -256,7 +284,7 @@ export function useFileQueue(): FileQueue {
   }, [])
   const clearFinished = React.useCallback(() => dispatch({ type: 'clearFinished' }), [])
 
-  return { jobs, add, run, cancel, retry, remove, clearFinished }
+  return { jobs, add, run, cancel, retry, convertAnyway, remove, clearFinished }
 }
 
 /** The starting list, hoisted so `useReducer` is not handed a new array each render. */
@@ -268,7 +296,8 @@ interface ConvertRun {
   task: ConversionTask
   settings: JobSettings
   engine: EngineId
-  caps: Capabilities
+  /** `grantedBytes(...)`: what the engine may spend on this job. */
+  budgetBytes: number
   running: Map<string, string>
   dispatch: React.Dispatch<QueueAction>
   /** Whether this is still the run the job is on. False after a cancel or a restart. */
@@ -283,7 +312,7 @@ interface ConvertRun {
  * whole path be driven in a test without a real `Worker`.
  */
 async function convert(run: ConvertRun): Promise<void> {
-  const { id, file, task, settings, engine, caps, running, dispatch, isCurrent } = run
+  const { id, file, task, settings, engine, budgetBytes, running, dispatch, isCurrent } = run
   let loaded = false
 
   /**
@@ -306,7 +335,7 @@ async function convert(run: ConvertRun): Promise<void> {
       engine,
       task,
       files: [file],
-      budgetBytes: budgetBytes(caps),
+      budgetBytes,
       ...settings,
     },
     (progress) => {

@@ -16,7 +16,7 @@ import type { BitmapEncoder, RgbaBitmap } from '@/lib/engines/bitmap'
 import type { HeifDecoder, HeifImage, HeifModule } from '@/lib/engines/heif-decode'
 import { createRunner, DECODE_SHARE, descriptor } from '@/lib/engines/heif'
 import type { EngineInput } from '@/lib/engines/types'
-import { LARGE_DOWNLOAD_BYTES } from '@/lib/router/route'
+import { LARGE_DOWNLOAD_BYTES } from '@/lib/router/warnings'
 import type { Capabilities, ConversionTask, FormatId } from '@/lib/router/types'
 
 const desktop: Capabilities = {

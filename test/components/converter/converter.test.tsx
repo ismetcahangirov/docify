@@ -472,3 +472,102 @@ describe('dropping a file brings the queue into view', () => {
     expect(scrollIntoView).toHaveBeenCalledTimes(1)
   })
 })
+
+/*
+ * Pushing past a memory refusal (issue #322).
+ *
+ * The end of the path the router half of the issue opens: a file this device's
+ * budget refuses, the button that offers it anyway, and the two things that
+ * have to be true once it is pressed — the job actually runs, and the engine on
+ * the other side is not handed the very ceiling the user has just overruled.
+ */
+describe('Converter — the way through a refusal', () => {
+  const GB = 1024 * 1024 * 1024
+
+  /** A file whose reported size is past every engine's ceiling on this device. */
+  const huge = (name: string) => {
+    const made = file(name)
+    // jsdom will not allocate 4 GB and does not need to: the router is handed
+    // `file.size` and never the bytes.
+    Object.defineProperty(made, 'size', { value: 4 * GB })
+
+    return made
+  }
+
+  const dropHuge = (name: string) => {
+    const input = screen.getByLabelText(/drop your heic files here/i)
+
+    fireEvent.change(input, { target: { files: [huge(name)] } })
+  }
+
+  it('offers the refused job anyway, and runs it when asked', async () => {
+    render(<Converter pair={pair} />)
+    dropHuge('holiday.heic')
+
+    const button = await screen.findByRole('button', { name: /convert holiday\.heic anyway/i })
+    fireEvent.click(button)
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+  })
+
+  it('refuses it in the first place', async () => {
+    render(<Converter pair={pair} />)
+    dropHuge('holiday.heic')
+
+    await screen.findByRole('button', { name: /convert holiday\.heic anyway/i })
+
+    expect(startConversion).not.toHaveBeenCalled()
+  })
+
+  it('does not hand the engine the ceiling the user just overruled', async () => {
+    // `raster-limits.ts` bounds decoded pixels against `EngineInput.budgetBytes`.
+    // Passing the device budget there would refuse the job a second time, deep
+    // inside the worker, after the download — the user having already been told
+    // it would be attempted.
+    render(<Converter pair={pair} />)
+    dropHuge('holiday.heic')
+
+    fireEvent.click(await screen.findByRole('button', { name: /convert holiday\.heic anyway/i }))
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+
+    const request = vi.mocked(startConversion).mock.calls[0][0]
+    expect(request.budgetBytes).toBeGreaterThan(4 * GB)
+  })
+
+  it('waits its turn behind a job that is already running', async () => {
+    // The rule matters more here than anywhere: every engine's budget assumes
+    // it has the tab to itself, and this job is one the budget already refused.
+    // Starting it beside another is the out-of-memory case the scheduler exists
+    // to prevent, and "Convert anyway" must go through the line like a retry
+    // rather than calling `run` itself.
+    render(<Converter pair={pair} />)
+
+    // Refused first, while nothing is in flight — the scheduler routes one job
+    // at a time, so a file dropped behind a running one is not even refused yet.
+    dropHuge('holiday.heic')
+    const button = await screen.findByRole('button', { name: /convert holiday\.heic anyway/i })
+    expect(startConversion).not.toHaveBeenCalled()
+
+    // Now put something in front of it.
+    drop(['first.heic'])
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(button)
+    // The running job has not settled, so nothing else may reach the worker.
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+
+    settle().resolve(converted)
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(2))
+  })
+
+  it('tells the card what it is about to attempt', async () => {
+    render(<Converter pair={pair} />)
+    dropHuge('holiday.heic')
+
+    fireEvent.click(await screen.findByRole('button', { name: /convert holiday\.heic anyway/i }))
+
+    // The numbers the refusal quoted, now as the risk being taken.
+    expect(await screen.findByText(/expected to need about/i)).toBeInTheDocument()
+  })
+})

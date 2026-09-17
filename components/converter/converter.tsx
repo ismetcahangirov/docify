@@ -66,7 +66,7 @@ const NO_SETTINGS: JobSettings = {}
 
 function Converter({ pair }: ConverterProps) {
   const queue = useFileQueue()
-  const { add, run, cancel, remove: drop, retry: requeue } = queue
+  const { add, run, cancel, remove: drop, retry: requeue, convertAnyway: accept } = queue
 
   const from = formatMeta(pair.from)
   const to = formatMeta(pair.to)
@@ -196,6 +196,22 @@ function Converter({ pair }: ConverterProps) {
       requeue(id)
     },
     [requeue],
+  )
+
+  /**
+   * "Convert anyway" goes back in the line the same way "Try again" does.
+   *
+   * Same reasoning, and it matters more here: the job that is about to run is
+   * one the memory model already refused, so starting it beside whatever is in
+   * flight is the exact out-of-memory case `busy` exists to prevent (issue
+   * #322). Forgetting it was started is what lets the scheduler pick it up.
+   */
+  const convertAnyway = React.useCallback(
+    (id: string) => {
+      started.current.delete(id)
+      accept(id)
+    },
+    [accept],
   )
 
   /**
@@ -347,6 +363,7 @@ function Converter({ pair }: ConverterProps) {
                   alternatives={alternatives}
                   onCancel={cancel}
                   onRetry={retry}
+                  onConvertAnyway={convertAnyway}
                   onRemove={remove}
                 />
               </li>

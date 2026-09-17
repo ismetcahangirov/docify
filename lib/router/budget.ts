@@ -2,9 +2,11 @@
  * The memory budget model: how much RAM a conversion may use on this device,
  * and therefore how large an input each engine can accept.
  *
- * Everything here is a pure function of `Capabilities`. Nothing in this module
- * touches `navigator`, `window` or `performance` — the values arrive as a
- * parameter so the router stays testable without a browser and safe under SSR.
+ * This module owns the memory model and nothing else: what a device may spend,
+ * what each engine costs for a given job, and which engine costs least. Every
+ * function here is pure and takes what it needs as a parameter — nothing
+ * touches `navigator`, `window` or `performance` — so the router stays testable
+ * without a browser and safe under SSR.
  *
  * The numbers are empirical ceilings, not theory. Raising one because a file
  * "should" fit trades an honest rejection message for an out-of-memory crash
@@ -14,7 +16,9 @@
 
 import { MAX_CANVAS_PIXELS } from '@/lib/engines/canvas-limits'
 
-import type { Capabilities, EngineId, EngineMemory, JobInput } from './types'
+import type { EngineDescriptor } from '@/lib/engines/types'
+
+import type { Capabilities, EngineId, EngineMemory, JobInput, RouteSuccess } from './types'
 
 const MB = 1024 * 1024
 const BYTES_PER_GB = 1024 * MB
@@ -416,4 +420,118 @@ export function maxInputBytes(engine: EngineId, caps: Capabilities): number {
  */
 export function fitsInBudget(engine: EngineId, job: JobInput, caps: Capabilities): boolean {
   return fitsBitmapCeiling(engine, job) && peakBytes(MEMORY[engine], job) <= budgetBytes(caps)
+}
+
+/**
+ * The most any engine-side decoded-pixel guard charges, in bytes per pixel.
+ *
+ * Used by {@link grantedBytes}, which has to predict that guard to keep an
+ * accepted over-budget job from being refused a second time inside the worker.
+ * It cannot read the rate off {@link MEMORY}: `vips` and `pdflib` are the two
+ * engines that run the guard and both carry `bytesPerPixel: 0` there, on
+ * purpose — libvips streams scanlines, and pdf-lib's rate depends on a format
+ * the router never sees.
+ *
+ * It lives *here*, beside the rest of the cost model, rather than in
+ * `lib/engines/raster-limits.ts` where it is spent. That module already imports
+ * `DESKTOP_BUDGET_FLOOR_BYTES` from this one, and a constant going back the
+ * other way would close an import cycle whose failure mode is a top-level
+ * `ReferenceError` at module init, on whichever of the two happened to be
+ * loaded first. Engines depend on the budget; the budget depends on no engine.
+ *
+ * `test/router/budget.test.ts` asserts this equals the largest rate any caller
+ * actually passes — `PDFLIB_DECODED_BYTES_PER_PIXEL` and
+ * `VIPS_WHOLE_IMAGE_BYTES_PER_PIXEL`, both 8 — so a hungrier third caller fails
+ * a test rather than quietly reopening the double refusal.
+ */
+export const MAX_DECODED_BYTES_PER_PIXEL = 8
+
+/**
+ * What the worker may actually spend on this job, in bytes.
+ *
+ * Not the same question as {@link budgetBytes}, and the difference shows only
+ * on a job the user has taken past the budget on purpose (issue #322).
+ *
+ * ## Why a job that was merely accepted gets nothing extra
+ *
+ * `lib/engines/raster-limits.ts` bounds *decoded pixels* against whatever
+ * `EngineInput.budgetBytes` it is handed. That is a second bound on an axis the
+ * router cannot see, and for an ordinary job it is the whole point: a 24
+ * megapixel photograph of 5 MB routes comfortably on bytes and still costs
+ * 192 MB to hold decoded, which is the crash `assertDecodedPixelsFit` exists to
+ * prevent. So the ordinary answer is exactly `budgetBytes(caps)`, unchanged,
+ * and nothing here may loosen it.
+ *
+ * ## Why an overruled job needs both terms raised
+ *
+ * Hand the device budget to a job the user has explicitly accepted and the
+ * engine refuses it a second time, inside the worker, after the download — with
+ * the user having already been told it would be attempted, and with the second
+ * refusal carrying no `RejectionCode`, so it renders without a title, without
+ * numbers that connect to the sentence they accepted, and without a way
+ * through. One decision must not be refused twice.
+ *
+ * Raising it to the router's own prediction is not enough on its own, because
+ * the two halves of the model charge different things. `MEMORY.vips` and
+ * `MEMORY.pdflib` both carry `bytesPerPixel: 0` — deliberately: libvips streams
+ * scanlines, and pdf-lib's rate depends on a format the router never sees — yet
+ * a vips *rotation* reads bottom-up and is charged 8 bytes a pixel by
+ * `assertPipelineFits`, and `pdf-from-images` accumulates the same rate across
+ * a job. Rotating a 25 MB, 24 megapixel JPEG on a phone predicts 100 MB here
+ * and is then measured at 192 MB there. So the pixel term the *engine* will
+ * charge is a term of this grant too, scoped by {@link heldPixels} the way its
+ * byte twin already is.
+ *
+ * ## What it still does not touch
+ *
+ * The pixel ceilings that are platform facts rather than budget arithmetic —
+ * `MAX_CANVAS_SIDE`, `MAX_CANVAS_PIXELS`, and therefore `assertBitmapFits` and
+ * `fitsBitmapCeiling` — do not read this number and are not overrulable by
+ * anyone. Past them a canvas returns a blank surface rather than throwing.
+ *
+ * `routed` is the whole decision rather than an "was this overridden" flag so
+ * that the two cannot be mismatched: the `OVER_BUDGET` warning is the router's
+ * own record that it admitted a job nothing could afford, and it is put there
+ * by the only code path that does so.
+ */
+export function grantedBytes(routed: RouteSuccess, job: JobInput, caps: Capabilities): number {
+  const budget = budgetBytes(caps)
+  const overruled = routed.warnings.some((warning) => warning.code === 'OVER_BUDGET')
+  if (!overruled) return budget
+
+  const memory = MEMORY[routed.engine]
+
+  return Math.max(
+    budget,
+    peakBytes(memory, job),
+    MAX_DECODED_BYTES_PER_PIXEL * heldPixels(memory, job),
+  )
+}
+
+/**
+ * Whichever of `candidates` costs least to run *this* job.
+ *
+ * Two callers, one question, and it has to be the same answer in both. A
+ * `FILE_TOO_LARGE` quotes this engine's ceiling, because the user is being told
+ * the largest job that could work here and a hungrier engine's number would
+ * understate it; an accepted override *runs* this engine, because once nothing
+ * fits the only question left is which candidate is least likely to take the
+ * tab down. A rejection that named one engine and an override that then ran a
+ * different one would be two answers to the same question.
+ *
+ * Decided by what each engine costs for this job rather than by comparing their
+ * ceilings, because two ceilings can be ceilings on different quantities — one
+ * on the job's total and one on its largest file — and those do not order
+ * against each other.
+ *
+ * Ties keep candidate order, which is `byPreference`: equal memory is no reason
+ * to depart from the priority table.
+ */
+export function cheapestFor(
+  candidates: readonly [EngineDescriptor, ...EngineDescriptor[]],
+  job: JobInput,
+): EngineDescriptor {
+  return candidates.reduce((a, b) =>
+    peakBytes(MEMORY[a.id], job) <= peakBytes(MEMORY[b.id], job) ? a : b,
+  )
 }

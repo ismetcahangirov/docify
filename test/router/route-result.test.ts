@@ -15,6 +15,7 @@ const rejection: RouteRejection = {
   code: 'DEVICE_TOO_WEAK',
   message: 'This file is 200 MB. The safe limit on this device is 20 MB.',
   suggestion: 'Open this on a desktop — mobile browsers have a much lower memory ceiling.',
+  overridable: true,
 }
 
 describe('RouteResult narrowing', () => {

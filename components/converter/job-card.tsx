@@ -105,6 +105,16 @@ export type JobCardProps = React.ComponentProps<'article'> &
      * two chances to wire one of them to a run that jumps the queue.
      */
     onRetry?: (id: string) => void
+    /**
+     * Accepts the risk in a memory refusal and queues the job again, over
+     * budget (issue #322).
+     *
+     * Separate from `onRetry` although both put the job back in the line,
+     * because they are different requests: one asks for the same answer again,
+     * the other overrules it. Drawn only where the router said the refusal is
+     * overrulable at all — this card never decides that.
+     */
+    onConvertAnyway?: (id: string) => void
     /** Takes the file out of the queue altogether. */
     onRemove?: (id: string) => void
     /**
@@ -132,6 +142,7 @@ function JobCard({
   job,
   onCancel,
   onRetry,
+  onConvertAnyway,
   onRemove,
   task,
   alternatives,
@@ -303,6 +314,13 @@ function JobCard({
             variant={variant}
             task={task}
             alternatives={alternatives}
+            onConvertAnyway={
+              onConvertAnyway === undefined ? undefined : () => onConvertAnyway(job.id)
+            }
+            // The queue draws one card per file, so several of these buttons
+            // can share a page; the file name is what tells them apart to
+            // anybody navigating by accessible name.
+            overrideLabel={`Convert ${job.file.name} anyway`}
             rejection={{
               ok: false,
               code: job.failure.code,
@@ -312,6 +330,9 @@ function JobCard({
               // `route()` and exists only because `JobFailure` types the field
               // as optional for the engine case below.
               suggestion: job.failure.suggestion ?? '',
+              // Same shape: `false` is the safe reading of a failure that came
+              // from an engine rather than from the router.
+              overridable: job.failure.overridable === true,
             }}
           />
         ) : (

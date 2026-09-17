@@ -18,9 +18,14 @@
  *   already sorted by `byPreference`; this module only ever *filters* that list
  *   and takes its head. Re-sorting here would fork the priority table.
  * - **Rejections explain themselves** (CLAUDE.md §2.5): every `ok: false`
- *   branch quotes real numbers and names something the user can go and do. The
- *   copy itself lives in `./rejections`, so that this module stays about the
- *   decision and that one about the explanation.
+ *   branch quotes real numbers and names something the user can go and do.
+ *
+ * None of the words are here. This module decides; `./rejections` says why a
+ * job was refused, `./warnings` says what an accepted one will cost, and
+ * `./formats` answers the questions that are about a format pair rather than
+ * about a device. Keeping the four apart is what lets a sentence be argued with
+ * without reopening the decision that produced it — and it is why `route()`
+ * itself is short enough to read in one screen (CLAUDE.md §5.2).
  *
  * Sizes are binary: "MB" in user-facing copy means 1 048 576 bytes.
  */
@@ -28,56 +33,19 @@
 import { enginesFor } from '@/lib/engines/registry'
 import type { EngineDescriptor } from '@/lib/engines/types'
 
-import { fitsInBudget } from './budget'
-import { formatBytes, formatName } from './copy'
+import { cheapestFor, fitsBitmapCeiling, fitsInBudget } from './budget'
+import { codecKind } from './formats'
 import { isMeasurable, jobInput } from './job'
 import { codecUnavailable, emptyInput, tooLarge, unsupportedPair } from './rejections'
 import type {
   Capabilities,
   ConversionTask,
-  FormatId,
+  JobInput,
   RouteInput,
+  RouteOptions,
   RouteResult,
-  Warning,
 } from './types'
-
-const MB = 1024 * 1024
-
-/**
- * Download size above which the engine binary is worth warning about.
- *
- * Strictly above: `wasm-vips` is 5.5 MB and must stay silent, while
- * `ffmpeg.wasm` at ~31 MB must not. 8 MB is roughly two seconds on a median
- * connection — where a progress-free pause starts to read as a broken page.
- */
-export const LARGE_DOWNLOAD_BYTES = 8 * MB
-
-const VIDEO_FORMATS: ReadonlySet<FormatId> = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi'])
-const AUDIO_FORMATS: ReadonlySet<FormatId> = new Set(['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'])
-const LOSSY_IMAGE_FORMATS: ReadonlySet<FormatId> = new Set(['jpg', 'webp', 'avif', 'gif', 'heic'])
-const LOSSLESS_AUDIO_FORMATS: ReadonlySet<FormatId> = new Set(['wav', 'flac'])
-
-/**
- * Targets that keep the words and throw the document away.
- *
- * A different loss from `QUALITY_LOSS`, which is about re-encoding: nothing is
- * being re-encoded here, and nothing about the *text* degrades. What is lost is
- * everything that was not text — the layout, the fonts, the images, the tables —
- * because the target format has nowhere to put any of it.
- */
-const TEXT_FORMATS: ReadonlySet<FormatId> = new Set(['txt'])
-
-/**
- * Whether writing this format throws information away.
- *
- * WebP, AVIF and HEIC all have lossless modes on paper; every engine we ship
- * writes them lossily by default, so they count as lossy here. Video containers
- * are lossy because the codecs inside them are.
- */
-function isLossy(format: FormatId): boolean {
-  if (LOSSY_IMAGE_FORMATS.has(format) || VIDEO_FORMATS.has(format)) return true
-  return AUDIO_FORMATS.has(format) && !LOSSLESS_AUDIO_FORMATS.has(format)
-}
+import { overBudget, warningsFor } from './warnings'
 
 /**
  * Picks the engine for `task`, or refuses with a reason the user can act on.
@@ -91,15 +59,24 @@ function isLossy(format: FormatId): boolean {
  *    budget filter so that the size ceiling quoted by a `FILE_TOO_LARGE` is one
  *    an engine that can actually run the job would honour; the other order lets
  *    the router promise a limit and then refuse the file that meets it.
- * 4. Memory budget — nothing that cannot fit in RAM survives.
+ * 4. Memory budget — nothing that cannot fit in RAM survives, unless the user
+ *    has read the refusal and asked for it anyway. See {@link overBudgetRoute}.
  * 5. The head of what is left wins.
  *
  * `input` is one size, or one size per file for a job made of several. The
  * distinction matters at step 4 and nowhere else: merging a hundred documents
  * holds all hundred at once, while converting a hundred images holds one of
  * them at a time, and only the engine's own model knows which it is.
+ *
+ * `options` is the user's own say in it and defaults to saying nothing, so
+ * every existing three-argument call keeps the behaviour it had.
  */
-export function route(task: ConversionTask, input: RouteInput, caps: Capabilities): RouteResult {
+export function route(
+  task: ConversionTask,
+  input: RouteInput,
+  caps: Capabilities,
+  options: RouteOptions = {},
+): RouteResult {
   const job = jobInput(input)
   if (!isMeasurable(job)) return emptyInput(job)
 
@@ -119,7 +96,11 @@ export function route(task: ConversionTask, input: RouteInput, caps: Capabilitie
 
   const viable = [firstViable, ...restViable] as const
   const affordable = viable.filter((engine) => fitsInBudget(engine.id, job, caps))
-  if (affordable.length === 0) return tooLarge(task, job, caps, viable)
+  if (affordable.length === 0) {
+    return options.allowOverBudget === true
+      ? overBudgetRoute(task, job, caps, viable)
+      : tooLarge(task, job, caps, viable)
+  }
 
   const chosen = affordable[0]
 
@@ -129,6 +110,57 @@ export function route(task: ConversionTask, input: RouteInput, caps: Capabilitie
     reason: chosen.label,
     loadCost: chosen.loadCost,
     warnings: warningsFor(chosen, task),
+  }
+}
+
+/**
+ * The job nothing can afford, run anyway because the user said so (issue #322).
+ *
+ * Reached only from `route()`, and only with `allowOverBudget` — which means a
+ * person has read the `FILE_TOO_LARGE` sentence, with its real numbers in it,
+ * and asked for the conversion regardless. The home page promises no limit on
+ * file size; this is the half of that promise the budget was quietly retracting.
+ *
+ * Two things do not yield with the budget.
+ *
+ * The **bitmap ceiling** is filtered out first. It is not an estimate about
+ * memory at all: past `MAX_CANVAS_PIXELS` a canvas comes back blank rather than
+ * throwing, so overriding it trades a refusal for a silently wrong image, which
+ * is the one outcome worse than a crash. With no candidate left after that
+ * filter there is nothing to accept, and the ordinary refusal stands.
+ *
+ * The **capability gate** never got this far: it runs above, and a browser with
+ * no `VideoEncoder` does not acquire one by being asked twice.
+ *
+ * The engine chosen is the cheapest for this job rather than the head of the
+ * list, and that is the whole difference between this and the path above. The
+ * priority table orders engines by how *well* they do the job — hardware
+ * acceleration, download size — and that ranking is worth having while the job
+ * fits. Once nothing fits, the only question left is which candidate is least
+ * likely to take the tab down, and `cheapestFor` is the same engine the
+ * rejection would have quoted a ceiling for.
+ */
+function overBudgetRoute(
+  task: ConversionTask,
+  job: JobInput,
+  caps: Capabilities,
+  viable: readonly [EngineDescriptor, ...EngineDescriptor[]],
+): RouteResult {
+  const [first, ...rest] = viable.filter((engine) => fitsBitmapCeiling(engine.id, job))
+  if (first === undefined) return tooLarge(task, job, caps, viable)
+
+  const chosen = cheapestFor([first, ...rest], job)
+
+  return {
+    ok: true,
+    engine: chosen.id,
+    reason: chosen.label,
+    loadCost: chosen.loadCost,
+    // First, ahead of the fixed order `warningsFor` documents. That order ranks
+    // warnings by consequence, and nothing else in the list can cost the user
+    // the tab: a slow path wastes minutes and a lossy re-encode costs quality,
+    // while this one is the reason the job was refused a moment ago.
+    warnings: [overBudget(chosen.id, job, caps), ...warningsFor(chosen, task)],
   }
 }
 
@@ -183,89 +215,4 @@ function missingCapabilities(
   const named = candidates.map((engine) => missingCapability(engine, task, caps))
 
   return [...new Set(named.filter((api): api is string => api !== null))]
-}
-
-/**
- * Which family of codecs the job has to drive, or `null` when it drives none.
- *
- * Writing a video format always needs video codecs. Reading one usually does
- * too — except when the output is audio, which is a demux plus an audio
- * transcode, the video stream discarded untouched.
- */
-function codecKind(task: ConversionTask): 'video' | 'audio' | null {
-  if (VIDEO_FORMATS.has(task.to)) return 'video'
-  if (VIDEO_FORMATS.has(task.from)) return AUDIO_FORMATS.has(task.to) ? 'audio' : 'video'
-  if (AUDIO_FORMATS.has(task.from) || AUDIO_FORMATS.has(task.to)) return 'audio'
-  return null
-}
-
-/**
- * What the user should know about a job that *is* going to run.
- *
- * The order is fixed — how slow, why it is slow, the wait before it starts,
- * then the cost to the file — so the UI can render the list verbatim with the
- * most consequential warning first.
- *
- * `QUALITY_LOSS` is deliberately coarse: it reads the format pair, not the
- * settings, so a job an engine will re-encode warns whatever it does with the
- * bitrate. The one narrowing available at routing time is the engine itself —
- * `remux` is *defined* as a stream copy, so a pair it won is lossless by
- * construction and the warning would be false. Every other engine re-encodes,
- * and for those the pair is still all there is to go on: a codec-level answer
- * about whether a given file could have been copied needs the file open, which
- * the router never does.
- *
- * `Capabilities` is deliberately not a parameter. Every warning here is a fact
- * about the chosen engine or about the format pair, and the device has already
- * had its say by the time one is chosen: it decided which engines were eligible
- * at all. The one warning that used to read it — `NO_ISOLATION` — was reading
- * the wrong thing, and says so at its own site.
- */
-function warningsFor(engine: EngineDescriptor, task: ConversionTask): Warning[] {
-  const warnings: Warning[] = []
-
-  if (engine.id === 'ffmpeg') {
-    warnings.push({
-      code: 'SLOW_PATH',
-      message:
-        'No hardware acceleration is available for this format, so the conversion will take noticeably longer.',
-    })
-
-    // Unconditional, although the code reads like a question about the page.
-    // The vendored core is built `--disable-pthreads` (`lib/engines/ffmpeg-runtime.ts`),
-    // so it uses one core on an isolated document and one on an ordinary one.
-    // Gating this on `caps.crossOriginIsolated` said, by omission, that an
-    // isolated page would get the others.
-    warnings.push({
-      code: 'NO_ISOLATION',
-      message:
-        'Running single-threaded: this build of ffmpeg uses one CPU core, so long files take a while.',
-    })
-  }
-
-  if (engine.loadCost > LARGE_DOWNLOAD_BYTES) {
-    warnings.push({
-      code: 'LARGE_DOWNLOAD',
-      message: `${engine.label} is a ${formatBytes(engine.loadCost)} one-time download; it is cached afterwards.`,
-    })
-  }
-
-  if (TEXT_FORMATS.has(task.to) && !TEXT_FORMATS.has(task.from)) {
-    warnings.push({
-      code: 'LAYOUT_LOSS',
-      message:
-        'A text file holds words and nothing else, so the layout, fonts, images and tables ' +
-        'are not carried across. The result is readable text, not an editable copy of the ' +
-        'document.',
-    })
-  }
-
-  if (engine.id !== 'remux' && isLossy(task.from) && isLossy(task.to)) {
-    warnings.push({
-      code: 'QUALITY_LOSS',
-      message: `${formatName(task.from)} and ${formatName(task.to)} are both lossy formats, so re-encoding gives up a little quality.`,
-    })
-  }
-
-  return warnings
 }

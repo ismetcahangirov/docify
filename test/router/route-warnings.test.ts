@@ -10,7 +10,8 @@
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { LARGE_DOWNLOAD_BYTES, route } from '@/lib/router/route'
+import { route } from '@/lib/router/route'
+import { LARGE_DOWNLOAD_BYTES } from '@/lib/router/warnings'
 
 import {
   chosen,

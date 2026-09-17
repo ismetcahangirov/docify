@@ -1,5 +1,5 @@
-import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 
 import { Rejection } from '@/components/converter/rejection'
 import type { ConversionTask, RejectionCode, RouteRejection } from '@/lib/router/types'
@@ -20,6 +20,7 @@ const rejection = (over: Partial<RouteRejection> = {}): RouteRejection => ({
   code: 'UNSUPPORTED_PAIR',
   message: 'Converting HEIC to ICO is not something this browser can do here.',
   suggestion: 'Choose a different output format for your HEIC file.',
+  overridable: false,
   ...over,
 })
 
@@ -138,5 +139,75 @@ describe('Rejection — the alternative', () => {
     render(<Rejection rejection={rejection()} alternatives={[task({ to: 'jpg' })]} />)
 
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  })
+})
+
+/*
+ * The way through a refusal (issue #322).
+ *
+ * The memory budget is an estimate — five of the ten `MEMORY` rows are
+ * unmeasured — and the home page promises no limit on file size. So a refusal
+ * the router itself marks as an estimate carries a button, and one that is a
+ * flat platform fact does not.
+ */
+describe('Rejection — the way through', () => {
+  const tooLarge = (over: Partial<RouteRejection> = {}) =>
+    rejection({
+      code: 'FILE_TOO_LARGE',
+      message:
+        'This file is 2.1 GB. The largest MP4 file this device can convert safely is 300 MB.',
+      suggestion: 'Split the file into smaller parts, or shrink it before converting.',
+      overridable: true,
+      ...over,
+    })
+
+  it('offers a way through a refusal the router marked overridable', () => {
+    const onConvertAnyway = vi.fn()
+    render(<Rejection rejection={tooLarge()} onConvertAnyway={onConvertAnyway} />)
+
+    fireEvent.click(within(panel()).getByRole('button'))
+
+    expect(onConvertAnyway).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers nothing when the router says there is no way through', () => {
+    // The bitmap ceiling: past it a canvas comes back blank rather than
+    // throwing, so accepting the risk buys a silently wrong image.
+    render(<Rejection rejection={tooLarge({ overridable: false })} onConvertAnyway={vi.fn()} />)
+
+    expect(within(panel()).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('offers nothing when the caller wired no handler', () => {
+    render(<Rejection rejection={tooLarge()} />)
+
+    expect(within(panel()).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('says what the risk is before it is taken', () => {
+    render(<Rejection rejection={tooLarge()} onConvertAnyway={vi.fn()} />)
+
+    expect(slot('rejection-override-note')).toBeInTheDocument()
+  })
+
+  it('takes an accessible name from the caller, so a list of cards is navigable', () => {
+    render(
+      <Rejection
+        rejection={tooLarge()}
+        onConvertAnyway={vi.fn()}
+        overrideLabel="Convert holiday.mp4 anyway"
+      />,
+    )
+
+    expect(
+      within(panel()).getByRole('button', { name: 'Convert holiday.mp4 anyway' }),
+    ).toBeInTheDocument()
+  })
+
+  it('leaves the words the router chose untouched', () => {
+    render(<Rejection rejection={tooLarge()} onConvertAnyway={vi.fn()} />)
+
+    expect(slot('rejection-message')?.textContent).toBe(tooLarge().message)
+    expect(slot('rejection-suggestion')?.textContent).toBe(tooLarge().suggestion)
   })
 })

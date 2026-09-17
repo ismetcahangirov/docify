@@ -15,7 +15,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { descriptor as realHeif } from '@/lib/engines/heif'
 import { descriptor as vipsEngine } from '@/lib/engines/vips'
-import { LARGE_DOWNLOAD_BYTES, route } from '@/lib/router/route'
+import { route } from '@/lib/router/route'
+import { LARGE_DOWNLOAD_BYTES } from '@/lib/router/warnings'
 import type { ConversionTask, FormatId } from '@/lib/router/types'
 
 import {
