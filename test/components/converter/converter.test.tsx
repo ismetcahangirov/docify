@@ -534,6 +534,33 @@ describe('Converter — the way through a refusal', () => {
     expect(request.budgetBytes).toBeGreaterThan(4 * GB)
   })
 
+  it('waits its turn behind a job that is already running', async () => {
+    // The rule matters more here than anywhere: every engine's budget assumes
+    // it has the tab to itself, and this job is one the budget already refused.
+    // Starting it beside another is the out-of-memory case the scheduler exists
+    // to prevent, and "Convert anyway" must go through the line like a retry
+    // rather than calling `run` itself.
+    render(<Converter pair={pair} />)
+
+    // Refused first, while nothing is in flight — the scheduler routes one job
+    // at a time, so a file dropped behind a running one is not even refused yet.
+    dropHuge('holiday.heic')
+    const button = await screen.findByRole('button', { name: /convert holiday\.heic anyway/i })
+    expect(startConversion).not.toHaveBeenCalled()
+
+    // Now put something in front of it.
+    drop(['first.heic'])
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(button)
+    // The running job has not settled, so nothing else may reach the worker.
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+
+    settle().resolve(converted)
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(2))
+  })
+
   it('tells the card what it is about to attempt', async () => {
     render(<Converter pair={pair} />)
     dropHuge('holiday.heic')

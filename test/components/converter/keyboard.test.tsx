@@ -109,6 +109,28 @@ describe('every control the flow renders has a name', () => {
       />,
     ],
     [
+      'JobCard, refused for memory',
+      <JobCard
+        key="m"
+        job={{
+          ...createJob('a', new File(['x'], 'holiday.mp4')),
+          state: 'failed',
+          failure: {
+            code: 'FILE_TOO_LARGE',
+            message: 'This file is 2.1 GB.',
+            suggestion: 'Split it into smaller parts.',
+            // The way through, which is the one control on this card that is
+            // drawn from the router's answer rather than from the state.
+            overridable: true,
+          },
+        }}
+        onRetry={() => {}}
+        onConvertAnyway={() => {}}
+        onRemove={() => {}}
+        now={0}
+      />,
+    ],
+    [
       'Rejection',
       <Rejection
         key="j"

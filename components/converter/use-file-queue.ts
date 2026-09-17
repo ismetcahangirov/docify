@@ -260,7 +260,7 @@ export function useFileQueue(): FileQueue {
         engine: decision.engine,
         // What this job may spend, which is the device budget for everything
         // except a job the user has just taken past it. See `grantedBytes`.
-        budgetBytes: grantedBytes(decision.engine, jobInput([header]), caps),
+        budgetBytes: grantedBytes(decision, jobInput([header]), caps),
         running: running.current,
         dispatch,
         isCurrent,
