@@ -472,3 +472,75 @@ describe('dropping a file brings the queue into view', () => {
     expect(scrollIntoView).toHaveBeenCalledTimes(1)
   })
 })
+
+/*
+ * Pushing past a memory refusal (issue #322).
+ *
+ * The end of the path the router half of the issue opens: a file this device's
+ * budget refuses, the button that offers it anyway, and the two things that
+ * have to be true once it is pressed — the job actually runs, and the engine on
+ * the other side is not handed the very ceiling the user has just overruled.
+ */
+describe('Converter — the way through a refusal', () => {
+  const GB = 1024 * 1024 * 1024
+
+  /** A file whose reported size is past every engine's ceiling on this device. */
+  const huge = (name: string) => {
+    const made = file(name)
+    // jsdom will not allocate 4 GB and does not need to: the router is handed
+    // `file.size` and never the bytes.
+    Object.defineProperty(made, 'size', { value: 4 * GB })
+
+    return made
+  }
+
+  const dropHuge = (name: string) => {
+    const input = screen.getByLabelText(/drop your heic files here/i)
+
+    fireEvent.change(input, { target: { files: [huge(name)] } })
+  }
+
+  it('offers the refused job anyway, and runs it when asked', async () => {
+    render(<Converter pair={pair} />)
+    dropHuge('holiday.heic')
+
+    const button = await screen.findByRole('button', { name: /convert holiday\.heic anyway/i })
+    fireEvent.click(button)
+
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+  })
+
+  it('refuses it in the first place', async () => {
+    render(<Converter pair={pair} />)
+    dropHuge('holiday.heic')
+
+    await screen.findByRole('button', { name: /convert holiday\.heic anyway/i })
+
+    expect(startConversion).not.toHaveBeenCalled()
+  })
+
+  it('does not hand the engine the ceiling the user just overruled', async () => {
+    // `raster-limits.ts` bounds decoded pixels against `EngineInput.budgetBytes`.
+    // Passing the device budget there would refuse the job a second time, deep
+    // inside the worker, after the download — the user having already been told
+    // it would be attempted.
+    render(<Converter pair={pair} />)
+    dropHuge('holiday.heic')
+
+    fireEvent.click(await screen.findByRole('button', { name: /convert holiday\.heic anyway/i }))
+    await waitFor(() => expect(startConversion).toHaveBeenCalledTimes(1))
+
+    const request = vi.mocked(startConversion).mock.calls[0][0]
+    expect(request.budgetBytes).toBeGreaterThan(4 * GB)
+  })
+
+  it('tells the card what it is about to attempt', async () => {
+    render(<Converter pair={pair} />)
+    dropHuge('holiday.heic')
+
+    fireEvent.click(await screen.findByRole('button', { name: /convert holiday\.heic anyway/i }))
+
+    // The numbers the refusal quoted, now as the risk being taken.
+    expect(await screen.findByText(/expected to need about/i)).toBeInTheDocument()
+  })
+})

@@ -15,7 +15,7 @@
 
 import type { EngineDescriptor } from '@/lib/engines/types'
 
-import { MEMORY, heldBytes, maxInputBytes, peakBytes } from './budget'
+import { MEMORY, cheapestFor, fitsBitmapCeiling, heldBytes, maxInputBytes } from './budget'
 import { formatBytes, formatName } from './copy'
 import type { Capabilities, ConversionTask, JobInput, MemoryScope, RouteRejection } from './types'
 
@@ -35,6 +35,7 @@ export function emptyInput(job: JobInput): RouteRejection {
       code: 'EMPTY_INPUT',
       message: 'No files were given, so there is nothing to convert.',
       suggestion: 'Choose at least one file — drop it on the page, or use the file picker.',
+      overridable: false,
     }
   }
 
@@ -44,6 +45,7 @@ export function emptyInput(job: JobInput): RouteRejection {
       code: 'EMPTY_INPUT',
       message: 'There are no bytes to convert — this file is empty, or its size could not be read.',
       suggestion: 'Pick a different file, or re-export it from the app that created it.',
+      overridable: false,
     }
   }
 
@@ -53,6 +55,7 @@ export function emptyInput(job: JobInput): RouteRejection {
     message: `One of these ${job.fileCount} files is empty, or its size could not be read, so the job cannot be measured.`,
     suggestion:
       'Remove the empty file from the list — every other file is fine as it is, and the job runs once it has gone.',
+    overridable: false,
   }
 }
 
@@ -62,6 +65,7 @@ export function unsupportedPair(task: ConversionTask): RouteRejection {
     code: 'UNSUPPORTED_PAIR',
     message: `Converting ${formatName(task.from)} to ${formatName(task.to)} is not something this browser can do here.`,
     suggestion: `Choose a different output format for your ${formatName(task.from)} file, or open this page in an up-to-date Chrome or Edge, where more engines are available.`,
+    overridable: false,
   }
 }
 
@@ -80,6 +84,7 @@ export function codecUnavailable(task: ConversionTask, missing: readonly string[
     code: 'CODEC_UNAVAILABLE',
     message: `Converting ${formatName(task.from)} to ${formatName(task.to)} needs ${named}, which this browser does not provide.`,
     suggestion: `Open this page in an up-to-date Chrome or Edge, which provides ${named}.`,
+    overridable: false,
   }
 }
 
@@ -115,9 +120,7 @@ export function tooLarge(
   caps: Capabilities,
   candidates: readonly [EngineDescriptor, ...EngineDescriptor[]],
 ): RouteRejection {
-  const roomiest = candidates.reduce((a, b) =>
-    peakBytes(MEMORY[a.id], job) <= peakBytes(MEMORY[b.id], job) ? a : b,
-  )
+  const roomiest = cheapestFor(candidates, job)
   const memory = MEMORY[roomiest.id]
   const limit = maxInputBytes(roomiest.id, caps)
   const onDesktop = caps.platform === 'desktop'
@@ -131,6 +134,11 @@ export function tooLarge(
     code: onDesktop ? 'FILE_TOO_LARGE' : 'DEVICE_TOO_WEAK',
     message: `${subject(job, memory.holds, over)} ${ceiling(task, job, memory.holds, formatBytes(limit))}`,
     suggestion: onDesktop ? desktopSuggestion(job, memory.holds) : MOBILE_SUGGESTION,
+    // Only the budget half of `fitsInBudget` is an estimate the user may
+    // overrule. If every candidate is *also* past the bitmap ceiling then
+    // accepting the memory risk buys nothing but a blank image, so the way
+    // through does not exist and the UI must not offer one (issue #322).
+    overridable: candidates.some((engine) => fitsBitmapCeiling(engine.id, job)),
   }
 }
 

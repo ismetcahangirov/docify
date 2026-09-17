@@ -14,6 +14,8 @@
 
 import { MAX_CANVAS_PIXELS } from '@/lib/engines/canvas-limits'
 
+import type { EngineDescriptor } from '@/lib/engines/types'
+
 import type { Capabilities, EngineId, EngineMemory, JobInput } from './types'
 
 const MB = 1024 * 1024
@@ -416,4 +418,57 @@ export function maxInputBytes(engine: EngineId, caps: Capabilities): number {
  */
 export function fitsInBudget(engine: EngineId, job: JobInput, caps: Capabilities): boolean {
   return fitsBitmapCeiling(engine, job) && peakBytes(MEMORY[engine], job) <= budgetBytes(caps)
+}
+
+/**
+ * What the worker may actually spend on this job, in bytes.
+ *
+ * Not the same question as {@link budgetBytes}, and the difference only shows
+ * on an accepted over-budget job (issue #322). `lib/engines/raster-limits.ts`
+ * bounds decoded pixels against whatever `EngineInput.budgetBytes` it is
+ * handed; hand it the device budget for a job the user has explicitly taken
+ * past that budget and the engine refuses a second time, inside the worker,
+ * after the download — with the user having already been told it would be
+ * attempted. Two refusals for one decision, the second one unexplainable.
+ *
+ * Expressed as a maximum rather than as a branch on "was this overridden",
+ * because it needs no such flag to be right: for any job the router accepted
+ * normally the peak is at or under the budget by definition, so this *is*
+ * `budgetBytes(caps)` everywhere except the one path that raised it.
+ *
+ * It grants exactly what the job was predicted to cost, and no more. The pixel
+ * ceilings that are platform facts rather than budget arithmetic —
+ * `MAX_CANVAS_SIDE`, `MAX_CANVAS_PIXELS` — do not read this number and are
+ * unaffected.
+ */
+export function grantedBytes(engine: EngineId, job: JobInput, caps: Capabilities): number {
+  return Math.max(budgetBytes(caps), peakBytes(MEMORY[engine], job))
+}
+
+/**
+ * Whichever of `candidates` costs least to run *this* job.
+ *
+ * Two callers, one question, and it has to be the same answer in both. A
+ * `FILE_TOO_LARGE` quotes this engine's ceiling, because the user is being told
+ * the largest job that could work here and a hungrier engine's number would
+ * understate it; an accepted override *runs* this engine, because once nothing
+ * fits the only question left is which candidate is least likely to take the
+ * tab down. A rejection that named one engine and an override that then ran a
+ * different one would be two answers to the same question.
+ *
+ * Decided by what each engine costs for this job rather than by comparing their
+ * ceilings, because two ceilings can be ceilings on different quantities — one
+ * on the job's total and one on its largest file — and those do not order
+ * against each other.
+ *
+ * Ties keep candidate order, which is `byPreference`: equal memory is no reason
+ * to depart from the priority table.
+ */
+export function cheapestFor(
+  candidates: readonly [EngineDescriptor, ...EngineDescriptor[]],
+  job: JobInput,
+): EngineDescriptor {
+  return candidates.reduce((a, b) =>
+    peakBytes(MEMORY[a.id], job) <= peakBytes(MEMORY[b.id], job) ? a : b,
+  )
 }

@@ -32,6 +32,14 @@ export interface JobFailure {
   suggestion?: string
   /** The router's code, where the router is what refused. */
   code?: RejectionCode
+  /**
+   * Whether the router said this refusal is one the user may overrule.
+   *
+   * `RouteRejection.overridable`, carried across so the card can offer the way
+   * through without re-deriving it. Absent for an engine failure, which is not
+   * a refusal and has nothing to overrule.
+   */
+  overridable?: boolean
 }
 
 /** One file on its way through the app. */
@@ -72,6 +80,20 @@ export interface QueuedJob {
   /** The converted file, once there is one. */
   result?: Blob
   failure?: JobFailure
+  /**
+   * The user has read a memory refusal for this file and asked for it anyway
+   * (issue #322).
+   *
+   * On the job rather than passed to `run`, because the thing between the
+   * button and the router is the scheduler, which starts whichever job is next
+   * and knows nothing about why. A mark the job carries reaches `route()`
+   * however long it waits its turn.
+   *
+   * Deliberately *not* cleared by `retry`. The acceptance is a decision about
+   * this file, and a "Try again" that quietly went back to refusing it would
+   * make the user take the same decision twice to get the same answer.
+   */
+  overBudget?: boolean
   /** When the job left `queued`, in epoch milliseconds. The clock an ETA runs on. */
   startedAt?: number
   /** When it reached `done` or `failed`. */
@@ -107,7 +129,14 @@ export interface QueuedJob {
 export type JobPatch = Partial<
   Pick<
     QueuedJob,
-    'engine' | 'reason' | 'warnings' | 'result' | 'failure' | 'progress' | 'routeInput'
+    | 'engine'
+    | 'reason'
+    | 'warnings'
+    | 'result'
+    | 'failure'
+    | 'progress'
+    | 'routeInput'
+    | 'overBudget'
   >
 >
 

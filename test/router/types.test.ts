@@ -178,9 +178,14 @@ describe('Warning', () => {
     expect(warning.code).toBe('SLOW_PATH')
   })
 
-  it('is exactly the four warning codes the router can raise', () => {
+  it('is exactly the warning codes the router can raise', () => {
     expectTypeOf<WarningCode>().toEqualTypeOf<
-      'SLOW_PATH' | 'QUALITY_LOSS' | 'LARGE_DOWNLOAD' | 'NO_ISOLATION' | 'LAYOUT_LOSS'
+      | 'SLOW_PATH'
+      | 'QUALITY_LOSS'
+      | 'LARGE_DOWNLOAD'
+      | 'NO_ISOLATION'
+      | 'LAYOUT_LOSS'
+      | 'OVER_BUDGET'
     >()
   })
 

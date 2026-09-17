@@ -112,7 +112,13 @@ describe('every control the flow renders has a name', () => {
       'Rejection',
       <Rejection
         key="j"
-        rejection={{ ok: false, code: 'UNSUPPORTED_PAIR', message: 'No.', suggestion: 'Try PNG.' }}
+        rejection={{
+          ok: false,
+          code: 'UNSUPPORTED_PAIR',
+          message: 'No.',
+          suggestion: 'Try PNG.',
+          overridable: false,
+        }}
         task={{ from: 'heic', to: 'ico', op: 'convert' }}
         alternatives={[{ from: 'heic', to: 'png', op: 'convert' }]}
       />,
