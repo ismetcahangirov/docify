@@ -35,13 +35,31 @@ Two consequences that are not obvious from the call site:
   least likely to take the tab down, so `cheapestFor` wins instead — deliberately the
   same engine `tooLarge` would have quoted a ceiling for, because a refusal naming one
   engine and an override running another is two answers to one question.
-- **The worker must be told the raised number.** `lib/engines/raster-limits.ts` bounds
-  decoded pixels against `EngineInput.budgetBytes`. Hand it the device budget for an
-  accepted job and it refuses a second time, inside the worker, after the download, to a
-  user who has already been told it would be attempted. `grantedBytes()` exists for
-  exactly that and needs no "was this overridden" flag: for any normally-accepted job
-  the peak is at or under the budget by definition, so it *is* `budgetBytes(caps)`
-  everywhere except the path that raised it.
+- **The worker must be told the raised number, on both axes.** `lib/engines/
+  raster-limits.ts` bounds decoded pixels against `EngineInput.budgetBytes`. Hand it the
+  device budget for an accepted job and it refuses a second time, inside the worker,
+  after the download, to a user who has already been told it would be attempted — and
+  that second refusal carries no `RejectionCode`, so it renders with no title, no button
+  and no numbers tying it to the sentence they accepted. `grantedBytes()` exists for
+  exactly that.
+
+  The first attempt at it raised the allowance to the router's byte prediction alone and
+  was wrong, which code review caught before merge. The two halves of the model charge
+  different things: `MEMORY.vips` and `MEMORY.pdflib` carry `bytesPerPixel: 0` on
+  purpose, while `assertPipelineFits` and `pdf-from-images` charge 8 bytes a *decoded
+  pixel* against the same number. Rotating a 25 MB, 24 megapixel JPEG on a phone
+  predicts 100 MB and measures 192 MB. The pixel term is therefore a term of the grant
+  too, and `MAX_DECODED_BYTES_PER_PIXEL` lives in `budget.ts` rather than beside the
+  guard that spends it, because `raster-limits.ts` already imports
+  `DESKTOP_BUDGET_FLOOR_BYTES` from there and the constant going back would close an
+  import cycle that fails as a `ReferenceError` at module init.
+
+  It also cannot be unconditional, which is the part that looks like it should be. A
+  24 megapixel photograph of 5 MB routes comfortably on bytes and still costs 192 MB
+  decoded; that second bound is exactly what catches it, and raising the pixel
+  allowance for every job would dissolve it. So `grantedBytes` takes the `RouteSuccess`
+  and reads its own `OVER_BUDGET` warning — the decision rather than a flag a caller
+  could mismatch.
 
 The acceptance rides on the job (`QueuedJob.overBudget`) rather than on the `run()` call
 because the scheduler sits between the button and the router and knows nothing about
